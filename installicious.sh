@@ -152,8 +152,8 @@ else
       exit 1
     fi
   else
-    # If it exists, remove any existing status files.
-    sudo rm --force "$PATH_STATUS"/*
+    # If it exists, remove any existing status files but will keep status.time files.
+    sudo rm --force "$PATH_STATUS"/*.status
     RET_VAL=$?
     if [[ $RET_VAL -ne 0 ]]; then
       echo "$(date '+%Y-%m-%d %T.%5N') - WARN - [$MODULE] Unable to delete the existing status files in $PATH_STATUS. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER

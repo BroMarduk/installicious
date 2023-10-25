@@ -13,6 +13,8 @@ FILE_MOTD_CURRENT_IP="motd-current-ip.sh"
 FILE_MOTD_CURRENT_WEATHER="motd-current-weather.sh"
 FILE_CONFIG_INSTALLICIOUS="config/installicious.config"
 FILE_CONFIG_MOTD="config/motd.config"
+FILE_STATUS_OS_NAME="os.status"
+FILE_STATUS_MOTD_NAME="motd.status"
 TOKEN_MOTD_NAME="%%MOTD_NAME%%"
 TOKEN_MOTD_IP_URL="%%MOTD_IP_URL%%"
 TOKEN_MOTD_WEATHER_LOC_CODE="%%MOTD_WEATHER_LOC_CODE%%"
@@ -35,8 +37,8 @@ if [[ $RET_VAL -ne 0 ]]; then
   exit 1
 fi
 
-FILE_STATUS_OS="$PATH_STATUS/os.status"
-FILE_STATUS_MOTD="$PATH_STATUS/motd.status"
+FILE_STATUS_OS="$PATH_STATUS/$FILE_STATUS_OS_NAME"
+FILE_STATUS_MOTD="$PATH_STATUS/$FILE_STATUS_MOTD_NAME"
 
 # Set log file name and path for the script.
 if [[ -z $FILE_LOG_INSTALLICIOUS ]]; then
@@ -82,8 +84,6 @@ if [[ $RET_VAL -ne 0 ]]; then
   exit 1
 fi
 
-FILE_STATUS_MOTD="$PATH_STATUS/motd.status"
-
 # Check for MOTD Name in loaded config file.
 if [[ -z $MOTD_NAME ]]; then
   echo "$(date '+%Y-%m-%d %T.%5N') - ERR! - [$MODULE] Unable to find a MOTD name in the configuration file $FILE_CONFIG_MOTD." | sudo tee --append $FILE_LOG_INSTALLER
@@ -96,7 +96,7 @@ if [[ $RET_VAL -ne 0 ]]; then
   echo "$(date '+%Y-%m-%d %T.%5N') - ERR! - [$MODULE] Unable to truncate the default MOTD file /etc/motd. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
   exit 1
 else
-  echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Sucessfully truncated the default MOTD file /etc/motd." | sudo tee --append $FILE_LOG_INSTALLER
+  echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Successfully truncated the default MOTD file /etc/motd." | sudo tee --append $FILE_LOG_INSTALLER
 fi
 
 if [[ ! -d "$PATH_MOTD" ]]; then
@@ -108,7 +108,7 @@ if [[ ! -d "$PATH_MOTD" ]]; then
     STATUS="Error"
     exit 2
   else
-    echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Sucessfully created the missing MOTD path $PATH_MOTD." | sudo tee --append $FILE_LOG_INSTALLER
+    echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Successfully created the missing MOTD path $PATH_MOTD." | sudo tee --append $FILE_LOG_INSTALLER
   fi
 else
   echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Found the MOTD path $PATH_MOTD/$MOTD_NAME." | sudo tee --append $FILE_LOG_INSTALLER
@@ -123,7 +123,7 @@ if [[ ! -d "$PATH_MOTD/$MOTD_NAME" ]]; then
     STATUS="Error"
     exit 2
   else
-    echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Sucessfully created the missing MOTD name path $PATH_MOTD/$MOTD_NAME." | sudo tee --append $FILE_LOG_INSTALLER
+    echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Successfully created the missing MOTD name path $PATH_MOTD/$MOTD_NAME." | sudo tee --append $FILE_LOG_INSTALLER
   fi
 else
   echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Found the MOTD name path $PATH_MOTD/$MOTD_NAME." | sudo tee --append $FILE_LOG_INSTALLER
@@ -218,5 +218,11 @@ echo "MOTD_LAST_RUN=\"${CURRENT_RUN}\"" > $FILE_STATUS_MOTD
 echo "MOTD_MOTD_STATUS=\"${STATUS_MOTD}\"" >> $FILE_STATUS_MOTD
 echo "MOTD_SMALL_STATUS=\"${STATUS_MOTD_SMALL}\"" >> $FILE_STATUS_MOTD
 echo "MOTD_STATUS=\"${STATUS}\"" >> $FILE_STATUS_MOTD
+
+if [[ $EXIT_CODE -eq 0 ]]; then
+  echo -e "[  \e[92mOK\e[0m  ] Installicious successfully customized the Message of the Day for the Raspberry Pi."
+else
+  echo -e "[ \e[101mERR!\e[0m ] Installicious could not customize the Message of the Day for the Raspberry Pi. Error Code: $EXIT_CODE."
+fi
 
 exit $EXIT_CODE

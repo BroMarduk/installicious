@@ -105,4 +105,10 @@ echo "BASH_ROOT=\"${STATUS_BASH_ROOT}\"" >> $FILE_STATUS_BASH
 echo "BASH_USER=\"${STATUS_BASH_USER}\"" >> $FILE_STATUS_BASH
 echo "BASH_STATUS=\"${STATUS}\"" >> $FILE_STATUS_BASH
 
+if [[ $EXIT_CODE -eq 0 ]]; then
+  echo -e "[  \e[92mOK\e[0m  ] Installicious successfully completed the bash customizations for the Raspberry Pi."
+else
+  echo -e "[ \e[101mERR!\e[0m ] Installicious could not complete the bash customizations for the Raspberry Pi. Error Code: $EXIT_CODE."
+fi
+
 exit $EXIT_CODE

@@ -44,7 +44,7 @@ if [[ $RET_VAL -ne 0 ]]; then
   echo "$(date '+%Y-%m-%d %T.%5N') - CRIT - [$MODULE] Unable to load the configuration file $FILE_CONFIG_RCONF. Error Code: $RET_VAL."
   exit 1
 fi
-echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Sucessfully sourced the configuration file $FILE_CONFIG_RCONF."
+echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Successfully sourced the configuration file $FILE_CONFIG_RCONF."
 
 # Look for user config file.
 if [[ ! -f $FILE_CONFIG_USER ]]; then
@@ -78,7 +78,7 @@ if [[ $RET_VAL -ne 0 ]]; then
   echo "$(date '+%Y-%m-%d %T.%5N') - ERR! - [$MODULE] Unable to check for or install package Raspi-Config. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
   exit 2
 fi
-echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Sucessfully checked for and potentially installed package Raspi-Config." | sudo tee --append $FILE_LOG_INSTALLER
+echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Successfully checked for and potentially installed package Raspi-Config." | sudo tee --append $FILE_LOG_INSTALLER
 
 ## Load Required Variables
 if [[ -e $FILE_STATUS_OS ]]; then
@@ -87,12 +87,13 @@ if [[ -e $FILE_STATUS_OS ]]; then
   if [[ $RET_VAL -ne 0 ]]; then
     echo "$(date '+%Y-%m-%d %T.%5N') - ERR! - [$MODULE] Unable to load required OS Configuration due to error loading variables. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
     exit 4
+  else
+    echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Successfully loaded the required OS Configuration from file $FILE_STATUS_OS." | sudo tee --append $FILE_LOG_INSTALLER
   fi
 else
   echo "$(date '+%Y-%m-%d %T.%5N') - ERR! - [$MODULE] Unable to load required OS Configuration due to missing file $FILE_STATUS_OS." | sudo tee --append $FILE_LOG_INSTALLER
   exit 4
 fi
-echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Sucessfully loaded the required OS Configuration from file $FILE_STATUS_OS." | sudo tee --append $FILE_LOG_INSTALLER
 
 if [[ -z $II_CODENAME ]]; then
   if [[ $II_CODENAME = "Wheezy" || $II_CODENAME = "Jessie" || $II_CODENAME = "Stretch" ]]; then
@@ -111,19 +112,19 @@ if [[ $RET_VAL -ne 0 ]]; then
   echo "$(date '+%Y-%m-%d %T.%5N') - ERR! - [$MODULE] Unable to load the current keyboard settings. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
   exit 4
 fi
-echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Sucessfully loaded the current keyboard settings." | sudo tee --append $FILE_LOG_INSTALLER
+echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Successfully loaded the current keyboard settings." | sudo tee --append $FILE_LOG_INSTALLER
 
 # Check if the keyboard model is already set to the desired setting.
 if [[ $XKBMODEL != $RCONF_KEYBOARD_MODEL ]]; then
   sudo sed -i "s/XKBMODEL=\".*\"/XKBMODEL=\"$RCONF_KEYBOARD_MODEL\"/" "$FILE_KEYBOARD_CONFIG"
   RET_VAL=$?
   if [[ $RET_VAL -ne 0 ]]; then
-    echo "$(date '+%Y-%m-%d %T.%5N') - ERR! - [$MODULE] Unable to sucessfully configure the keyboard model to [$RCONF_KEYBOARD_MODEL]. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
+    echo "$(date '+%Y-%m-%d %T.%5N') - ERR! - [$MODULE] Unable to successfully configure the keyboard model to [$RCONF_KEYBOARD_MODEL]. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
     STATUS_CONFIG_KEYBOARD_MODEL="Error"
     STATUS="Error"
     EXIT_CODE=$EXIT_CODE+4
   else
-    echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Sucessfully configured the keyboard model to [$RCONF_KEYBOARD_MODEL]." | sudo tee --append $FILE_LOG_INSTALLER 
+    echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Successfully configured the keyboard model to [$RCONF_KEYBOARD_MODEL]." | sudo tee --append $FILE_LOG_INSTALLER 
     STATUS_CONFIG_KEYBOARD_MODEL="Completed"
   fi
 else
@@ -137,12 +138,12 @@ if [[ $SUPPORT_RPI_CONFIG_CMDLINE -ne 0 ]]; then
     sudo raspi-config nonint do_configure_keyboard "$RCONF_KEYBOARD_LANG"
     RET_VAL=$?
     if [[ $RET_VAL -ne 0 ]]; then
-      echo "$(date '+%Y-%m-%d %T.%5N') - ERR! - [$MODULE] Unable to sucessfully configure the keyboard language to [$RCONF_KEYBOARD_LANG]. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
+      echo "$(date '+%Y-%m-%d %T.%5N') - ERR! - [$MODULE] Unable to successfully configure the keyboard language to [$RCONF_KEYBOARD_LANG]. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
       STATUS_CONFIG_KEYBOARD_LANGUAGE="Error"
       STATUS="Error"
       EXIT_CODE=$EXIT_CODE+4
     else
-      echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Sucessfully configured the keyboard language to [$RCONF_KEYBOARD_LANG]." | sudo tee --append $FILE_LOG_INSTALLER 
+      echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Successfully configured the keyboard language to [$RCONF_KEYBOARD_LANG]." | sudo tee --append $FILE_LOG_INSTALLER 
       STATUS_CONFIG_KEYBOARD_LANGUAGE="Completed"
     fi
   else
@@ -154,7 +155,7 @@ else
     sudo sed -i "s/XKBLAYOUT=\".*\"/XKBLAYOUT=\"$RCONF_KEYBOARD_LANG\"/" "$FILE_KEYBOARD_CONFIG"
     RET_VAL=$?
     if [[ $RET_VAL -ne 0 ]]; then
-      echo "$(date '+%Y-%m-%d %T.%5N') - ERR! - [$MODULE] Unable to sucessfully configure the keyboard language to [$RCONF_KEYBOARD_LANG]. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
+      echo "$(date '+%Y-%m-%d %T.%5N') - ERR! - [$MODULE] Unable to successfully configure the keyboard language to [$RCONF_KEYBOARD_LANG]. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
       STATUS_CONFIG_KEYBOARD_LANGUAGE="Error"
       STATUS="Error"
       EXIT_CODE=$EXIT_CODE+4
@@ -162,7 +163,7 @@ else
       sudo service keyboard-setup restart
       RET_VAL=$?
       if [[ $RET_VAL -ne 0 ]]; then
-        echo "$(date '+%Y-%m-%d %T.%5N') - ERR! - [$MODULE] Unable to sucessfully restart the keyboard service with language [$RCONF_KEYBOARD_LANG.] Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
+        echo "$(date '+%Y-%m-%d %T.%5N') - ERR! - [$MODULE] Unable to successfully restart the keyboard service with language [$RCONF_KEYBOARD_LANG.] Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
         STATUS_CONFIG_KEYBOARD_LANGUAGE="Error"
         STATUS="Error"
         EXIT_CODE=$EXIT_CODE+4
@@ -174,11 +175,11 @@ else
   fi
   
   if [[ $II_OS_LEVEL = "Lite" ]]; then
-    echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Sucessfully configured the keyboard language to [$RCONF_KEYBOARD_LANG]." | sudo tee --append $FILE_LOG_INSTALLER 
+    echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Successfully configured the keyboard language to [$RCONF_KEYBOARD_LANG]." | sudo tee --append $FILE_LOG_INSTALLER 
     STATUS_CONFIG_KEYBOARD_LANGUAGE="Completed"
   else
     if [[ ! -f $PATH_HOME/$USER_USERNAME/$FILE_KEYBOARD_MAP ]]; then
-      echo "$(date '+%Y-%m-%d %T.%5N') - ERR! - [$MODULE] Unable to sucessfully set the GUI keyboard language to [$RCONF_KEYBOARD_LANG]. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
+      echo "$(date '+%Y-%m-%d %T.%5N') - ERR! - [$MODULE] Unable to successfully set the GUI keyboard language to [$RCONF_KEYBOARD_LANG]. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
       STATUS_CONFIG_KEYBOARD_LANGUAGE="Error"
       STATUS="Error"
       EXIT_CODE=$EXIT_CODE+4
@@ -186,12 +187,12 @@ else
       sudo sed -i "/^layout =/c\layout = $RCONF_KEYBOARD_LANG" $PATH_HOME/$USER_USERNAME/$FILE_KEYBOARD_MAP
       RET_VAL=$?
       if [[ $RET_VAL -ne 0 ]]; then
-        echo "$(date '+%Y-%m-%d %T.%5N') - ERR! - [$MODULE] Unable to sucessfully set the GUI keyboard language to [$RCONF_KEYBOARD_LANG]. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
+        echo "$(date '+%Y-%m-%d %T.%5N') - ERR! - [$MODULE] Unable to successfully set the GUI keyboard language to [$RCONF_KEYBOARD_LANG]. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
         STATUS_CONFIG_KEYBOARD_LANGUAGE="Error"
         STATUS="Error"
         EXIT_CODE=$EXIT_CODE+4
       else
-        echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Sucessfully set the GUI keyboard language to [$RCONF_KEYBOARD_LANG]." | sudo tee --append $FILE_LOG_INSTALLER
+        echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Successfully set the GUI keyboard language to [$RCONF_KEYBOARD_LANG]." | sudo tee --append $FILE_LOG_INSTALLER
       fi
     fi
   fi
@@ -211,7 +212,7 @@ sudo sed -i "s/STATUS=\"Pending Reboot\"/STATUS=\"$STATUS\"/" $FILE_STATUS_RCONF
 
 RET_VAL=$? 
 if [[ $RET_VAL -ne 0 ]]; then
-  echo "$(date '+%Y-%m-%d %T.%5N') - ERR! - [$MODULE] Unable to sucessfully set the status of the RCONF_CONFIGURE_KEYBOARD status in $FILE_STATUS_RCONF to $STATUS. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
+  echo "$(date '+%Y-%m-%d %T.%5N') - ERR! - [$MODULE] Unable to successfully set the status of the RCONF_CONFIGURE_KEYBOARD status in $FILE_STATUS_RCONF to $STATUS. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
   EXIT_CODE=$EXIT_CODE+16
 fi
 
