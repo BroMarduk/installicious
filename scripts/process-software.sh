@@ -38,7 +38,9 @@ if [[ -s $FILE_STATUS_SOFTWARE ]]; then
         source $PATH_STATUS_SOFTWARE_ITEM
         RET_VAL=$?
         if [[ $RET_VAL -eq 0 ]]; then
-          declare -n STATUS_SOFTWARE_ITEM=${SOFTWARE_ITEM^^}_STATUS
+          # declare -n STATUS_SOFTWARE_ITEM=${SOFTWARE_ITEM^^}_STATUS
+          STATUS_SOFTWARE_ITEM_VARNAME="RCONF_GPU_MEM_SPLIT_LITE_${SOFTWARE_ITEM^^}_STATUS"
+          STATUS_SOFTWARE_ITEM=${!STATUS_SOFTWARE_ITEM_VARNAME}
         fi
       else
         STATUS_SOFTWARE_ITEM=""
@@ -49,7 +51,7 @@ if [[ -s $FILE_STATUS_SOFTWARE ]]; then
           echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Processing the script $SOFTWARE_INSTALLER to process software $SOFTWARE_ITEM." | sudo tee --append $FILE_LOG_INSTALLER
           bash "$SOFTWARE_INSTALLER"
         else
-          echo "$(date '+%Y-%m-%d %T.%5N') - ERR! - [$MODULE] Unable to find the script $SOFTWARE_INSTALLER to process option $SOFTWARE_ITEM." | sudo tee --append $FILE_LOG_INSTALLER
+          echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to find the script $SOFTWARE_INSTALLER to process option $SOFTWARE_ITEM." | sudo tee --append $FILE_LOG_INSTALLER
         fi
       else
         echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Skipping software $SOFTWARE_ITEM due to completed status." | sudo tee --append $FILE_LOG_INSTALLER

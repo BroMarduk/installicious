@@ -42,7 +42,7 @@ FILE_STATUS_MOTD="$PATH_STATUS/user.status"
 
 # Look for User conf file.
 if [[ ! -f $FILE_CONFIG_USER ]]; then
-  echo "$(date '+%Y-%m-%d %T.%5N') - ERR! - [$MODULE] Unable to find the configuration file $FILE_CONFIG_USER." | sudo tee --append $FILE_LOG_INSTALLER
+  echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to find the configuration file $FILE_CONFIG_USER." | sudo tee --append $FILE_LOG_INSTALLER
   exit 1
 fi
 
@@ -50,13 +50,13 @@ fi
 source $FILE_CONFIG_USER
 RET_VAL=$?
 if [[ $RET_VAL -ne 0 ]]; then
-  echo "$(date '+%Y-%m-%d %T.%5N') - ERR! - [$MODULE] Unable to load variables from the configuration file $FILE_CONFIG_USER. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
+  echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to load variables from the configuration file $FILE_CONFIG_USER. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
   exit 1
 fi
 
 # Check for User UserName in loaded config file.
 if [[ -z $USER_USERNAME ]]; then
-  echo "$(date '+%Y-%m-%d %T.%5N') - ERR! - [$MODULE] Unable to find a User Name in the configuration file $FILE_CONFIG_USER." | sudo tee --append $FILE_LOG_INSTALLER
+  echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to find a User Name in the configuration file $FILE_CONFIG_USER." | sudo tee --append $FILE_LOG_INSTALLER
   exit 1
 fi
 

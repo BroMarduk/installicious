@@ -52,11 +52,11 @@ if [[ -e $FILE_STATUS_OS ]]; then
   source $FILE_STATUS_OS
   RET_VAL=$?
   if [[ $RET_VAL -ne 0 ]]; then
-    echo "$(date '+%Y-%m-%d %T.%5N') - ERR! - [$MODULE] Unable to load required OS Configuration due to error loading variables. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
+    echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to load required OS Configuration due to error loading variables. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
     exit 1
   fi
 else
-  echo "$(date '+%Y-%m-%d %T.%5N') - ERR! - [$MODULE] Unable to load required OS Configuration due to missing file $FILE_STATUS_OS." | sudo tee --append $FILE_LOG_INSTALLER
+  echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to load required OS Configuration due to missing file $FILE_STATUS_OS." | sudo tee --append $FILE_LOG_INSTALLER
   exit 1
 fi
 
@@ -66,13 +66,13 @@ if [[ -z $II_CODENAME ]]; then
   else
     SUPPORT_RPI_CONFIG_CMDLINE=1
   fi
-  echo "$(date '+%Y-%m-%d %T.%5N') - ERR! - [$MODULE] Unable to load required OS Configuration due to error loading variables. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
+  echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to load required OS Configuration due to error loading variables. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
   exit 1
 fi
 
 # Look for MOTD conf file.
 if [[ ! -f $FILE_CONFIG_MOTD ]]; then
-  echo "$(date '+%Y-%m-%d %T.%5N') - ERR! - [$MODULE] Unable to find the configuration file $FILE_CONFIG_MOTD." | sudo tee --append $FILE_LOG_INSTALLER
+  echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to find the configuration file $FILE_CONFIG_MOTD." | sudo tee --append $FILE_LOG_INSTALLER
   exit 1
 fi
 
@@ -80,20 +80,20 @@ fi
 source $FILE_CONFIG_MOTD
 RET_VAL=$?
 if [[ $RET_VAL -ne 0 ]]; then
-  echo "$(date '+%Y-%m-%d %T.%5N') - ERR! - [$MODULE] Unable to load variables from the configuration file $FILE_CONFIG_MOTD. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
+  echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to load variables from the configuration file $FILE_CONFIG_MOTD. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
   exit 1
 fi
 
 # Check for MOTD Name in loaded config file.
 if [[ -z $MOTD_NAME ]]; then
-  echo "$(date '+%Y-%m-%d %T.%5N') - ERR! - [$MODULE] Unable to find a MOTD name in the configuration file $FILE_CONFIG_MOTD." | sudo tee --append $FILE_LOG_INSTALLER
+  echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to find a MOTD name in the configuration file $FILE_CONFIG_MOTD." | sudo tee --append $FILE_LOG_INSTALLER
   exit 1
 fi
 
 # Truncate old MSOD so the text does not appear
 sudo truncate -s 0 /etc/motd
 if [[ $RET_VAL -ne 0 ]]; then
-  echo "$(date '+%Y-%m-%d %T.%5N') - ERR! - [$MODULE] Unable to truncate the default MOTD file /etc/motd. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
+  echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to truncate the default MOTD file /etc/motd. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
   exit 1
 else
   echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Successfully truncated the default MOTD file /etc/motd." | sudo tee --append $FILE_LOG_INSTALLER
@@ -103,7 +103,7 @@ if [[ ! -d "$PATH_MOTD" ]]; then
   sudo mkdir "$PATH_MOTD"
   RET_VAL=$?
   if [[ $RET_VAL -ne 0 ]]; then
-    echo "$(date '+%Y-%m-%d %T.%5N') - ERR! - [$MODULE] Unable to create the missing MOTD path $PATH_MOTD. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
+    echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to create the missing MOTD path $PATH_MOTD. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
     STATUS_RC_UPGRADE="Error"
     STATUS="Error"
     exit 2
@@ -118,7 +118,7 @@ if [[ ! -d "$PATH_MOTD/$MOTD_NAME" ]]; then
   sudo mkdir "$PATH_MOTD/$MOTD_NAME"
   RET_VAL=$?
   if [[ $RET_VAL -ne 0 ]]; then
-    echo "$(date '+%Y-%m-%d %T.%5N') - ERR! - [$MODULE] Unable to create the missing MOTD name path $PATH_MOTD/$MOTD_NAME. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
+    echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to create the missing MOTD name path $PATH_MOTD/$MOTD_NAME. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
     STATUS_RC_UPGRADE="Error"
     STATUS="Error"
     exit 2
@@ -160,16 +160,21 @@ sudo $"$PATH_CRON_HOURLY/$FILE_CRON_CURRENT_WEATHER"
 
 # Prevent defauly MOTD from running. if Jessie or Wheezy
 if [[ $II_CODENAME = "Jessie" || $II_CODENAME = "Wheezy" ]]; then
-  sudo sed -i "s/\(uname -snrvm > \/var\/run\/motd.dynamic\)/# \1/" /etc/init.d/motd
+  if ! grep -q "# uname -snrvm > /var/run/motd.dynamic" /etc/init.d/motd; then
+    sudo sed -i "s/\(uname -snrvm > \/var\/run\/motd.dynamic\)/# \1/" /etc/init.d/motd
+    # Add a line in after that adds a : to prevent empty function.
+    sudo sed -i "/# uname -snrvm >/a\        :" /etc/init.d/motd
+  fi
 else
   sudo sed -i "s/\(uname -snrvm\)/# \1/" /etc/update-motd.d/10-uname
 fi
 
 # Remove the last logn info from SSH
-sudo sed -i "s/#PrintLastLog yes/PrintLastLog no/" /etc/ssh/sshd_config
+sudo sed -i "s/^\s*#\?\s*PrintLastLog \(yes\|no\)/PrintLastLog no/" /etc/ssh/sshd_config
 
 # Remove the last login info for TTY Console
-sudo sed -i "s/\(session    optional   pam_lastlog.so\)/# \1/" /etc/pam.d/login
+sudo sed -i "/^\s*session\s*optional\s*pam_lastlog.so/s/^\(\s*\)/#\1/" /etc/pam.d/login
+
 
 # Small MOTD will not work with Pixel Desktop
 if [[ $II_OS_LEVEL = "Lite" ]]; then
@@ -189,17 +194,12 @@ else
   # Enable MOTD in Profile if not added.
   if ! grep -q "# Show MOTD on start or login." /etc/profile; then
     sudo echo >> /etc/profile
-    sudo echo >> "# Show MOTD on start or login." >> /etc/profile
+    sudo echo "# Show MOTD on start or login." >> /etc/profile
     sudo echo "/etc/motd.d/$MOTD_NAME/motd.sh" >> /etc/profile
   fi
 fi
 
-# Prevent defautl MOTD from running. if Jessie or Wheezy
-if [[ $II_CODENAME = "Wheezy" ]]; then
-    sudo service sshd restart
-else
-    sudo service ssh restart
-fi
+sudo service ssh restart
 
 STATUS_MOTD="Completed"
 STATUS_MOTD_SMALL="Completed"
@@ -219,10 +219,18 @@ echo "MOTD_MOTD_STATUS=\"${STATUS_MOTD}\"" >> $FILE_STATUS_MOTD
 echo "MOTD_SMALL_STATUS=\"${STATUS_MOTD_SMALL}\"" >> $FILE_STATUS_MOTD
 echo "MOTD_STATUS=\"${STATUS}\"" >> $FILE_STATUS_MOTD
 
-if [[ $EXIT_CODE -eq 0 ]]; then
-  echo -e "[  \e[92mOK\e[0m  ] Installicious successfully customized the Message of the Day for the Raspberry Pi."
+if [[ $II_CODENAME = "Wheezy" ]]; then
+  if [[ $EXIT_CODE -eq 0 ]]; then
+    echo -e "[ \e[0;32mok\e[0m ] Installicious successfully customized the Message of the Day for the Raspberry Pi."
+  else
+    echo -e "[\e[0;31mFAIL\e[0m] Installicious could not customize the Message of the Day for the Raspberry Pi. Error Code: $EXIT_CODE."
+  fi
 else
-  echo -e "[ \e[101mERR!\e[0m ] Installicious could not customize the Message of the Day for the Raspberry Pi. Error Code: $EXIT_CODE."
+  if [[ $EXIT_CODE -eq 0 ]]; then
+    echo -e "[  \e[1;32mOK\e[0m  ] Installicious successfully customized the Message of the Day for the Raspberry Pi."
+  else
+    echo -e "[ \e[1;31mFAIL\e[0m ] Installicious could not customize the Message of the Day for the Raspberry Pi. Error Code: $EXIT_CODE."
+  fi
 fi
 
 exit $EXIT_CODE

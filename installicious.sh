@@ -66,7 +66,7 @@ if [[ ! -z $* ]]; then
       bash "$PATH_SCRIPTS/$NEXTFILE.sh" $REBOOT
       RET_VAL=$?
         if [[ $RET_VAL -ne 0 ]]; then
-          echo "$(date '+%Y-%m-%d %T.%5N') - ERR! - [$MODULE] Unable to process reboot type $INSTALLERTYPE for file $NEXTFILE.sh" Error Code: $RET_VAL.. | sudo tee --append $FILE_LOG_INSTALLER
+          echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to process reboot type $INSTALLERTYPE for file $NEXTFILE.sh" Error Code: $RET_VAL.. | sudo tee --append $FILE_LOG_INSTALLER
           exit 1
         fi
       exit 0
@@ -74,12 +74,12 @@ if [[ ! -z $* ]]; then
       bash "$PATH_INSTALLERS/$NEXTFILE.sh" $REBOOT
       RET_VAL=$?
         if [[ $RET_VAL -ne 0 ]]; then
-          echo "$(date '+%Y-%m-%d %T.%5N') - ERR! - [$MODULE] Unable to process reboot type $INSTALLERTYPE for file $NEXTFILE.sh". Error Code: $RET_VAL. | sudo tee --append $FILE_LOG_INSTALLER
+          echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to process reboot type $INSTALLERTYPE for file $NEXTFILE.sh". Error Code: $RET_VAL. | sudo tee --append $FILE_LOG_INSTALLER
           exit 1
         fi
       exit 0
     else
-      echo "$(date '+%Y-%m-%d %T.%5N') - ERR! - [$MODULE] Unable to process reboot type $INSTALLERTYPE for file $NEXTFILE.sh". | sudo tee --append $FILE_LOG_INSTALLER
+      echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to process reboot type $INSTALLERTYPE for file $NEXTFILE.sh". | sudo tee --append $FILE_LOG_INSTALLER
       exit 1
     fi
   fi
@@ -92,55 +92,55 @@ fi
 
 # Make sure the scripts directory variable can be found.
 if [[ -z $PATH_SCRIPTS ]]; then
-  echo "$(date '+%Y-%m-%d %T.%5N') - ERR! - [$MODULE] Unable to find a value for the scripts directory in the configuration $FILE_CONFIG_INSTALLICIOUS." | sudo tee --append $FILE_LOG_INSTALLER
+  echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to find a value for the scripts directory in the configuration $FILE_CONFIG_INSTALLICIOUS." | sudo tee --append $FILE_LOG_INSTALLER
   exit 1
 else
   # Check for scripts directory as it must exist.
   if [[ ! -d $PATH_SCRIPTS ]]; then
-    echo "$(date '+%Y-%m-%d %T.%5N') - ERR! - [$MODULE] Unable to find the scripts directory $PATH_SCRIPTS specifed in the configuration file $FILE_CONFIG_INSTALLICIOUS." | sudo tee --append $FILE_LOG_INSTALLER
+    echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to find the scripts directory $PATH_SCRIPTS specifed in the configuration file $FILE_CONFIG_INSTALLICIOUS." | sudo tee --append $FILE_LOG_INSTALLER
     exit 1
   fi
 fi
 
 # Make sure the installers directory variable can be found.
 if [[ -z $PATH_INSTALLERS ]]; then
-  echo "$(date '+%Y-%m-%d %T.%5N') - ERR! - [$MODULE] Unable to find a value for the installers directory in the configuration $FILE_CONFIG_INSTALLICIOUS." | sudo tee --append $FILE_LOG_INSTALLER
+  echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to find a value for the installers directory in the configuration $FILE_CONFIG_INSTALLICIOUS." | sudo tee --append $FILE_LOG_INSTALLER
   exit 1
 else
   # Check for scripts directory as it must exist.
   if [[ ! -d $PATH_INSTALLERS ]]; then
-    echo "$(date '+%Y-%m-%d %T.%5N') - ERR! - [$MODULE] Unable to find the scripts installers $PATH_INSTALLERS specifed in the configuration file $FILE_CONFIG_INSTALLICIOUS." | sudo tee --append $FILE_LOG_INSTALLER
+    echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to find the scripts installers $PATH_INSTALLERS specifed in the configuration file $FILE_CONFIG_INSTALLICIOUS." | sudo tee --append $FILE_LOG_INSTALLER
     exit 1
   fi
 fi
 
 # Make sure the dependencies directory variable can be found.
 if [[ -z $PATH_DEPENDENCIES ]]; then
-  echo "$(date '+%Y-%m-%d %T.%5N') - ERR! - [$MODULE] Unable to find a value for the dependencies directory in the configuration $FILE_CONFIG_INSTALLICIOUS." | sudo tee --append $FILE_LOG_INSTALLER
+  echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to find a value for the dependencies directory in the configuration $FILE_CONFIG_INSTALLICIOUS." | sudo tee --append $FILE_LOG_INSTALLER
   exit 1
 else
   # Check for dependencies directory as it must exist.
   if [[ ! -d $PATH_DEPENDENCIES ]]; then
-    echo "$(date '+%Y-%m-%d %T.%5N') - ERR! - [$MODULE] Unable to find the dependencies directory $PATH_DEPENDENCIES specifed in the configuration file $FILE_CONFIG_INSTALLICIOUS." | sudo tee --append $FILE_LOG_INSTALLER
+    echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to find the dependencies directory $PATH_DEPENDENCIES specifed in the configuration file $FILE_CONFIG_INSTALLICIOUS." | sudo tee --append $FILE_LOG_INSTALLER
     exit 1
   fi
 fi
 
 # Make sure the config directory variable can be found.
 if [[ -z $PATH_CONFIG ]]; then
-  echo "$(date '+%Y-%m-%d %T.%5N') - ERR! - [$MODULE] Unable to find a value for the config directory in the configuration $FILE_CONFIG_INSTALLICIOUS." | sudo tee --append $FILE_LOG_INSTALLER
+  echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to find a value for the config directory in the configuration $FILE_CONFIG_INSTALLICIOUS." | sudo tee --append $FILE_LOG_INSTALLER
   exit 1
 else
   # Check for config directory as it must exist.
   if [[ ! -d $PATH_CONFIG ]]; then
-    echo "$(date '+%Y-%m-%d %T.%5N') - ERR! - [$MODULE] Unable to find the config directory $PATH_CONFIG specifed in the configuration file $FILE_CONFIG_INSTALLICIOUS." | sudo tee --append $FILE_LOG_INSTALLER
+    echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to find the config directory $PATH_CONFIG specifed in the configuration file $FILE_CONFIG_INSTALLICIOUS." | sudo tee --append $FILE_LOG_INSTALLER
     exit 1
   fi
 fi
 
 # Make sure the status directory variable can be found.
 if [[ -z $PATH_STATUS ]]; then
-  echo "$(date '+%Y-%m-%d %T.%5N') - ERR! - [$MODULE] Unable to find a value for the status directory in the configuration $FILE_CONFIG_INSTALLICIOUS." | sudo tee --append $FILE_LOG_INSTALLER
+  echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to find a value for the status directory in the configuration $FILE_CONFIG_INSTALLICIOUS." | sudo tee --append $FILE_LOG_INSTALLER
   exit 1
 else
   # Check for status directory and create if it does not exist.
@@ -148,7 +148,7 @@ else
     mkdir -p "$PATH_STATUS";
     RET_VAL=$?
     if [[ $RET_VAL -ne 0 ]]; then
-      echo "$(date '+%Y-%m-%d %T.%5N') - ERR! - [$MODULE] Unable to create the status directory $PATH_STATUS specifed in the configuration file $FILE_CONFIG_INSTALLICIOUS. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
+      echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to create the status directory $PATH_STATUS specifed in the configuration file $FILE_CONFIG_INSTALLICIOUS. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
       exit 1
     fi
   else
@@ -173,7 +173,7 @@ CURRENTUSER="$(whoami)"
 WHIPTAIL_RESULT=$(sudo bash "$PATH_DEPENDENCIES/whiptail.sh")
 RET_VAL=$?
 if [[ $RET_VAL -ne 0 ]]; then
-  echo "$(date '+%Y-%m-%d %T.%5N') - ERR! - [$MODULE] Unable to check for or install package Whiptail. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
+  echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to check for or install package Whiptail. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
   exit 1
 fi
 
@@ -216,7 +216,7 @@ if [[ -z $CODENAME ]]; then
   elif [[ $NUM_VERSION -eq 7 ]]; then
     CODENAME="Wheezy"
   else
-    echo "$(date '+%Y-%m-%d %T.%5N') - ERR! - [$MODULE] Unable to determine the OS Code Name for version $VERSION ($NUM_VERSION)." | sudo tee --append $FILE_LOG_INSTALLER
+    echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to determine the OS Code Name for version $VERSION ($NUM_VERSION)." | sudo tee --append $FILE_LOG_INSTALLER
     exit 1
   fi
 fi
@@ -225,7 +225,15 @@ fi
 BITS=$(getconf LONG_BIT)
 
 ## Reads the Pi Revision without the bits for OTP and overclocking. Only the bottom 24 bits matter.
-REVISION=$(cat /proc/cpuinfo | grep 'Revision' | awk ' {print $3}' | sed -E 's/.*(.{6})/\1/' | sed 's/^0*//')
+PRE_REVISION=$(cat /proc/cpuinfo | grep 'Revision' | awk ' {print $3}' | sed -E 's/.*(.{6})/\1/' | sed 's/^0*//')
+
+## Pad a 0 to the front of the revision if it is less than 4 characters long.
+if [[ ! -z $PRE_REVISION ]]; then
+  REVISION=$(printf "%04x" "0x$PRE_REVISION")
+else
+  echo "$(date '+%Y-%m-%d %T.%5N') - WARN - [$MODULE] Unable to detect revision of hardware. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
+  exit 1
+fi
 
 ## Sets the total memory based on the revision
 case $REVISION in
@@ -309,7 +317,7 @@ echo "II_OS_LEVEL=\"${OSLEVEL}\"" >> $FILE_STATUS_OS
 echo "II_OS_BITS=\"${BITS}\"" >> $FILE_STATUS_OS
 echo "II_REVISION=\"${REVISION}\"" >> $FILE_STATUS_OS
 echo "II_MEMORY=\"${MEMORY}\"" >> $FILE_STATUS_OS
-echo "II_FULL_NAME=\"${NAME} ${DEBIANVERSION}${OSLEVELNAME}(${CODENAME})\"" >> $FILE_STATUS_OS
+echo "II_FULL_NAME=\"${NAME} ${DEBIANVERSION}${OSLEVELNAME} (${CODENAME})\"" >> $FILE_STATUS_OS
 echo "II_INSTALLICIOUS_PATH=\"${0}\"" >> $FILE_STATUS_OS
 
 ## Load Required Variables

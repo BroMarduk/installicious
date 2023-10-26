@@ -60,7 +60,7 @@ mins=$((${upSeconds}/60%60))
 hours=$((${upSeconds}/3600%24))
 days=$((${upSeconds}/86400))
 
-uptime=`printf "%d days, %02d hours %02d minutes %02d seconds" "$days" "$hours" "$mins" "$secs"`
+uptime=`printf "%d days, %02d hours %02d minutes %02d seconds" $days $hours $mins $secs`
 
 # Get Load Averages
 read one five fifteen rest < /proc/loadavg
@@ -68,14 +68,14 @@ read one five fifteen rest < /proc/loadavg
 # Get Internal IP Information
 ipInternal=$(hostname -I)
 
-if [[ -z "$ipInternal" ]]; then
+if [[ -z $ipInternal ]]; then
   ipInternal="None"
 fi
 
 # Get External IP Information
 if [[ -f /etc/motd.d/%%MOTD_NAME%%/results-ip ]]; then
   read ipExternal < /etc/motd.d/%%MOTD_NAME%%/results-ip
-  if [[ -z "$ipExternal" ]]; then
+  if [[ -z $ipExternal ]]; then
     ipExternal = "None"
   fi
 else
@@ -93,10 +93,10 @@ if [[ -f /etc/motd.d/%%MOTD_NAME%%/results-weather ]]; then
       if [[ -z "$weatherDate" ]]; then
         weatherDisplay="$weather ($weatherDate)"
       else
-        weatherDisplay="$weather"
+        weatherDisplay=$weather
       fi
     else
-      weatherDisplay="$weather"
+      weatherDisplay=$weather
     fi
   fi
 else
@@ -126,7 +126,7 @@ clear
 
 echo "$(tput setaf 2)
    .~~.   .~~.       `date +"%A, %-e %B %Y, %r"`
-  '. \ ' ' / .'      Raspbian ${version} - ${raspbian} (`uname -rm`)$(tput setaf 1)
+  '. \ ' ' / .'      Raspbian $version - $raspbian (`uname -rm`)$(tput setaf 1)
    .~ .~~~..~.
   : .~.'~'.~. :      _/_/_/                        _/      _/              _/
  ~ (   ) (   ) ~    _/    _/    _/_/_/  _/_/_/    _/_/    _/    _/_/    _/_/_/_/
@@ -137,11 +137,11 @@ echo "$(tput setaf 2)
        '~'       ${machine} [`hostname`] 
 
 $(tput setaf 1)  Last Login    :$(tput setaf 2) $login
-$(tput setaf 1)  SSH Logins    :$(tput setaf 2) Current: ${logins_count} | Failed: ${ssh_failures} | All '${user}': ${ssh_week}
-$(tput setaf 1)  Uptime        :$(tput setaf 2) ${uptime}
-$(tput setaf 1)  Disk Space    :$(tput setaf 2) "$(df -h ~ | awk 'NR==2 { printf "Total: %sB, Used: %sB, Free: %sB",$2,$3,$4; }')"
-$(tput setaf 1)  Memory        :$(tput setaf 2) "$(free -m | awk 'NR==2 { printf "Used: %sMB, Free: %sMB",$3,$4; }')" (`ps ax | wc -l | tr -d " "` Processes)
-$(tput setaf 1)  Load Averages :$(tput setaf 2) ${one} @ 1 Minute | ${five} @ 5 Minutes | ${fifteen} @ 15 Minutes
+$(tput setaf 1)  SSH Logins    :$(tput setaf 2) Current: $logins_count | Failed: ${ssh_failures} | All '$user': $ssh_week
+$(tput setaf 1)  Uptime        :$(tput setaf 2) $uptime
+$(tput setaf 1)  Disk Space    :$(tput setaf 2) `df -h ~ | awk 'NR==2 { printf "Total: %sB, Used: %sB, Free: %sB",$2,$3,$4; }'`
+$(tput setaf 1)  Memory        :$(tput setaf 2) `free -m | awk 'NR==2 { printf "Used: %sMB, Free: %sMB",$3,$4; }'` (`ps ax | wc -l | tr -d " "` Processes)
+$(tput setaf 1)  Load Averages :$(tput setaf 2) $one @ 1 Minute | $five @ 5 Minutes | $fifteen @ 15 Minutes
 $(tput setaf 1)  Temperature   :$(tput setaf 2) $temperatureOutput
 $(tput setaf 1)  Internal IP   :$(tput setaf 2) $ipInternal
 $(tput setaf 1)  External IP   :$(tput setaf 2) $ipExternal

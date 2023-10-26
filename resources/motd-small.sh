@@ -49,24 +49,24 @@ fi
 
 # Get Uptime Information
 upSeconds="$(/usr/bin/cut -d. -f1 /proc/uptime)"
-secs=$((${upSeconds}%60))c
-mins=$((${upSeconds}/60%60))
-hours=$((${upSeconds}/3600%24))
-days=$((${upSeconds}/86400))
+secs=$(($upSeconds%60))c
+mins=$(($upSeconds/60%60))
+hours=$(($upSeconds/3600%24))
+days=$(($upSeconds/86400))
 
-uptime=`printf "%d days, %02d hours %02d minutes %02d seconds" "$days" "$hours" "$mins" "$secs"`
+uptime=`printf "%d days, %02d hours %02d minutes %02d seconds" $days $hours $mins $secs`
 
 # Get Internal IP Information
 ipInternal=$(hostname -I)
 
-if [[ -z "$ipInternal" ]]; then
+if [[ -z $ipInternal ]]; then
   ipInternal="None"
 fi
 
 # Get External IP Information
 if [[ -f /etc/motd.d/%%MOTD_NAME%%/results-ip ]]; then
   read ipExternal < /etc/motd.d/%%MOTD_NAME%%/results-ip
-  if [[ -z "$ipExternal" ]]; then
+  if [[ -z $ipExternal ]]; then
     ipExternal = "None"
   fi
 else
@@ -76,18 +76,18 @@ fi
 # Get Weather Information
 if [[ -f /etc/motd.d/%%MOTD_NAME%%/results-weather ]]; then
   read weather < /etc/motd.d/%%MOTD_NAME%%/results-weather
-  if [[ -z "$weather" ]]; then
+  if [[ -z $weather ]]; then
     weatherDisplay="None"
   else
     if [[ -f /etc/motd.d/%%MOTD_NAME%%/results-weather-date ]]; then
       read weatherDate < /etc/motd.d/%%MOTD_NAME%%/results-weather-date
-      if [[ -z "$weatherDate" ]]; then
+      if [[ -z $weatherDate ]]; then
         weatherDisplay="$weather ($weatherDate)"
       else
-        weatherDisplay="$weather"
+        weatherDisplay=$weather
       fi
     else
-      weatherDisplay="$weather"
+      weatherDisplay=$weather
     fi
   fi
 else
@@ -123,13 +123,13 @@ echo "$(tput setaf 1)______            _   _      _
 |___/ \__,_|_| |_\_| \_/\___|\__|
 $(tput setaf 2)
 `date +"%A, %-e %B %Y, %r"`
-$(tput setaf 1)Raspbian ${version} - ${raspbian} (`uname -r`)
-${machine} [`hostname`]
+$(tput setaf 1)Raspbian $version - $raspbian (`uname -r`)
+$machine [`hostname`]
 
 Login  :$(tput setaf 2) $login
-$(tput setaf 1)Uptime :$(tput setaf 2) ${uptime}
-$(tput setaf 1)Disk   :$(tput setaf 2) "$(df -h ~ | awk 'NR==2 { printf "Total: %sB, Free: %sB",$2,$4; }')"
-$(tput setaf 1)Memory :$(tput setaf 2) "$(free -m | awk 'NR==2 { printf "Used: %sMB, Free: %sMB",$3,$4; }')" (`ps ax | wc -l | tr -d " "` Proc.)
+$(tput setaf 1)Uptime :$(tput setaf 2) $uptime
+$(tput setaf 1)Disk   :$(tput setaf 2) `df -h ~ | awk 'NR==2 { printf "Total: %sB, Used: %sB, Free: %sB",$2,$3,$4; }'`
+$(tput setaf 1)Memory :$(tput setaf 2) `free -m | awk 'NR==2 { printf "Used: %sMB, Free: %sMB",$3,$4; }'` (`ps ax | wc -l | tr -d " "` Processes)
 $(tput setaf 1)Temp   :$(tput setaf 2) $temperatureOutput
 $(tput setaf 1)IPs    :$(tput setaf 2) Int: $ipInternal Ext: $ipExternal
 $(tput setaf 1)WX     :$(tput setaf 2) $weatherDisplay

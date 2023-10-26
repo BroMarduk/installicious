@@ -38,7 +38,9 @@ if [[ -s $FILE_STATUS_OPTIONS ]]; then
         source $PATH_STATUS_OPTIONS_ITEM
         RET_VAL=$?
         if [[ $RET_VAL -eq 0 ]]; then
-          declare -n STATUS_OPTIONS_ITEM=${OPTIONS_ITEM^^}_STATUS
+          # declare -n STATUS_OPTIONS_ITEM=${OPTIONS_ITEM^^}_STATUS
+          STATUS_OPTIONS_ITEM_VARNAME="RCONF_GPU_MEM_SPLIT_LITE_${OPTIONS_ITEM^^}_STATUS"
+          STATUS_OPTIONS_ITEM=${!STATUS_OPTIONS_ITEM_VARNAME}
         fi
       else
         STATUS_OPTIONS_ITEM=""
@@ -49,7 +51,7 @@ if [[ -s $FILE_STATUS_OPTIONS ]]; then
           echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Processing the script $OPTIONS_INSTALLER to process option $OPTIONS_ITEM." | sudo tee --append $FILE_LOG_INSTALLER
           bash "$OPTIONS_INSTALLER"
         else
-          echo "$(date '+%Y-%m-%d %T.%5N') - ERR! - [$MODULE] Unable to find the script $OPTIONS_INSTALLER to process option $OPTIONS_ITEM." | sudo tee --append $FILE_LOG_INSTALLER
+          echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to find the script $OPTIONS_INSTALLER to process option $OPTIONS_ITEM." | sudo tee --append $FILE_LOG_INSTALLER
         fi
       else
         echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Skipping option $OPTIONS_ITEM due to completed status." | sudo tee --append $FILE_LOG_INSTALLER

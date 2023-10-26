@@ -6,6 +6,7 @@ PATH_HOME="/home"
 PATH_ROOT="/root"
 FILE_CONFIG_INSTALLICIOUS="config/installicious.config"
 FILE_CONFIG_USER="config/user.config"
+FILE_STATUS_OS_NAME="os.status"
 FILE_BASHRC=".bashrc"
 STATUS_BASH_ROOT="Not Run"
 STATUS_BASH_USER="Not Run"
@@ -26,6 +27,22 @@ if [[ $RET_VAL -ne 0 ]]; then
   exit 1
 fi
 
+# Look for user conf file.
+if [[ ! -f $FILE_CONFIG_USER ]]; then
+  echo "$(date '+%Y-%m-%d %T.%5N') - CRIT - [$MODULE] Unable to find the configuration file $FILE_CONFIG_USER." | sudo tee --append $FILE_LOG_INSTALLER
+  exit 1
+fi
+
+## Input user config and check if it was successful.
+source $FILE_CONFIG_USER
+RET_VAL=$?
+if [[ $RET_VAL -ne 0 ]]; then
+  echo "$(date '+%Y-%m-%d %T.%5N') - CRIT - [$MODULE] Unable to load variables from the configuration file $FILE_CONFIG_USER." | sudo tee --append $FILE_LOG_INSTALLER
+  exit 1
+fi
+
+FILE_STATUS_BASH="$PATH_STATUS/bash.status"
+
 # Set log file name and path for the script.
 if [[ -z $FILE_LOG_INSTALLICIOUS ]]; then
   FILE_LOG_INSTALLER="$PATH_LOGS/installicious.log"
@@ -33,19 +50,20 @@ else
   FILE_LOG_INSTALLER="$PATH_LOGS/$FILE_LOG_INSTALLICIOUS"
 fi
 
-FILE_STATUS_BASH="$PATH_STATUS/bash.status"
+# No Dependencies
 
-# Look for installicious conf file.
-if [[ ! -f $FILE_CONFIG_USER ]]; then
-  echo "$(date '+%Y-%m-%d %T.%5N') - CRIT - [$MODULE] Unable to find the configuration file $FILE_CONFIG_USER." | sudo tee --append $FILE_LOG_INSTALLER
-  exit 1
-fi
-
-## Input installicious config and check if it was successful.
-source $FILE_CONFIG_USER
-RET_VAL=$?
-if [[ $RET_VAL -ne 0 ]]; then
-  echo "$(date '+%Y-%m-%d %T.%5N') - CRIT - [$MODULE] Unable to load variables from the configuration file $FILE_CONFIG_USER." | sudo tee --append $FILE_LOG_INSTALLER
+# Load OS Statuses
+if [[ -e $FILE_STATUS_OS ]]; then
+  source $FILE_STATUS_OS
+  RET_VAL=$?
+  if [[ $RET_VAL -ne 0 ]]; then
+    echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to load required OS Status from file $FILE_STATUS_OS. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
+    exit 1
+  else
+    echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Successfully loaded the required OS Status from file $FILE_STATUS_OS." | sudo tee --append $FILE_LOG_INSTALLER
+  fi
+else
+  echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to load required OS Status due to missing file $FILE_STATUS_OS." | sudo tee --append $FILE_LOG_INSTALLER
   exit 1
 fi
 
@@ -105,10 +123,18 @@ echo "BASH_ROOT=\"${STATUS_BASH_ROOT}\"" >> $FILE_STATUS_BASH
 echo "BASH_USER=\"${STATUS_BASH_USER}\"" >> $FILE_STATUS_BASH
 echo "BASH_STATUS=\"${STATUS}\"" >> $FILE_STATUS_BASH
 
-if [[ $EXIT_CODE -eq 0 ]]; then
-  echo -e "[  \e[92mOK\e[0m  ] Installicious successfully completed the bash customizations for the Raspberry Pi."
+if [[ $II_CODENAME = "Wheezy" ]]; then
+  if [[ $EXIT_CODE -eq 0 ]]; then
+    echo -e "[ \e[0;32mok\e[0m ] Installicious successfully customized the bash customizations for the Raspberry Pi."
+  else
+    echo -e "[\e[0;31mFAIL\e[0m] Installicious could not customize the bash customizations for the Raspberry Pi. Error Code: $EXIT_CODE."
+  fi
 else
-  echo -e "[ \e[101mERR!\e[0m ] Installicious could not complete the bash customizations for the Raspberry Pi. Error Code: $EXIT_CODE."
+  if [[ $EXIT_CODE -eq 0 ]]; then
+    echo -e "[  \e[1;32mOK\e[0m  ] Installicious successfully customized the bash customizations for the Raspberry Pi."
+  else
+    echo -e "[ \e[1;31mFAIL\e[0m ] Installicious could not customize the bash customizations for the Raspberry Pi. Error Code: $EXIT_CODE."
+  fi
 fi
 
 exit $EXIT_CODE

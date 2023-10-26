@@ -9,6 +9,7 @@ FILE_STATUS_OS_NAME="os.status"
 FILE_STATUS_PKUPD_NAME="pkupd.status"
 FILE_STATUS_PKUPD_TIME_NAME="pkupd.status.time"
 FILE_SOURCES_LIST="/etc/apt/sources.list"
+FILE_SOURCES_LIST_COLLABORA="/etc/apt/sources.list.d/collabora.list"
 STATUS_UPDATE="Not Run"
 STATUS_UPDATE_RUN=""
 STATUS_UPGRADE="Not Run"
@@ -68,13 +69,13 @@ if [[ -e $FILE_STATUS_OS ]]; then
   source $FILE_STATUS_OS
   RET_VAL=$?
   if [[ $RET_VAL -ne 0 ]]; then
-    echo "$(date '+%Y-%m-%d %T.%5N') - ERR! - [$MODULE] Unable to load required OS Status from file $FILE_STATUS_OS. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
+    echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to load required OS Status from file $FILE_STATUS_OS. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
     exit 1
   else
     echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Successfully loaded the required OS Status from file $FILE_STATUS_OS." | sudo tee --append $FILE_LOG_INSTALLER
   fi
 else
-  echo "$(date '+%Y-%m-%d %T.%5N') - ERR! - [$MODULE] Unable to load required OS Status due to missing file $FILE_STATUS_OS." | sudo tee --append $FILE_LOG_INSTALLER
+  echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to load required OS Status due to missing file $FILE_STATUS_OS." | sudo tee --append $FILE_LOG_INSTALLER
   exit 1
 fi
 
@@ -98,7 +99,7 @@ if [[ $II_CODENAME = "Wheezy" || $II_CODENAME = "Jessie" ]]; then
   else
     sudo sed -i "s/mirrordirector/legacy/g" $FILE_SOURCES_LIST
     if [[ $RET_VAL -ne 0 ]]; then
-      echo "$(date '+%Y-%m-%d %T.%5N') - ERR! - [$MODULE] Unable to update package lists to legacy in older raspbian release $II_CODENAME." | sudo tee --append $FILE_LOG_INSTALLER
+      echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to update package lists to legacy in older raspbian release $II_CODENAME." | sudo tee --append $FILE_LOG_INSTALLER
       STATUS_RC_UPGRADE="Error"
       STATUS="Error"
       EXIT_CODE=$EXIT_CODE+2
@@ -106,10 +107,24 @@ if [[ $II_CODENAME = "Wheezy" || $II_CODENAME = "Jessie" ]]; then
       if [[ $(grep "http://legacy.raspbian.org/raspbian/" $FILE_SOURCES_LIST) ]]; then 
         echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Successfully updated package lists to legacy in older raspbian release $II_CODENAME" | sudo tee --append $FILE_LOG_INSTALLER
       else
-        echo "$(date '+%Y-%m-%d %T.%5N') - ERR! - [$MODULE] Unable to update package lists to legacy in older raspbian release $II_CODENAME." | sudo tee --append $FILE_LOG_INSTALLER
+        echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to update package lists to legacy in older raspbian release $II_CODENAME." | sudo tee --append $FILE_LOG_INSTALLER
         STATUS_RC_UPGRADE="Error"
         STATUS="Error"
         EXIT_CODE=$EXIT_CODE+2
+      fi
+    fi
+  fi
+  if [[ $II_CODENAME = "Wheezy" ]]; then
+    if [[ -f $FILE_SOURCES_LIST_COLLABORA ]]; then
+      echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Found obsolete package source [$FILE_SOURCES_LIST_COLLABORA] in older raspbian release $II_CODENAME" | sudo tee --append $FILE_LOG_INSTALLER
+      sudo rm $FILE_SOURCES_LIST_COLLABORA
+      if [[ $RET_VAL -ne 0 ]]; then
+        echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to delete obsolete package source [$FILE_SOURCES_LIST_COLLABORA] in older raspbian release $II_CODENAME" | sudo tee --append $FILE_LOG_INSTALLER
+        STATUS_RC_UPGRADE="Error"
+        STATUS="Error"
+        EXIT_CODE=$EXIT_CODE+2
+      else
+        echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Successfully deleted obsolete package source [$FILE_SOURCES_LIST_COLLABORA] in older raspbian release $II_CODENAME" | sudo tee --append $FILE_LOG_INSTALLER
       fi
     fi
   fi
@@ -121,7 +136,7 @@ if [[ $II_CODENAME = "Stretch" ]]; then
   else
     sudo sed -i "s/raspbian.raspberrypi/legacy.raspbian/g" $FILE_SOURCES_LIST
     if [[ $RET_VAL -ne 0 ]]; then
-      echo "$(date '+%Y-%m-%d %T.%5N') - ERR! - [$MODULE] Unable to update package lists to legacy in older raspbian release $II_CODENAME." | sudo tee --append $FILE_LOG_INSTALLER
+      echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to update package lists to legacy in older raspbian release $II_CODENAME." | sudo tee --append $FILE_LOG_INSTALLER
       STATUS_RC_UPGRADE="Error"
       STATUS="Error"
       EXIT_CODE=$EXIT_CODE+2
@@ -129,7 +144,7 @@ if [[ $II_CODENAME = "Stretch" ]]; then
       if [[ $(grep "http://legacy.raspbian.org/raspbian/" $FILE_SOURCES_LIST) ]]; then 
         echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Successfully updated package lists to legacy in older raspbian release $II_CODENAME" | sudo tee --append $FILE_LOG_INSTALLER
       else
-        echo "$(date '+%Y-%m-%d %T.%5N') - ERR! - [$MODULE] Unable to update package lists to legacy in older raspbian release $II_CODENAME." | sudo tee --append $FILE_LOG_INSTALLER
+        echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to update package lists to legacy in older raspbian release $II_CODENAME." | sudo tee --append $FILE_LOG_INSTALLER
       fi
     fi
   fi
@@ -155,26 +170,32 @@ if [[ $EXIT_CODE -eq 0 ]]; then
   fi
   RET_VAL=$?
   if [[ $RET_VAL -ne 0 ]]; then
-    echo "$(date '+%Y-%m-%d %T.%5N') - ERR! - [$MODULE] Unable to successfully complete the apt-get Update. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
+    echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to successfully complete the apt-get Update. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
     STATUS_UPDATE="Error"
     STATUS="Error"
     EXIT_CODE=$EXIT_CODE+4
   else
     if [[ $SKIPPED_UPDATE -ne 1 ]]; then
       echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Successfully completed the apt-get Update." | sudo tee --append $FILE_LOG_INSTALLER
+      STATUS_UPDATE_RUN=$(date '+%Y-%m-%d %T')
+    else
+      STATUS_UPDATE_RUN=$PKUPD_UPDATE_RUN
     fi
     STATUS_UPDATE="Completed"
-    STATUS_UPDATE_RUN=$(date '+%Y-%m-%d %T')
     if [[ -z $PKUPD_UPGRADE_RUN || $(($UPDATE_NOW_UNIX - $(date --date="$PKUPD_UPGRADE_RUN" +%s))) -gt $ACCEPTABLE_TIME_DELTA_SEC ]]; then
       SKIPPED_UPGRADE=0
-      sudo DEBIAN_FRONTEND="noninteractive" apt-get dist-upgrade --yes --show-progress
+      if [[ $II_CODENAME = "Wheezy" ]]; then
+        sudo DEBIAN_FRONTEND="noninteractive" apt-get dist-upgrade --yes
+      else
+        sudo DEBIAN_FRONTEND="noninteractive" apt-get dist-upgrade --yes --show-progress
+      fi
     else
       SKIPPED_UPGRADE=1
       echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Apt-get Distribution Upgrade is current as it was run less than $ACCEPTABLE_TIME_DELTA_SEC seconds ago. Last run $PKUPD_UPGRADE_RUN." | sudo tee --append $FILE_LOG_INSTALLER
     fi
     RET_VAL=$?
     if [[ $RET_VAL -ne 0 ]]; then
-      echo "$(date '+%Y-%m-%d %T.%5N') - ERR! - [$MODULE] Unable to successfully complete the apt-get Distribution Upgrade. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
+      echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to successfully complete the apt-get Distribution Upgrade. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
       STATUS_UPGRADE="Error"
       STATUS="Error"
       EXIT_CODE=$EXIT_CODE+8
@@ -186,14 +207,18 @@ if [[ $EXIT_CODE -eq 0 ]]; then
       STATUS_UPGRADE_RUN=$(date '+%Y-%m-%d %T')
       if [[ -z $PKUPD_AUTOREMOVE_RUN || $(($UPDATE_NOW_UNIX - $(date --date="$PKUPD_AUTOREMOVE_RUN" +%s))) -gt $ACCEPTABLE_TIME_DELTA_SEC ]]; then
         SKIPPED_AUTORUN=0
-        sudo DEBIAN_FRONTEND="noninteractive" apt-get autoremove --yes --show-progress
+        if [[ $II_CODENAME = "Wheezy" ]]; then
+          sudo DEBIAN_FRONTEND="noninteractive" apt-get autoremove --yes
+        else
+          sudo DEBIAN_FRONTEND="noninteractive" apt-get autoremove --yes --show-progress
+        fi
       else
         SKIPPED_AUTORUN=1
         echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Apt-get Auto-Remove is current as it was run less than $ACCEPTABLE_TIME_DELTA_SEC seconds ago. Last run $PKUPD_AUTOREMOVE_RUN." | sudo tee --append $FILE_LOG_INSTALLER
       fi
       RET_VAL=$?
       if [[ $RET_VAL -ne 0 ]]; then
-        echo "$(date '+%Y-%m-%d %T.%5N') - ERR! - [$MODULE] Unable to successfully complete the apt-get Auto-Remove. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
+        echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to successfully complete the apt-get Auto-Remove. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
         STATUS_AUTOREMOVE="Error"
         STATUS="Error"
         EXIT_CODE=$EXIT_CODE+16
@@ -228,10 +253,18 @@ echo "PKUPD_UPDATE_RUN=\"${STATUS_UPDATE_RUN}\"" >> $FILE_STATUS_TIME_PKUPD
 echo "PKUPD_UPGRADE_RUN=\"${STATUS_UPGRADE_RUN}\"" >> $FILE_STATUS_TIME_PKUPD
 echo "PKUPD_AUTOREMOVE_RUN=\"${STATUS_AUTOREMOVE_RUN}\"" >> $FILE_STATUS_TIME_PKUPD
 
-if [[ $EXIT_CODE -eq 0 ]]; then
-  echo -e "[  \e[92mOK\e[0m  ] Installicious successfully completed the package updates for the Raspberry Pi."
+if [[ $II_CODENAME = "Wheezy" ]]; then
+  if [[ $EXIT_CODE -eq 0 ]]; then
+    echo -e "[ \e[0;32mok\e[0m ] Installicious successfully customized the package updates for the Raspberry Pi."
+  else
+    echo -e "[\e[0;31mFAIL\e[0m] Installicious could not customize the package updates for the Raspberry Pi. Error Code: $EXIT_CODE."
+  fi
 else
-  echo -e "[ \e[101mERR!\e[0m ] Installicious could not update the packages for the Raspberry Pi. Error Code: $EXIT_CODE."
+  if [[ $EXIT_CODE -eq 0 ]]; then
+    echo -e "[  \e[1;32mOK\e[0m  ] Installicious successfully customized the package updates for the Raspberry Pi."
+  else
+    echo -e "[ \e[1;31mFAIL\e[0m ] Installicious could not customize the package updates for the Raspberry Pi. Error Code: $EXIT_CODE."
+  fi
 fi
 
 exit $EXIT_CODE
