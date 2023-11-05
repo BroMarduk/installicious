@@ -12,7 +12,9 @@ numversion=${version%%.*}
 
 if [[ $numversion -ge 9 ]]; then
   read loginFrom loginIP loginDate loginStatus <<< $(last $user --time-format iso -2 | awk 'NR==2 { print $1,$3,$4,$5 }')
-  if [[ $numversion -gt 12 ]]; then
+  if [[ $numversion -gt 13 ]]; then
+    raspbian="Forky"
+  elif [[ $numversion -eq 13 ]]; then
     raspbian="Trixie"
   elif [[ $numversion -eq 12 ]]; then
     raspbian="Bookworm"

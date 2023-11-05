@@ -146,19 +146,19 @@ sudo cp -f "$PATH_RESOURCES/$FILE_MOTD_CURRENT_IP" $PATH_CRON_DAILY/$FILE_CRON_C
 sudo chmod 755 "$PATH_CRON_DAILY/$FILE_CRON_CURRENT_IP"
 sudo sed -i "s/$TOKEN_MOTD_NAME/$MOTD_NAME/g" $PATH_CRON_DAILY/$FILE_CRON_CURRENT_IP
 sudo sed -i "s|$TOKEN_MOTD_IP_URL|$MOTD_IP_URL|g" $PATH_CRON_DAILY/$FILE_CRON_CURRENT_IP
-sudo $PATH_CRON_DAILY/$FILE_CRON_CURRENT_IP
+sudo bash $PATH_CRON_DAILY/$FILE_CRON_CURRENT_IP
 
 # Check for the existence of the current Weather MOTD file.
 sudo cp -f "$PATH_RESOURCES/$FILE_MOTD_CURRENT_WEATHER" $PATH_CRON_HOURLY/$FILE_CRON_CURRENT_WEATHER
 sudo chmod 755 "$PATH_CRON_HOURLY/$FILE_CRON_CURRENT_WEATHER"
 sudo sed -i "s/$TOKEN_MOTD_NAME/$MOTD_NAME/g" $PATH_CRON_HOURLY/$FILE_CRON_CURRENT_WEATHER
 sudo sed -i "s/$TOKEN_MOTD_WEATHER_LOC_CODE/$MOTD_WEATHER_LOC_CODE/g" $PATH_CRON_HOURLY/$FILE_CRON_CURRENT_WEATHER
-sudo $PATH_CRON_HOURLY/$FILE_CRON_CURRENT_WEATHER
+sudo bash $PATH_CRON_HOURLY/$FILE_CRON_CURRENT_WEATHER
 
 # Update the tokens in the Current IP MOTD file.
 # Update the tokens in the Current Weather MOTD file.
 
-# Prevent defauly MOTD from running. if Jessie or Wheezy
+# Prevent default MOTD from running. if Jessie or Wheezy
 if [[ $II_CODENAME = "Jessie" || $II_CODENAME = "Wheezy" ]]; then
   if ! grep -q "# uname -snrvm > /var/run/motd.dynamic" /etc/init.d/motd; then
     sudo sed -i "s/\(uname -snrvm > \/var\/run\/motd.dynamic\)/# \1/" /etc/init.d/motd

@@ -7,11 +7,14 @@ INTERACTIVE=True
 ASK_TO_REBOOT=0
 BLACKLIST=/etc/modprobe.d/raspi-blacklist.conf
 CONFIG=/boot/config.txt
-SYS_USER="pi"
 
 is_pi () {
-	grep -q "^model name\s*:\s*ARMv" /proc/cpuinfo
-	return $?
+  ARCH=$(dpkg --print-architecture)
+  if [ "$ARCH" = "armhf" ] ; then
+    return 0
+  else
+    return 1
+  fi
 }
 
 if is_pi ; then
@@ -63,15 +66,9 @@ is_ssh() {
   fi
 }
 
-get_init_sys() {
-  if command -v systemctl > /dev/null && systemctl | grep -q '\-\.mount'; then
-    SYSTEMD=1
-  elif [ -f /etc/init.d/cron ] && [ ! -h /etc/init.d/cron ]; then
-    SYSTEMD=0
-  else
-    echo "Unrecognised init system"
-    return 1
-  fi
+deb_ver () {
+  ver=`cat /etc/debian_version | cut -d . -f 1`
+  echo $ver
 }
 
 calc_wt_size() {
@@ -100,16 +97,7 @@ you have heavily customised your installation.\
 }
 
 get_can_expand() {
-  get_init_sys
-  if [ $SYSTEMD -eq 1 ]; then
-    ROOT_PART=$(mount | sed -n 's|^/dev/\(.*\) on / .*|\1|p')
-  else
-    if ! [ -h /dev/root ]; then
-      echo 1
-      exit
-    fi
-    ROOT_PART=$(readlink /dev/root)
-  fi
+  ROOT_PART=$(mount | sed -n 's|^/dev/\(.*\) on / .*|\1|p')
 
   PART_NUM=${ROOT_PART#mmcblk0p}
   if [ "$PART_NUM" = "$ROOT_PART" ]; then
@@ -131,16 +119,7 @@ get_can_expand() {
 }
 
 do_expand_rootfs() {
-  get_init_sys
-  if [ $SYSTEMD -eq 1 ]; then
-    ROOT_PART=$(mount | sed -n 's|^/dev/\(.*\) on / .*|\1|p')
-  else
-    if ! [ -h /dev/root ]; then
-      whiptail --msgbox "/dev/root does not exist or is not a symlink. Don't know how to expand" 20 60 2
-      return 0
-    fi
-    ROOT_PART=$(readlink /dev/root)
-  fi
+  ROOT_PART=$(mount | sed -n 's|^/dev/\(.*\) on / .*|\1|p')
 
   PART_NUM=${ROOT_PART#mmcblk0p}
   if [ "$PART_NUM" = "$ROOT_PART" ]; then
@@ -313,26 +292,140 @@ do_overscan() {
   fi
 }
 
+get_pixdub() {
+  if is_pi ; then
+    FBW=$(get_config_var framebuffer_width $CONFIG)
+    if [ $FBW -eq 0 ]; then
+      echo 1
+    else
+      echo 0
+    fi
+  else
+    if [ -e /etc/profile.d/pd.sh ] ; then
+      echo 0
+    else
+      echo 1
+    fi
+  fi
+}
+
+is_number() {
+  case $1 in
+    ''|*[!0-9]*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+do_pixdub() {
+  DEFAULT=--defaultno
+  CURRENT=0
+  if [ $(get_pixdub) -eq 0 ]; then
+      DEFAULT=
+      CURRENT=1
+  fi
+  if [ "$INTERACTIVE" = True ]; then
+    whiptail --yesno "Would you like to enable pixel doubling?" $DEFAULT 20 60 2
+    RET=$?
+  else
+    RET=$1
+  fi
+  if is_pi ; then
+    if [ $RET -eq 0 ] ; then
+	  XVAL=$(xrandr 2>&1 | grep current | cut -f2 -d, | cut -f3 -d' ')
+	  YVAL=$(xrandr 2>&1 | grep current | cut -f2 -d, | cut -f5 -d' ')
+	  if is_number $XVAL || is_number $YVAL ; then
+        if [ "$INTERACTIVE" = True ]; then
+          whiptail --msgbox "Could not read current screen dimensions - unable to enable pixel doubling" 20 60 1
+        fi
+	    return 1
+	  fi
+	  NEWX=`expr $XVAL / 2`
+	  NEWY=`expr $YVAL / 2`
+      set_config_var framebuffer_width $NEWX $CONFIG
+      set_config_var framebuffer_height $NEWY $CONFIG
+      set_config_var scaling_kernel 8 $CONFIG
+      STATUS=enabled
+    elif [ $RET -eq 1 ]; then
+      clear_config_var framebuffer_width $CONFIG
+      clear_config_var framebuffer_height $CONFIG
+      clear_config_var scaling_kernel $CONFIG
+      STATUS=disabled
+    else
+      return $RET
+    fi
+  else
+    if [ -e /etc/profile.d/pd.sh ] ; then
+      rm /etc/profile.d/pd.sh
+    fi
+    if [ $RET -eq 0 ] ; then
+      DEV=$(xrandr | grep -w connected | cut -f1 -d' ')
+      for item in $DEV
+      do
+        echo xrandr --output $item --scale 0.5x0.5 >> /etc/profile.d/pd.sh
+      done
+      STATUS=enabled
+    elif [ $RET -eq 1 ]; then
+      STATUS=disabled
+    else
+      return $RET
+    fi
+  fi
+  if [ $RET -eq $CURRENT ]; then
+    ASK_TO_REBOOT=1
+  fi
+  if [ "$INTERACTIVE" = True ]; then
+    whiptail --msgbox "Pixel doubling is $STATUS" 20 60 1
+  fi
+}
+
 do_change_pass() {
-  whiptail --msgbox "You will now be asked to enter a new password for the $SYS_USER user" 20 60 1
-  passwd $SYS_USER &&
+  whiptail --msgbox "You will now be asked to enter a new password for the $SUDO_USER user" 20 60 1
+  passwd $SUDO_USER &&
   whiptail --msgbox "Password changed successfully" 20 60 1
 }
 
 do_configure_keyboard() {
-  dpkg-reconfigure keyboard-configuration &&
-  printf "Reloading keymap. This may take a short while\n" &&
-  invoke-rc.d keyboard-setup start || return $?
+  printf "Reloading keymap. This may take a short while\n"
+  if [ "$INTERACTIVE" = True ]; then
+    dpkg-reconfigure keyboard-configuration
+  else
+    local KEYMAP="$1"
+    sed -i /etc/default/keyboard -e "s/^XKBLAYOUT.*/XKBLAYOUT=\"$KEYMAP\"/"
+    dpkg-reconfigure -f noninteractive keyboard-configuration
+  fi
+  invoke-rc.d keyboard-setup start
+  setsid sh -c 'exec setupcon -k --force <> /dev/tty1 >&0 2>&1'
   udevadm trigger --subsystem-match=input --action=change
   return 0
 }
 
 do_change_locale() {
-  dpkg-reconfigure locales
+  if [ "$INTERACTIVE" = True ]; then
+    dpkg-reconfigure locales
+  else
+    local LOCALE="$1"
+    if ! LOCALE_LINE="$(grep "^$LOCALE " /usr/share/i18n/SUPPORTED)"; then
+      return 1
+    fi
+    local ENCODING="$(echo $LOCALE_LINE | cut -f2 -d " ")"
+    echo "$LOCALE $ENCODING" > /etc/locale.gen
+    sed -i "s/^\s*LANG=\S*/LANG=$LOCALE/" /etc/default/locale
+    dpkg-reconfigure -f noninteractive locales
+  fi
 }
 
 do_change_timezone() {
-  dpkg-reconfigure tzdata
+  if [ "$INTERACTIVE" = True ]; then
+    dpkg-reconfigure tzdata
+  else
+    local TIMEZONE="$1"
+    if [ ! -f "/usr/share/zoneinfo/$TIMEZONE" ]; then
+      return 1;
+    fi
+    rm /etc/localtime
+    echo "$TIMEZONE" > /etc/timezone
+    dpkg-reconfigure -f noninteractive tzdata
+  fi
 }
 
 get_wifi_country() {
@@ -340,31 +433,44 @@ get_wifi_country() {
 }
 
 do_wifi_country() {
+  IFACE="$(list_wlan_interfaces | head -n 1)"
+  if [ -z "$IFACE" ]; then
+    if [ "$INTERACTIVE" = True ]; then
+      whiptail --msgbox "No wireless interface found" 20 60
+    fi
+    return 1
+  fi
+
+  if ! wpa_cli -i "$IFACE" status > /dev/null 2>&1; then
+    if [ "$INTERACTIVE" = True ]; then
+      whiptail --msgbox "Could not communicate with wpa_supplicant" 20 60
+    fi
+    return 1
+  fi
+
   oIFS="$IFS"
   if [ "$INTERACTIVE" = True ]; then
     IFS="/"
     value=$(cat /usr/share/zoneinfo/iso3166.tab | tail -n +26 | tr '\t' '/' | tr '\n' '/')
     COUNTRY=$(whiptail --menu "Select the country in which the Pi is to be used" 20 60 10 ${value} 3>&1 1>&2 2>&3)
+    IFS=$oIFS
   else
     COUNTRY=$1
     true
   fi
   if [ $? -eq 0 ];then
-    if [ -e /etc/wpa_supplicant/wpa_supplicant.conf ]; then
-        if grep -q "^country=" /etc/wpa_supplicant/wpa_supplicant.conf ; then
-            sed -i --follow-symlinks "s/^country=.*/country=$COUNTRY/g" /etc/wpa_supplicant/wpa_supplicant.conf
-        else
-            sed -i --follow-symlinks "1i country=$COUNTRY" /etc/wpa_supplicant/wpa_supplicant.conf
-        fi
-    else
-        echo "country=$COUNTRY" > /etc/wpa_supplicant/wpa_supplicant.conf
+    wpa_cli -i "$IFACE" set country "$COUNTRY"
+    if ! iw reg set "$COUNTRY" 2> /dev/null; then
+        ASK_TO_REBOOT=1
+    fi
+    if [ -f /run/wifi-country-unset ] && hash rfkill 2> /dev/null; then
+        rfkill unblock wifi
     fi
     if [ "$INTERACTIVE" = True ]; then
         whiptail --msgbox "Wi-fi country set to $COUNTRY" 20 60 1
     fi
-    ASK_TO_REBOOT=1
+    wpa_cli -i "$IFACE" save_config > /dev/null 2>&1
   fi
-  IFS=$oIFS
 }
 
 get_hostname() {
@@ -399,37 +505,37 @@ do_memory_split() { # Memory Split
   if [ -e /boot/start_cd.elf ]; then
     # New-style memory split setting
     ## get current memory split from /boot/config.txt
-	arm=$(vcgencmd get_mem arm | cut -d '=' -f 2 | cut -d 'M' -f 1)
-	gpu=$(vcgencmd get_mem gpu | cut -d '=' -f 2 | cut -d 'M' -f 1)
-	tot=$(($arm+$gpu))
+    arm=$(vcgencmd get_mem arm | cut -d '=' -f 2 | cut -d 'M' -f 1)
+    gpu=$(vcgencmd get_mem gpu | cut -d '=' -f 2 | cut -d 'M' -f 1)
+    tot=$(($arm+$gpu))
     if [ $tot -gt 512 ]; then
-		CUR_GPU_MEM=$(get_config_var gpu_mem_1024 $CONFIG)
-	elif [ $tot -gt 256 ]; then
-		CUR_GPU_MEM=$(get_config_var gpu_mem_512 $CONFIG)
-	else
-		CUR_GPU_MEM=$(get_config_var gpu_mem_256 $CONFIG)
-	fi
+      CUR_GPU_MEM=$(get_config_var gpu_mem_1024 $CONFIG)
+    elif [ $tot -gt 256 ]; then
+      CUR_GPU_MEM=$(get_config_var gpu_mem_512 $CONFIG)
+    else
+      CUR_GPU_MEM=$(get_config_var gpu_mem_256 $CONFIG)
+    fi
     if [ -z "$CUR_GPU_MEM" ] || [ $CUR_GPU_MEM = "0" ]; then
-		CUR_GPU_MEM=$(get_config_var gpu_mem $CONFIG)
-	fi
+      CUR_GPU_MEM=$(get_config_var gpu_mem $CONFIG)
+    fi
     [ -z "$CUR_GPU_MEM" ] || [ $CUR_GPU_MEM = "0" ] && CUR_GPU_MEM=64
     ## ask users what gpu_mem they want
     if [ "$INTERACTIVE" = True ]; then
-      NEW_GPU_MEM=$(whiptail --inputbox "How much memory should the GPU have?  e.g. 16/32/64/128/256" \
+      NEW_GPU_MEM=$(whiptail --inputbox "How much memory (MB) should the GPU have?  e.g. 16/32/64/128/256" \
         20 70 -- "$CUR_GPU_MEM" 3>&1 1>&2 2>&3)
     else
       NEW_GPU_MEM=$1
       true
     fi
     if [ $? -eq 0 ]; then
-	  if [ $(get_config_var gpu_mem_1024 $CONFIG) != "0" ] || [ $(get_config_var gpu_mem_512 $CONFIG) != "0" ] || [ $(get_config_var gpu_mem_256 $CONFIG) != "0" ]; then
+      if [ $(get_config_var gpu_mem_1024 $CONFIG) != "0" ] || [ $(get_config_var gpu_mem_512 $CONFIG) != "0" ] || [ $(get_config_var gpu_mem_256 $CONFIG) != "0" ]; then
         if [ "$INTERACTIVE" = True ]; then
-		  whiptail --msgbox "Device-specific memory settings were found. These have been cleared." 20 60 2
-		fi
-		clear_config_var gpu_mem_1024 $CONFIG
-		clear_config_var gpu_mem_512 $CONFIG
-		clear_config_var gpu_mem_256 $CONFIG
-	  fi
+          whiptail --msgbox "Device-specific memory settings were found. These have been cleared." 20 60 2
+        fi
+        clear_config_var gpu_mem_1024 $CONFIG
+        clear_config_var gpu_mem_512 $CONFIG
+        clear_config_var gpu_mem_256 $CONFIG
+      fi
       set_config_var gpu_mem "$NEW_GPU_MEM" $CONFIG
       ASK_TO_REBOOT=1
     fi
@@ -467,7 +573,7 @@ set_memory_split() {
 
 do_overclock() {
   if ! is_pione && ! is_pitwo; then
-    whiptail --msgbox "This Pi cannot be overclocked." 20 60 2
+    whiptail --msgbox "Only Pi 1 or Pi 2 can be overclocked with this tool." 20 60 2
     return 1
   fi
   if [ "$INTERACTIVE" = True ]; then
@@ -476,7 +582,7 @@ Be aware that overclocking may reduce the lifetime of your
 Raspberry Pi. If overclocking at a certain level causes
 system instability, try a more modest overclock. Hold down
 shift during boot to temporarily disable overclock.
-See http://elinux.org/RPi_Overclocking for more information.\
+See https://www.raspberrypi.org/documentation/configuration/config-txt/overclocking.md for more information.\
 " 20 70 1
    if is_pione; then
     OVERCLOCK=$(whiptail --menu "Choose overclock preset" 20 60 10 \
@@ -747,19 +853,12 @@ do_serial() {
     whiptail --yesno "Would you like a login shell to be accessible over serial?" $DEFAULTS 20 60 2
     RET=$?
   else
-    get_init_sys
     RET=$1
   fi
   if [ $RET -eq $CURRENTS ]; then
     ASK_TO_REBOOT=1
   fi
   if [ $RET -eq 0 ]; then
-    if [ $SYSTEMD -eq 0 ]; then
-      sed -i /etc/inittab -e "s|^#\(.*:.*:respawn:.*ttyAMA0\)|\1|"
-      if ! grep -q "^T.*:.*:respawn:.*ttyAMA0" /etc/inittab; then
-        printf "T0:23:respawn:/sbin/getty -L ttyAMA0 115200 vt100\n" >> /etc/inittab
-      fi
-    fi
     if grep -q "console=ttyAMA0" $CMDLINE ; then
       if [ -e /proc/device-tree/aliases/serial0 ]; then
         sed -i $CMDLINE -e "s/console=ttyAMA0/console=serial0/"
@@ -774,10 +873,7 @@ do_serial() {
     set_config_var enable_uart 1 $CONFIG
     SSTATUS=enabled
     HSTATUS=enabled
-  elif [ $RET -eq 1 ]; then
-    if [ $SYSTEMD -eq 0 ]; then
-      sed -i /etc/inittab -e "s|^.*:.*:respawn:.*ttyAMA0|#&|"
-    fi
+  elif [ $RET -eq 1 ] || [ $RET -eq 2 ]; then
     sed -i $CMDLINE -e "s/console=ttyAMA0,[0-9]\+ //"
     sed -i $CMDLINE -e "s/console=serial0,[0-9]\+ //"
     SSTATUS=disabled
@@ -785,7 +881,7 @@ do_serial() {
       whiptail --yesno "Would you like the serial port hardware to be enabled?" $DEFAULTH 20 60 2
       RET=$?
     else
-      RET=1
+      RET=$((2-$RET))
     fi
     if [ $RET -eq $CURRENTH ]; then
      ASK_TO_REBOOT=1
@@ -810,14 +906,8 @@ do_serial() {
 disable_raspi_config_at_boot() {
   if [ -e /etc/profile.d/raspi-config.sh ]; then
     rm -f /etc/profile.d/raspi-config.sh
-    if [ $SYSTEMD -eq 1 ]; then
-      if [ -e /etc/systemd/system/getty@tty1.service.d/raspi-config-override.conf ]; then
-        rm /etc/systemd/system/getty@tty1.service.d/raspi-config-override.conf
-      fi
-    else
-      sed -i /etc/inittab \
-        -e "s/^#\(.*\)#\s*RPICFG_TO_ENABLE\s*/\1/" \
-        -e "/#\s*RPICFG_TO_DISABLE/d"
+    if [ -e /etc/systemd/system/getty@tty1.service.d/raspi-config-override.conf ]; then
+      rm /etc/systemd/system/getty@tty1.service.d/raspi-config-override.conf
     fi
     telinit q
   fi
@@ -832,27 +922,22 @@ get_boot_cli() {
 }
 
 get_autologin() {
-  get_init_sys
   if [ $(get_boot_cli) -eq 0 ]; then
-    # booting to CLI - check the autologin in getty or initd */
-    if [ $SYSTEMD -eq 1 ]; then
-      # systemd used - check getty */
-      if grep -q autologin /etc/systemd/system/getty.target.wants/getty@tty1.service ; then
-        echo 0
-      else
-        echo 1
-      fi
+    # booting to CLI
+    # stretch or buster - is there an autologin conf file?
+    if [ -e /etc/systemd/system/getty@tty1.service.d/autologin.conf ] ; then
+      echo 0
     else
-      # systemd not used - check initd */
-      if grep -q login /etc/inittab ; then
+      # stretch or earlier - check the getty service symlink for autologin
+      if [ $(deb_ver) -le 9 ] && grep -q autologin /etc/systemd/system/getty.target.wants/getty@tty1.service ; then
         echo 0
       else
         echo 1
       fi
     fi
   else
-    # booting to desktop - check the autologin for lightdm */
-    if grep -q "^autologin-user=$SYS_USER" /etc/lightdm/lightdm.conf ; then
+    # booting to desktop - check the autologin for lightdm
+    if grep -q "^autologin-user=" /etc/lightdm/lightdm.conf ; then
       echo 0
     else
       echo 1
@@ -864,66 +949,55 @@ do_boot_behaviour() {
   if [ "$INTERACTIVE" = True ]; then
     BOOTOPT=$(whiptail --title "Raspberry Pi Software Configuration Tool (raspi-config)" --menu "Boot Options" $WT_HEIGHT $WT_WIDTH $WT_MENU_HEIGHT \
       "B1 Console" "Text console, requiring user to login" \
-      "B2 Console Autologin" "Text console, automatically logged in as '$SYS_USER' user" \
+      "B2 Console Autologin" "Text console, automatically logged in as '$SUDO_USER' user" \
       "B3 Desktop" "Desktop GUI, requiring user to login" \
-      "B4 Desktop Autologin" "Desktop GUI, automatically logged in as '$SYS_USER' user" \
+      "B4 Desktop Autologin" "Desktop GUI, automatically logged in as '$SUDO_USER' user" \
       3>&1 1>&2 2>&3)
   else
-    get_init_sys
     BOOTOPT=$1
     true
   fi
   if [ $? -eq 0 ]; then
     case "$BOOTOPT" in
       B1*)
-        if [ $SYSTEMD -eq 1 ]; then
-          systemctl set-default multi-user.target
-          ln -fs /lib/systemd/system/getty@.service /etc/systemd/system/getty.target.wants/getty@tty1.service
-        else
-          [ -e /etc/init.d/lightdm ] && update-rc.d lightdm disable 2
-          sed /etc/inittab -i -e "s/1:2345:respawn:\/bin\/login -f $SYS_USER tty1 <\/dev\/tty1 >\/dev\/tty1 2>&1/1:2345:respawn:\/sbin\/getty --noclear 38400 tty1/"
-        fi
+        systemctl set-default multi-user.target
+        ln -fs /lib/systemd/system/getty@.service /etc/systemd/system/getty.target.wants/getty@tty1.service
+        rm /etc/systemd/system/getty@tty1.service.d/autologin.conf
         ;;
       B2*)
-        if [ $SYSTEMD -eq 1 ]; then
-          systemctl set-default multi-user.target
-          ln -fs /etc/systemd/system/autologin@.service /etc/systemd/system/getty.target.wants/getty@tty1.service
-        else
-          [ -e /etc/init.d/lightdm ] && update-rc.d lightdm disable 2
-          sed /etc/inittab -i -e "s/1:2345:respawn:\/sbin\/getty --noclear 38400 tty1/1:2345:respawn:\/bin\/login -f $SYS_USER tty1 <\/dev\/tty1 >\/dev\/tty1 2>&1/"
-        fi
+        systemctl set-default multi-user.target
+        ln -fs /lib/systemd/system/getty@.service /etc/systemd/system/getty.target.wants/getty@tty1.service
+        cat > /etc/systemd/system/getty@tty1.service.d/autologin.conf << EOF
+[Service]
+ExecStart=
+ExecStart=-/sbin/agetty --autologin $SUDO_USER --noclear %I \$TERM
+EOF
         ;;
       B3*)
         if [ -e /etc/init.d/lightdm ]; then
-          if [ $SYSTEMD -eq 1 ]; then
-            systemctl set-default graphical.target
-            ln -fs /lib/systemd/system/getty@.service /etc/systemd/system/getty.target.wants/getty@tty1.service
-          else
-            update-rc.d lightdm enable 2
-          fi
+          systemctl set-default graphical.target
+          ln -fs /lib/systemd/system/getty@.service /etc/systemd/system/getty.target.wants/getty@tty1.service
+          rm /etc/systemd/system/getty@tty1.service.d/autologin.conf
           sed /etc/lightdm/lightdm.conf -i -e "s/^autologin-user=.*/#autologin-user=/"
           disable_raspi_config_at_boot
         else
-          whiptail --msgbox "Do sudo apt-get install lightdm to allow configuration of boot to desktop" 20 60 2
+          whiptail --msgbox "Do 'sudo apt-get install lightdm' to allow configuration of boot to desktop" 20 60 2
           return 1
         fi
         ;;
       B4*)
         if [ -e /etc/init.d/lightdm ]; then
-          if id -u $SYS_USER > /dev/null 2>&1; then
-            if [ $SYSTEMD -eq 1 ]; then
-              systemctl set-default graphical.target
-              ln -fs /etc/systemd/system/autologin@.service /etc/systemd/system/getty.target.wants/getty@tty1.service
-            else
-              update-rc.d lightdm enable 2
-            fi
-            sed /etc/lightdm/lightdm.conf -i -e "s/^\(#\|\)autologin-user=.*/autologin-user=$SYS_USER/"
-            disable_raspi_config_at_boot
-          else
-            whiptail --msgbox "The $SYS_USER user has been removed, can't set up boot to desktop" 20 60 2
-          fi
+          systemctl set-default graphical.target
+          ln -fs /lib/systemd/system/getty@.service /etc/systemd/system/getty.target.wants/getty@tty1.service
+          cat > /etc/systemd/system/getty@tty1.service.d/autologin.conf << EOF
+[Service]
+ExecStart=
+ExecStart=-/sbin/agetty --autologin $SUDO_USER --noclear %I \$TERM
+EOF
+          sed /etc/lightdm/lightdm.conf -i -e "s/^\(#\|\)autologin-user=.*/autologin-user=$SUDO_USER/"
+          disable_raspi_config_at_boot
         else
-          whiptail --msgbox "Do sudo apt-get install lightdm to allow configuration of boot to desktop" 20 60 2
+          whiptail --msgbox "Do 'sudo apt-get install lightdm' to allow configuration of boot to desktop" 20 60 2
           return 1
         fi
         ;;
@@ -945,12 +1019,6 @@ get_boot_wait() {
 }
 
 do_boot_wait() {
-  get_init_sys
-  if [ $SYSTEMD -eq 0 ]; then
-    whiptail --msgbox "This option can only be selected when using systemd" 20 60 2
-    return 1
-  fi
-
   DEFAULT=--defaultno
   if [ $(get_boot_wait) -eq 0 ]; then
     DEFAULT=
@@ -966,7 +1034,7 @@ do_boot_wait() {
     cat > /etc/systemd/system/dhcpcd.service.d/wait.conf << EOF
 [Service]
 ExecStart=
-ExecStart=/sbin/dhcpcd -q -w
+ExecStart=/usr/lib/dhcpcd5/dhcpcd -q -w
 EOF
     STATUS=enabled
   elif [ $RET -eq 1 ]; then
@@ -1014,32 +1082,32 @@ do_boot_splash() {
     RET=$1
   fi
   if [ $RET -eq 0 ]; then
-	if is_pi ; then
-		if ! grep -q "splash" $CMDLINE ; then
-			sed -i $CMDLINE -e "s/$/ quiet splash plymouth.ignore-serial-consoles/"
-		fi
-	else
-		sed -i /etc/default/grub -e "s/GRUB_CMDLINE_LINUX_DEFAULT=\"\(.*\)\"/GRUB_CMDLINE_LINUX_DEFAULT=\"\1 quiet splash plymouth.ignore-serial-consoles\"/"
-		sed -i /etc/default/grub -e "s/  \+/ /g"
-		sed -i /etc/default/grub -e "s/GRUB_CMDLINE_LINUX_DEFAULT=\" /GRUB_CMDLINE_LINUX_DEFAULT=\"/"
-		update-grub
-	fi
+    if is_pi ; then
+      if ! grep -q "splash" $CMDLINE ; then
+        sed -i $CMDLINE -e "s/$/ quiet splash plymouth.ignore-serial-consoles/"
+      fi
+    else
+      sed -i /etc/default/grub -e "s/GRUB_CMDLINE_LINUX_DEFAULT=\"\(.*\)\"/GRUB_CMDLINE_LINUX_DEFAULT=\"\1 quiet splash plymouth.ignore-serial-consoles\"/"
+      sed -i /etc/default/grub -e "s/  \+/ /g"
+      sed -i /etc/default/grub -e "s/GRUB_CMDLINE_LINUX_DEFAULT=\" /GRUB_CMDLINE_LINUX_DEFAULT=\"/"
+      update-grub
+    fi
     STATUS=enabled
   elif [ $RET -eq 1 ]; then
-	if is_pi ; then
-		if grep -q "splash" $CMDLINE ; then
-			sed -i $CMDLINE -e "s/ quiet//"
-			sed -i $CMDLINE -e "s/ splash//"
-			sed -i $CMDLINE -e "s/ plymouth.ignore-serial-consoles//"
-		fi
-	else
-		sed -i /etc/default/grub -e "s/GRUB_CMDLINE_LINUX_DEFAULT=\"\(.*\)quiet\(.*\)\"/GRUB_CMDLINE_LINUX_DEFAULT=\"\1\2\"/"
-		sed -i /etc/default/grub -e "s/GRUB_CMDLINE_LINUX_DEFAULT=\"\(.*\)splash\(.*\)\"/GRUB_CMDLINE_LINUX_DEFAULT=\"\1\2\"/"
-		sed -i /etc/default/grub -e "s/GRUB_CMDLINE_LINUX_DEFAULT=\"\(.*\)plymouth.ignore-serial-consoles\(.*\)\"/GRUB_CMDLINE_LINUX_DEFAULT=\"\1\2\"/"
-		sed -i /etc/default/grub -e "s/  \+/ /g"
-		sed -i /etc/default/grub -e "s/GRUB_CMDLINE_LINUX_DEFAULT=\" /GRUB_CMDLINE_LINUX_DEFAULT=\"/"
-		update-grub
-	fi
+    if is_pi ; then
+      if grep -q "splash" $CMDLINE ; then
+        sed -i $CMDLINE -e "s/ quiet//"
+        sed -i $CMDLINE -e "s/ splash//"
+        sed -i $CMDLINE -e "s/ plymouth.ignore-serial-consoles//"
+      fi
+    else
+      sed -i /etc/default/grub -e "s/GRUB_CMDLINE_LINUX_DEFAULT=\"\(.*\)quiet\(.*\)\"/GRUB_CMDLINE_LINUX_DEFAULT=\"\1\2\"/"
+      sed -i /etc/default/grub -e "s/GRUB_CMDLINE_LINUX_DEFAULT=\"\(.*\)splash\(.*\)\"/GRUB_CMDLINE_LINUX_DEFAULT=\"\1\2\"/"
+      sed -i /etc/default/grub -e "s/GRUB_CMDLINE_LINUX_DEFAULT=\"\(.*\)plymouth.ignore-serial-consoles\(.*\)\"/GRUB_CMDLINE_LINUX_DEFAULT=\"\1\2\"/"
+      sed -i /etc/default/grub -e "s/  \+/ /g"
+      sed -i /etc/default/grub -e "s/GRUB_CMDLINE_LINUX_DEFAULT=\" /GRUB_CMDLINE_LINUX_DEFAULT=\"/"
+      update-grub
+    fi
     STATUS=disabled
   else
     return $RET
@@ -1058,12 +1126,6 @@ get_rgpio() {
 }
 
 do_rgpio() {
-  get_init_sys
-  if [ $SYSTEMD -eq 0 ]; then
-    whiptail --msgbox "This option can only be selected when using systemd" 20 60 2
-    return 1
-  fi
-
   DEFAULT=--defaultno
   if [ $(get_rgpio) -eq 0 ]; then
     DEFAULT=
@@ -1089,7 +1151,9 @@ EOF
     return $RET
   fi
   systemctl daemon-reload
-  systemctl restart pigpiod
+  if systemctl -q is-enabled pigpiod ; then
+    systemctl restart pigpiod
+  fi
   if [ "$INTERACTIVE" = True ]; then
     whiptail --msgbox "Remote access to the GPIO server is $STATUS" 20 60 1
   fi
@@ -1188,10 +1252,6 @@ do_onewire() {
 }
 
 do_gldriver() {
-  if is_pione || is_pizero; then
-    whiptail --msgbox "GL driver cannot be used on Pi 1 or Pi 0" 20 60 2
-    return 1
-  fi
   if [ ! -e /boot/overlays/vc4-kms-v3d.dtbo ]; then
     whiptail --msgbox "Driver and kernel not present on your system. Please update" 20 60 2
     return 1
@@ -1211,22 +1271,22 @@ do_gldriver() {
         if ! grep -q -E "^dtoverlay=vc4-kms-v3d" $CONFIG; then
           ASK_TO_REBOOT=1
         fi
-		sed $CONFIG -i -e "s/^dtoverlay=vc4-fkms-v3d/#dtoverlay=vc4-fkms-v3d/"
-		sed $CONFIG -i -e "s/^#dtoverlay=vc4-kms-v3d/dtoverlay=vc4-kms-v3d/"
-		if ! grep -q -E "^dtoverlay=vc4-kms-v3d" $CONFIG; then
-			printf "dtoverlay=vc4-kms-v3d\n" >> $CONFIG
-		fi
+        sed $CONFIG -i -e "s/^dtoverlay=vc4-fkms-v3d/#dtoverlay=vc4-fkms-v3d/"
+        sed $CONFIG -i -e "s/^#dtoverlay=vc4-kms-v3d/dtoverlay=vc4-kms-v3d/"
+        if ! grep -q -E "^dtoverlay=vc4-kms-v3d" $CONFIG; then
+          printf "dtoverlay=vc4-kms-v3d\n" >> $CONFIG
+        fi
         STATUS="The full KMS GL driver is enabled."
         ;;
       G2*)
         if ! grep -q -E "^dtoverlay=vc4-fkms-v3d" $CONFIG; then
           ASK_TO_REBOOT=1
         fi
-		sed $CONFIG -i -e "s/^dtoverlay=vc4-kms-v3d/#dtoverlay=vc4-kms-v3d/"
-		sed $CONFIG -i -e "s/^#dtoverlay=vc4-fkms-v3d/dtoverlay=vc4-fkms-v3d/"
-		if ! grep -q -E "^dtoverlay=vc4-fkms-v3d" $CONFIG; then
-			printf "dtoverlay=vc4-fkms-v3d\n" >> $CONFIG
-		fi
+        sed $CONFIG -i -e "s/^dtoverlay=vc4-kms-v3d/#dtoverlay=vc4-kms-v3d/"
+        sed $CONFIG -i -e "s/^#dtoverlay=vc4-fkms-v3d/dtoverlay=vc4-fkms-v3d/"
+        if ! grep -q -E "^dtoverlay=vc4-fkms-v3d" $CONFIG; then
+          printf "dtoverlay=vc4-fkms-v3d\n" >> $CONFIG
+        fi
         STATUS="The fake KMS GL driver is enabled."
         ;;
       G3*)
@@ -1245,38 +1305,54 @@ do_gldriver() {
   else
     return 0
   fi
-  if echo "$GLOPT" | grep -q -E "1|2" ; then
+  if echo "$GLOPT" | grep -q -E "1" ; then
     if grep -q "splash" $CMDLINE ; then
-	    sed -i $CMDLINE -e "s/ quiet//"
-	    sed -i $CMDLINE -e "s/ splash//"
-	    sed -i $CMDLINE -e "s/ plymouth.ignore-serial-consoles//"
-	fi
-    if [ -e /usr/share/X11/xorg.conf.d/99-fbturbo.conf ] ; then
-      mv /usr/share/X11/xorg.conf.d/99-fbturbo.conf /usr/share/X11/xorg.conf.d/99-fbturbo.~
+      sed -i $CMDLINE -e "s/ quiet//"
+      sed -i $CMDLINE -e "s/ splash//"
+      sed -i $CMDLINE -e "s/ plymouth.ignore-serial-consoles//"
     fi
     sed $CONFIG -i -e "s/^gpu_mem/#gpu_mem/"
-    if [ ! -e /etc/xdg/autostart/xcompmgr.desktop ] ; then
-      cat << EOF > /etc/xdg/autostart/xcompmgr.desktop
-[Desktop Entry]
-Type=Application
-Name=compton
-Comment=Start Compton compositor
-NoDisplay=true
-Exec=compton --backend glx --unredir-if-possible --glx-swap-method buffer-age --glx-no-stencil --paint-on-overlay --vsync opengl
-EOF
-    fi
-    if [ ! -e /usr/bin/compton ]; then
-      sudo apt-get -y install compton
-    fi
-  else
-    if [ -e /usr/share/X11/xorg.conf.d/99-fbturbo.~ ] ; then
-      mv /usr/share/X11/xorg.conf.d/99-fbturbo.~ /usr/share/X11/xorg.conf.d/99-fbturbo.conf
-    fi
-    if [ -e /etc/xdg/autostart/xcompmgr.desktop ] ; then
-      rm /etc/xdg/autostart/xcompmgr.desktop
-    fi
   fi
   whiptail --msgbox "$STATUS" 20 60 1
+ }
+
+get_net_names() {
+  if grep -q "net.ifnames=0" $CMDLINE || [ "$(readlink -f /etc/systemd/network/99-default.link)" = "/dev/null" ] ; then
+    echo 1
+  else
+    echo 0
+  fi
+}
+
+do_net_names () {
+  DEFAULT=--defaultno
+  CURRENT=0
+  if [ $(get_net_names) -eq 0 ]; then
+    DEFAULT=
+    CURRENT=1
+  fi
+  if [ "$INTERACTIVE" = True ]; then
+    whiptail --yesno "Would you like to enable predictable network interface names?" $DEFAULT 20 60 2
+    RET=$?
+  else
+    RET=$1
+  fi
+  if [ $RET -eq $CURRENT ]; then
+    ASK_TO_REBOOT=1
+  fi
+  if [ $RET -eq 0 ]; then
+    sed -i $CMDLINE -e "s/net.ifnames=0 *//"
+    rm -f /etc/systemd/network/99-default.link
+    STATUS=enabled
+  elif [ $RET -eq 1 ]; then
+    ln -sf /dev/null /etc/systemd/network/99-default.link
+    STATUS=disabled
+  else
+    return $RET
+  fi
+  if [ "$INTERACTIVE" = True ]; then
+    whiptail --msgbox "Predictable network interface names are $STATUS" 20 60 1
+  fi
  }
 
 do_update() {
@@ -1304,24 +1380,24 @@ do_audio() {
 
 do_resolution() {
   if [ "$INTERACTIVE" = True ]; then
-	CMODE=$(get_config_var hdmi_mode $CONFIG)
-	CGROUP=$(get_config_var hdmi_group $CONFIG)
-	if [ $CMODE -eq 0 ] ; then
-	  CSET="Default"
-	elif [ $CGROUP -eq 2 ] ; then
-	  CSET="DMT Mode "$CMODE
-	else
-	  CSET="CEA Mode "$CMODE
-	fi
+    CMODE=$(get_config_var hdmi_mode $CONFIG)
+    CGROUP=$(get_config_var hdmi_group $CONFIG)
+    if [ $CMODE -eq 0 ] ; then
+      CSET="Default"
+    elif [ $CGROUP -eq 2 ] ; then
+      CSET="DMT Mode "$CMODE
+    else
+      CSET="CEA Mode "$CMODE
+    fi
     oIFS="$IFS"
     IFS="/"
     if tvservice -d /dev/null | grep -q Nothing ; then
       value="Default/720x480/DMT Mode 4/640x480 60Hz 4:3/DMT Mode 9/800x600 60Hz 4:3/DMT Mode 16/1024x768 60Hz 4:3/DMT Mode 85/1280x720 60Hz 16:9/DMT Mode 35/1280x1024 60Hz 5:4/DMT Mode 51/1600x1200 60Hz 4:3/DMT Mode 82/1920x1080 60Hz 16:9/"
-	else
+    else
       value="Default/Monitor preferred resolution/"
       value=$value$(tvservice -m CEA | grep progressive | cut -b 12- | sed 's/mode \([0-9]\+\): \([0-9]\+\)x\([0-9]\+\) @ \([0-9]\+\)Hz \([0-9]\+\):\([0-9]\+\), clock:[0-9]\+MHz progressive/CEA Mode \1\/\2x\3 \4Hz \5:\6/' | tr '\n' '/')
       value=$value$(tvservice -m DMT | grep progressive | cut -b 12- | sed 's/mode \([0-9]\+\): \([0-9]\+\)x\([0-9]\+\) @ \([0-9]\+\)Hz \([0-9]\+\):\([0-9]\+\), clock:[0-9]\+MHz progressive/DMT Mode \1\/\2x\3 \4Hz \5:\6/' | tr '\n' '/')
-	fi
+    fi
     RES=$(whiptail --default-item $CSET --menu "Choose screen resolution" 20 60 10 ${value} 3>&1 1>&2 2>&3)
     STATUS=$?
     IFS=$oIFS
@@ -1329,46 +1405,150 @@ do_resolution() {
       GRS=$(echo "$RES" | cut -d ' ' -f 1)
       MODE=$(echo "$RES" | cut -d ' ' -f 3)
       if [ $GRS = "Default" ] ; then
-		MODE=0
+        MODE=0
       elif [ $GRS = "DMT" ] ; then
-	    GROUP=2
-	  else
-	    GROUP=1
-	  fi
-	fi
+        GROUP=2
+      else
+        GROUP=1
+      fi
+    fi
   else
     GROUP=$1
     MODE=$2
     STATUS=0
   fi
   if [ $STATUS -eq 0 ]; then
-	if [ $MODE -eq 0 ]; then
-	  clear_config_var hdmi_force_hotplug $CONFIG
-	  clear_config_var hdmi_group $CONFIG
-	  clear_config_var hdmi_mode $CONFIG
-	else
-	  set_config_var hdmi_force_hotplug 1 $CONFIG
-	  set_config_var hdmi_group $GROUP $CONFIG
-	  set_config_var hdmi_mode $MODE $CONFIG
-	fi
+    if [ $MODE -eq 0 ]; then
+      clear_config_var hdmi_force_hotplug $CONFIG
+      clear_config_var hdmi_group $CONFIG
+      clear_config_var hdmi_mode $CONFIG
+    else
+      set_config_var hdmi_force_hotplug 1 $CONFIG
+      set_config_var hdmi_group $GROUP $CONFIG
+      set_config_var hdmi_mode $MODE $CONFIG
+    fi
     if [ "$INTERACTIVE" = True ]; then
-	  if [ $MODE -eq 0 ] ; then
+      if [ $MODE -eq 0 ] ; then
         whiptail --msgbox "The resolution is set to default" 20 60 1
-	  else
+      else
         whiptail --msgbox "The resolution is set to $GRS mode $MODE" 20 60 1
       fi
     fi
-	if [ $MODE -eq 0 ] ; then
-	  TSET="Default"
-	elif [ $GROUP -eq 2 ] ; then
-	  TSET="DMT Mode "$MODE
-	else
-	  TSET="CEA Mode "$MODE
-	fi
-	if [ "$TSET" != "$CSET" ] ; then
-	  ASK_TO_REBOOT=1
-	fi
+    if [ $MODE -eq 0 ] ; then
+      TSET="Default"
+    elif [ $GROUP -eq 2 ] ; then
+      TSET="DMT Mode "$MODE
+    else
+      TSET="CEA Mode "$MODE
+    fi
+    if [ "$TSET" != "$CSET" ] ; then
+      ASK_TO_REBOOT=1
+    fi
   fi
+}
+
+list_wlan_interfaces() {
+  for dir in /sys/class/net/*/wireless; do
+    if [ -d "$dir" ]; then
+      basename "$(dirname "$dir")"
+    fi
+  done
+}
+
+do_wifi_ssid_passphrase() {
+  RET=0
+  IFACE_LIST="$(list_wlan_interfaces)"
+  IFACE="$(echo "$IFACE_LIST" | head -n 1)"
+
+  if [ -z "$IFACE" ]; then
+    if [ "$INTERACTIVE" = True ]; then
+      whiptail --msgbox "No wireless interface found" 20 60
+    fi
+    return 1
+  fi
+
+  if ! wpa_cli -i "$IFACE" status > /dev/null 2>&1; then
+    if [ "$INTERACTIVE" = True ]; then
+      whiptail --msgbox "Could not communicate with wpa_supplicant" 20 60
+    fi
+    return 1
+  fi
+
+  if [ "$INTERACTIVE" = True ] && [ -z "$(get_wifi_country)" ]; then
+    do_wifi_country
+  fi
+
+  SSID="$1"
+  while [ -z "$SSID" ] && [ "$INTERACTIVE" = True ]; do
+    SSID=$(whiptail --inputbox "Please enter SSID" 20 60 3>&1 1>&2 2>&3)
+    if [ $? -ne 0 ]; then
+      return 0
+    elif [ -z "$SSID" ]; then
+      whiptail --msgbox "SSID cannot be empty. Please try again." 20 60
+    fi
+  done
+
+  PASSPHRASE="$2"
+  while [ "$INTERACTIVE" = True ]; do
+    PASSPHRASE=$(whiptail --passwordbox "Please enter passphrase. Leave it empty if none." 20 60 3>&1 1>&2 2>&3)
+    if [ $? -ne 0 ]; then
+      return 0
+    else
+      break
+    fi
+  done
+
+  # Escape special characters for embedding in regex below
+  local ssid="$(echo "$SSID" \
+   | sed 's;\\;\\\\;g' \
+   | sed -e 's;\.;\\\.;g' \
+         -e 's;\*;\\\*;g' \
+         -e 's;\+;\\\+;g' \
+         -e 's;\?;\\\?;g' \
+         -e 's;\^;\\\^;g' \
+         -e 's;\$;\\\$;g' \
+         -e 's;\/;\\\/;g' \
+         -e 's;\[;\\\[;g' \
+         -e 's;\];\\\];g' \
+         -e 's;{;\\{;g'   \
+         -e 's;};\\};g'   \
+         -e 's;(;\\(;g'   \
+         -e 's;);\\);g'   \
+         -e 's;";\\\\\";g')"
+
+  wpa_cli -i "$IFACE" list_networks \
+   | tail -n +2 | cut -f -2 | grep -P "\t$ssid$" | cut -f1 \
+   | while read ID; do
+    wpa_cli -i "$IFACE" remove_network "$ID" > /dev/null 2>&1
+  done
+
+  ID="$(wpa_cli -i "$IFACE" add_network)"
+  wpa_cli -i "$IFACE" set_network "$ID" ssid "\"$SSID\"" 2>&1 | grep -q "OK"
+  RET=$((RET + $?))
+
+  if [ -z "$PASSPHRASE" ]; then
+    wpa_cli -i "$IFACE" set_network "$ID" key_mgmt NONE 2>&1 | grep -q "OK"
+    RET=$((RET + $?))
+  else
+    wpa_cli -i "$IFACE" set_network "$ID" psk "\"$PASSPHRASE\"" 2>&1 | grep -q "OK"
+    RET=$((RET + $?))
+  fi
+
+  if [ $RET -eq 0 ]; then
+    wpa_cli -i "$IFACE" enable_network "$ID" > /dev/null 2>&1
+  else
+    wpa_cli -i "$IFACE" remove_network "$ID" > /dev/null 2>&1
+    if [ "$INTERACTIVE" = True ]; then
+      whiptail --msgbox "Failed to set SSID or passphrase" 20 60
+    fi
+  fi
+  wpa_cli -i "$IFACE" save_config > /dev/null 2>&1
+
+  echo "$IFACE_LIST" | while read IFACE; do
+    wpa_cli -i "$IFACE" reconfigure > /dev/null 2>&1
+  done
+
+  return $RET
 }
 
 do_finish() {
@@ -1445,28 +1625,18 @@ do_apply_os_config() {
 
   if [ -n "$DEBLANGUAGE" ]; then
     printf "Setting language to %s based on os_config.json from NOOBS. May take a while\n" "$DEBLANGUAGE"
-    cat << EOF | debconf-set-selections
-locales   locales/locales_to_be_generated multiselect     $DEBLANGUAGE UTF-8
-EOF
-    rm /etc/locale.gen
-    dpkg-reconfigure -f noninteractive locales
-    update-locale LANG="$DEBLANGUAGE"
-    cat << EOF | debconf-set-selections
-locales   locales/default_environment_locale select       $DEBLANGUAGE
-EOF
+    do_change_locale "$DEBLANGUAGE"
   fi
 
   if [ -n "$NOOBSKEYBOARD" -a "$NOOBSKEYBOARD" != "gb" ]; then
     printf "Setting keyboard layout to %s based on os_config.json from NOOBS. May take a while\n" "$NOOBSKEYBOARD"
-    sed -i /etc/default/keyboard -e "s/^XKBLAYOUT.*/XKBLAYOUT=\"$NOOBSKEYBOARD\"/"
-    dpkg-reconfigure -f noninteractive keyboard-configuration
-    invoke-rc.d keyboard-setup start
+    do_configure_keyboard "$NOOBSKEYBOARD"
   fi
   return 0
 }
 
 nonint() {
-    $*
+  "$@"
 }
 
 #
@@ -1498,7 +1668,8 @@ do
     ;;
   nonint)
     INTERACTIVE=False
-    $@
+    "$@"
+    exit $?
     ;;
   *)
     # unknown option
@@ -1526,20 +1697,12 @@ if [ -n "${OPT_MEMORY_SPLIT:-}" ]; then
 fi
 
 do_internationalisation_menu() {
-  if is_ssh ; then
-  FUN=$(whiptail --title "Raspberry Pi Software Configuration Tool (raspi-config)" --menu "Localization Options" $WT_HEIGHT $WT_WIDTH $WT_MENU_HEIGHT --cancel-button Back --ok-button Select \
-    "I1 Change Locale" "Set up language and regional settings to match your location" \
-    "I2 Change Timezone" "Set up timezone to match your location" \
-    "I4 Change Wi-fi Country" "Set the legal channels used in your country" \
-    3>&1 1>&2 2>&3)
-  else
   FUN=$(whiptail --title "Raspberry Pi Software Configuration Tool (raspi-config)" --menu "Localization Options" $WT_HEIGHT $WT_WIDTH $WT_MENU_HEIGHT --cancel-button Back --ok-button Select \
     "I1 Change Locale" "Set up language and regional settings to match your location" \
     "I2 Change Timezone" "Set up timezone to match your location" \
     "I3 Change Keyboard Layout" "Set the keyboard layout to match your keyboard" \
     "I4 Change Wi-fi Country" "Set the legal channels used in your country" \
     3>&1 1>&2 2>&3)
-  fi
   RET=$?
   if [ $RET -eq 1 ]; then
     return 0
@@ -1555,35 +1718,31 @@ do_internationalisation_menu() {
 }
 
 do_interface_menu() {
-  if ! is_pi ; then
-	do_ssh
-  else
-    FUN=$(whiptail --title "Raspberry Pi Software Configuration Tool (raspi-config)" --menu "Interfacing Options" $WT_HEIGHT $WT_WIDTH $WT_MENU_HEIGHT --cancel-button Back --ok-button Select \
-      "P1 Camera" "Enable/Disable connection to the Raspberry Pi Camera" \
-      "P2 SSH" "Enable/Disable remote command line access to your Pi using SSH" \
-      "P3 VNC" "Enable/Disable graphical remote access to your Pi using RealVNC" \
-      "P4 SPI" "Enable/Disable automatic loading of SPI kernel module" \
-      "P5 I2C" "Enable/Disable automatic loading of I2C kernel module" \
-      "P6 Serial" "Enable/Disable shell and kernel messages on the serial connection" \
-      "P7 1-Wire" "Enable/Disable one-wire interface" \
-      "P8 Remote GPIO" "Enable/Disable remote access to GPIO pins" \
-      3>&1 1>&2 2>&3)
-    RET=$?
-    if [ $RET -eq 1 ]; then
-      return 0
-    elif [ $RET -eq 0 ]; then
-      case "$FUN" in
-        P1\ *) do_camera ;;
-        P2\ *) do_ssh ;;
-        P3\ *) do_vnc ;;
-        P4\ *) do_spi ;;
-        P5\ *) do_i2c ;;
-        P6\ *) do_serial ;;
-        P7\ *) do_onewire ;;
-        P8\ *) do_rgpio ;;
-        *) whiptail --msgbox "Programmer error: unrecognized option" 20 60 1 ;;
-      esac || whiptail --msgbox "There was an error running option $FUN" 20 60 1
-    fi
+  FUN=$(whiptail --title "Raspberry Pi Software Configuration Tool (raspi-config)" --menu "Interfacing Options" $WT_HEIGHT $WT_WIDTH $WT_MENU_HEIGHT --cancel-button Back --ok-button Select \
+    "P1 Camera" "Enable/Disable connection to the Raspberry Pi Camera" \
+    "P2 SSH" "Enable/Disable remote command line access to your Pi using SSH" \
+    "P3 VNC" "Enable/Disable graphical remote access to your Pi using RealVNC" \
+    "P4 SPI" "Enable/Disable automatic loading of SPI kernel module" \
+    "P5 I2C" "Enable/Disable automatic loading of I2C kernel module" \
+    "P6 Serial" "Enable/Disable shell and kernel messages on the serial connection" \
+    "P7 1-Wire" "Enable/Disable one-wire interface" \
+    "P8 Remote GPIO" "Enable/Disable remote access to GPIO pins" \
+    3>&1 1>&2 2>&3)
+  RET=$?
+  if [ $RET -eq 1 ]; then
+    return 0
+  elif [ $RET -eq 0 ]; then
+    case "$FUN" in
+      P1\ *) do_camera ;;
+      P2\ *) do_ssh ;;
+      P3\ *) do_vnc ;;
+      P4\ *) do_spi ;;
+      P5\ *) do_i2c ;;
+      P6\ *) do_serial ;;
+      P7\ *) do_onewire ;;
+      P8\ *) do_rgpio ;;
+      *) whiptail --msgbox "Programmer error: unrecognized option" 20 60 1 ;;
+    esac || whiptail --msgbox "There was an error running option $FUN" 20 60 1
   fi
 }
 
@@ -1594,7 +1753,8 @@ do_advanced_menu() {
     "A3 Memory Split" "Change the amount of memory made available to the GPU" \
     "A4 Audio" "Force audio out through HDMI or 3.5mm jack" \
     "A5 Resolution" "Set a specific screen resolution" \
-    "A6 GL Driver" "Enable/Disable experimental desktop GL driver" \
+    "A6 Pixel Doubling" "Enable/Disable 2x2 pixel mapping" \
+    "A7 GL Driver" "Enable/Disable experimental desktop GL driver" \
     3>&1 1>&2 2>&3)
   RET=$?
   if [ $RET -eq 1 ]; then
@@ -1606,7 +1766,8 @@ do_advanced_menu() {
       A3\ *) do_memory_split ;;
       A4\ *) do_audio ;;
       A5\ *) do_resolution ;;
-      A6\ *) do_gldriver ;;
+      A6\ *) do_pixdub ;;
+      A7\ *) do_gldriver ;;
       *) whiptail --msgbox "Programmer error: unrecognized option" 20 60 1 ;;
     esac || whiptail --msgbox "There was an error running option $FUN" 20 60 1
   fi
@@ -1638,22 +1799,36 @@ do_boot_menu() {
   fi
 }
 
+do_network_menu() {
+  FUN=$(whiptail --title "Raspberry Pi Software Configuration Tool (raspi-config)" --menu "Network Options" $WT_HEIGHT $WT_WIDTH $WT_MENU_HEIGHT --cancel-button Back --ok-button Select \
+    "N1 Hostname" "Set the visible name for this Pi on a network" \
+    "N2 Wi-fi" "Enter SSID and passphrase" \
+    "N3 Network interface names" "Enable/Disable predictable network interface names" \
+    3>&1 1>&2 2>&3)
+  RET=$?
+  if [ $RET -eq 1 ]; then
+    return 0
+  elif [ $RET -eq 0 ]; then
+    case "$FUN" in
+      N1\ *) do_hostname ;;
+      N2\ *) do_wifi_ssid_passphrase ;;
+      N3\ *) do_net_names ;;
+      *) whiptail --msgbox "Programmer error: unrecognized option" 20 60 1 ;;
+    esac || whiptail --msgbox "There was an error running option $FUN" 20 60 1
+  fi
+}
+
 #
 # Interactive use loop
 #
 if [ "$INTERACTIVE" = True ]; then
-  if is_pi && ! mountpoint -q /boot; then
-    whiptail --msgbox "The boot partition is not mounted - cannot configure. Note that raspi-config is intended for use on Raspbian only and cannot be guaranteed to work on other operating systems." 20 60 1
-    exit 1
-  fi
   [ -e $CONFIG ] || touch $CONFIG
-  get_init_sys
   calc_wt_size
   while true; do
-	if is_pi ; then
-      FUN=$(whiptail --title "Raspberry Pi Software Configuration Tool (raspi-config)" --menu "Setup Options" $WT_HEIGHT $WT_WIDTH $WT_MENU_HEIGHT --cancel-button Finish --ok-button Select \
-        "1 Change User Password" "Change password for the default user ($SYS_USER)" \
-        "2 Hostname" "Set the visible name for this Pi on a network" \
+    if is_pi ; then
+      FUN=$(whiptail --title "Raspberry Pi Software Configuration Tool (raspi-config)" --backtitle "$(cat /proc/device-tree/model)" --menu "Setup Options" $WT_HEIGHT $WT_WIDTH $WT_MENU_HEIGHT --cancel-button Finish --ok-button Select \
+        "1 Change User Password" "Change password for the current user" \
+        "2 Network Options" "Configure network settings" \
         "3 Boot Options" "Configure options for start-up" \
         "4 Localization Options" "Set up language and regional settings to match your location" \
         "5 Interfacing Options" "Configure connections to peripherals" \
@@ -1664,11 +1839,12 @@ if [ "$INTERACTIVE" = True ]; then
         3>&1 1>&2 2>&3)
     else
       FUN=$(whiptail --title "Raspberry Pi Software Configuration Tool (raspi-config)" --menu "Setup Options" $WT_HEIGHT $WT_WIDTH $WT_MENU_HEIGHT --cancel-button Finish --ok-button Select \
-        "1 Change User Password" "Change password for the default user ($SYS_USER)" \
-        "2 Hostname" "Set the visible name for this PC on a network" \
+        "1 Change User Password" "Change password for the current user" \
+        "2 Network Options" "Configure network settings" \
         "3 Boot Options" "Configure options for start-up" \
         "4 Localization Options" "Set up language and regional settings to match your location" \
         "5 SSH" "Enable/Disable remote command line access to your PC using SSH" \
+        "6 Pixel Doubling" "Enable/Disable 2x2 pixel mapping" \
         "8 Update" "Update this tool to the latest version" \
         "9 About raspi-config" "Information about this configuration tool" \
         3>&1 1>&2 2>&3)
@@ -1677,18 +1853,32 @@ if [ "$INTERACTIVE" = True ]; then
     if [ $RET -eq 1 ]; then
       do_finish
     elif [ $RET -eq 0 ]; then
-      case "$FUN" in
-        1\ *) do_change_pass ;;
-        2\ *) do_hostname ;;
-        3\ *) do_boot_menu ;;
-        4\ *) do_internationalisation_menu ;;
-        5\ *) do_interface_menu ;;
-        6\ *) do_overclock ;;
-        7\ *) do_advanced_menu ;;
-        8\ *) do_update ;;
-        9\ *) do_about ;;
-        *) whiptail --msgbox "Programmer error: unrecognized option" 20 60 1 ;;
-      esac || whiptail --msgbox "There was an error running option $FUN" 20 60 1
+      if is_pi ; then
+        case "$FUN" in
+          1\ *) do_change_pass ;;
+          2\ *) do_network_menu ;;
+          3\ *) do_boot_menu ;;
+          4\ *) do_internationalisation_menu ;;
+          5\ *) do_interface_menu ;;
+          6\ *) do_overclock ;;
+          7\ *) do_advanced_menu ;;
+          8\ *) do_update ;;
+          9\ *) do_about ;;
+          *) whiptail --msgbox "Programmer error: unrecognized option" 20 60 1 ;;
+        esac || whiptail --msgbox "There was an error running option $FUN" 20 60 1
+      else
+        case "$FUN" in
+          1\ *) do_change_pass ;;
+          2\ *) do_network_menu ;;
+          3\ *) do_boot_menu ;;
+          4\ *) do_internationalisation_menu ;;
+          5\ *) do_ssh ;;
+          6\ *) do_pixdub ;;
+          8\ *) do_update ;;
+          9\ *) do_about ;;
+          *) whiptail --msgbox "Programmer error: unrecognized option" 20 60 1 ;;
+        esac || whiptail --msgbox "There was an error running option $FUN" 20 60 1
+      fi
     else
       exit 1
     fi

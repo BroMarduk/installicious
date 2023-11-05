@@ -346,7 +346,7 @@ else
 fi
 
 # Check if we need to copy new raspi-config files to /usr/bin to support non-pi users.  Only for Jessie and Wheezy.
-if [[ $SUPPORT_RPI_CONFIG_CMDLINE -ge $SUPPORT_RPI_CONFIG_CMDLINE_FULL && $II_CODENAME != "Stretch" ]]; then
+if [[ $II_CODENAME == "Wheezy" || $II_CODENAME = "Jessie" ]]; then
     if [[ -f "$PATH_RESOURCES/raspi-config-${II_CODENAME,,}" ]]; then
     sudo cp "$PATH_RESOURCES/raspi-config-${II_CODENAME,,}" $FILE_RASPI_CONFIG
     RET_VAL=$?
@@ -378,8 +378,21 @@ if [[ $SUPPORT_RPI_CONFIG_CMDLINE -ge $SUPPORT_RPI_CONFIG_CMDLINE_FULL && $II_CO
     fi
   fi
 else
-  echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Skipping copying the new raspi-config file to /usr/bin as it is not needed." | sudo tee --append $FILE_LOG_INSTALLER
-  STATUS_UPDATE_RASPI_CONFIG="Skipped"
+  # Change 'Localisation' to 'Localization' in raspi-config file.
+  if sudo grep -q "Localisation " "$FILE_RASPI_CONFIG"; then
+    sed -i "s/Localisation /Localization /" $FILE_RASPI_CONFIG
+    RET_VAL=$?
+    if [[ $RET_VAL -ne 0 ]]; then
+      echo "$(date '+%Y-%m-%d %T.%5N') - WARN - [$MODULE] Unable to apply full English mode to raspi-config. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
+      STATUS_UPDATE_RASPI_CONFIG="Warning"
+    else
+      echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Successfully applied full English mode to the raspi-config file." | sudo tee --append $FILE_LOG_INSTALLER
+      STATUS_UPDATE_RASPI_CONFIG="Completed"
+    fi
+  else
+    echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Raspi-config file already current and in full English mode." | sudo tee --append $FILE_LOG_INSTALLER
+    STATUS_UPDATE_RASPI_CONFIG="Skipped"
+  fi
 fi
 
 #TODO add if [[ $II_MODEL_NUM -ge $RPI_MODEL_4 ]]; then for the new overscan setting with 2 HDMIs
@@ -897,7 +910,6 @@ if [[ $SUPPORT_RPI_CONFIG_CMDLINE -le $SUPPORT_RPI_CONFIG_CMDLINE_BASIC ]]; then
       fi
     fi
   else
-    STATUS_CHANGE_LOCALE="Skipped"
     if [[ $REBOOT_REQUIRED -ne 0 ]]; then
       echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Skipped changing keyboard language because of pending reboot." | sudo tee --append $FILE_LOG_INSTALLER
     else
@@ -907,6 +919,7 @@ if [[ $SUPPORT_RPI_CONFIG_CMDLINE -le $SUPPORT_RPI_CONFIG_CMDLINE_BASIC ]]; then
         echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Skipped changing gui keyboard language because it was already [$RCONF_KEYBOARD_LANG]." | sudo tee --append $FILE_LOG_INSTALLER 
       fi 
     fi
+    STATUS_CHANGE_LOCALE="Skipped"
   fi
 else
   echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] The keyboard language and model settings are not supported for this level Use Raspi-Config. Skipping configuration." | sudo tee --append $FILE_LOG_INSTALLER
