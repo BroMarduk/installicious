@@ -25,7 +25,7 @@ EXIT_CODE=0
 
 # Look for installicious.config file in the same directory.
 if [[ ! -f $FILE_CONFIG_INSTALLICIOUS ]]; then
-  echo "$(date '+%Y-%m-%d %T.%5N') - CRIT - [$MODULE] Unable to find the configuration file $FILE_CONFIG_INSTALLICIOUS." 
+  echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to find the configuration file $FILE_CONFIG_INSTALLICIOUS." 
   exit 1
 fi
 
@@ -33,7 +33,7 @@ fi
 source $FILE_CONFIG_INSTALLICIOUS
 RET_VAL=$?
 if [[ $RET_VAL -ne 0 ]]; then
-  echo "$(date '+%Y-%m-%d %T.%5N') - CRIT - [$MODULE] Unable to load variables from the configuration file $FILE_CONFIG_INSTALLICIOUS. Error Code: $RET_VAL." 
+  echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to load variables from the configuration file $FILE_CONFIG_INSTALLICIOUS. Error Code: $RET_VAL." 
   exit 1
 fi
 
@@ -146,14 +146,14 @@ sudo cp -f "$PATH_RESOURCES/$FILE_MOTD_CURRENT_IP" $PATH_CRON_DAILY/$FILE_CRON_C
 sudo chmod 755 "$PATH_CRON_DAILY/$FILE_CRON_CURRENT_IP"
 sudo sed -i "s/$TOKEN_MOTD_NAME/$MOTD_NAME/g" $PATH_CRON_DAILY/$FILE_CRON_CURRENT_IP
 sudo sed -i "s|$TOKEN_MOTD_IP_URL|$MOTD_IP_URL|g" $PATH_CRON_DAILY/$FILE_CRON_CURRENT_IP
-sudo $"$PATH_CRON_DAILY/$FILE_CRON_CURRENT_IP"
+sudo $PATH_CRON_DAILY/$FILE_CRON_CURRENT_IP
 
 # Check for the existence of the current Weather MOTD file.
 sudo cp -f "$PATH_RESOURCES/$FILE_MOTD_CURRENT_WEATHER" $PATH_CRON_HOURLY/$FILE_CRON_CURRENT_WEATHER
 sudo chmod 755 "$PATH_CRON_HOURLY/$FILE_CRON_CURRENT_WEATHER"
 sudo sed -i "s/$TOKEN_MOTD_NAME/$MOTD_NAME/g" $PATH_CRON_HOURLY/$FILE_CRON_CURRENT_WEATHER
 sudo sed -i "s/$TOKEN_MOTD_WEATHER_LOC_CODE/$MOTD_WEATHER_LOC_CODE/g" $PATH_CRON_HOURLY/$FILE_CRON_CURRENT_WEATHER
-sudo $"$PATH_CRON_HOURLY/$FILE_CRON_CURRENT_WEATHER"
+sudo $PATH_CRON_HOURLY/$FILE_CRON_CURRENT_WEATHER
 
 # Update the tokens in the Current IP MOTD file.
 # Update the tokens in the Current Weather MOTD file.
@@ -173,7 +173,7 @@ fi
 sudo sed -i "s/^\s*#\?\s*PrintLastLog \(yes\|no\)/PrintLastLog no/" /etc/ssh/sshd_config
 
 # Remove the last login info for TTY Console
-sudo sed -i "/^\s*session\s*optional\s*pam_lastlog.so/s/^\(\s*\)/#\1/" /etc/pam.d/login
+sudo sed -i "/^\s*session\s*optional\s*pam_lastlog.so/s/^\(\s*\)/# \1/" /etc/pam.d/login
 
 
 # Small MOTD will not work with Pixel Desktop
@@ -227,9 +227,9 @@ if [[ $II_CODENAME = "Wheezy" ]]; then
   fi
 else
   if [[ $EXIT_CODE -eq 0 ]]; then
-    echo -e "[  \e[1;32mOK\e[0m  ] Installicious successfully customized the Message of the Day for the Raspberry Pi."
+    echo -e "[  \e[0;32mOK\e[0m  ] Installicious successfully customized the Message of the Day for the Raspberry Pi."
   else
-    echo -e "[ \e[1;31mFAIL\e[0m ] Installicious could not customize the Message of the Day for the Raspberry Pi. Error Code: $EXIT_CODE."
+    echo -e "[ \e[0;31mFAIL\e[0m ] Installicious could not customize the Message of the Day for the Raspberry Pi. Error Code: $EXIT_CODE."
   fi
 fi
 

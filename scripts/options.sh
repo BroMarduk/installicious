@@ -7,7 +7,7 @@ FILE_CONFIG_INSTALLICIOUS="config/installicious.config"
 
 # Look for installicious.config file in the same directory.
 if [[ ! -f $FILE_CONFIG_INSTALLICIOUS ]]; then
-  echo "$(date '+%Y-%m-%d %T.%5N') - CRIT - [$MODULE] Unable to find the configuration file $FILE_CONFIG_INSTALLICIOUS."
+  echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to find the configuration file $FILE_CONFIG_INSTALLICIOUS."
   exit 1
 fi
 
@@ -15,7 +15,7 @@ fi
 source $FILE_CONFIG_INSTALLICIOUS
 RET_VAL=$?
 if [[ $RET_VAL -ne 0 ]]; then
-  echo "$(date '+%Y-%m-%d %T.%5N') - CRIT - [$MODULE] Unable to load variables from the configuration file $FILE_CONFIG_INSTALLICIOUS. Error Code: $RET_VAL."
+  echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to load variables from the configuration file $FILE_CONFIG_INSTALLICIOUS. Error Code: $RET_VAL."
   exit 1
 fi
 

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-## The main file to run for Installicious.
+# The main file to run for Installicious.
 MODULE="Installicious Main"
 DESCRIPTION="The starting point for Installicious. Run this first and watch the magic happen."
 FILE_CONFIG_INSTALLICIOUS="config/installicious.config"
@@ -9,7 +9,7 @@ REBOOT_REQUIRED=0
 
 # Look for installicious.config file in the same directory.
 if [[ ! -f $FILE_CONFIG_INSTALLICIOUS ]]; then
-  echo "$(date '+%Y-%m-%d %T.%5N') - CRIT - [$MODULE] Unable to find the configuration file $FILE_CONFIG_INSTALLICIOUS." 
+  echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to find the configuration file $FILE_CONFIG_INSTALLICIOUS." 
   exit 1
 fi
 
@@ -17,13 +17,13 @@ fi
 source $FILE_CONFIG_INSTALLICIOUS
 RET_VAL=$?
 if [[ $RET_VAL -ne 0 ]]; then
-  echo "$(date '+%Y-%m-%d %T.%5N') - CRIT - [$MODULE] Unable to load variables from the configuration file $FILE_CONFIG_INSTALLICIOUS. Error Code: $RET_VAL."
+  echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to load variables from the configuration file $FILE_CONFIG_INSTALLICIOUS. Error Code: $RET_VAL."
   exit 1
 fi
 
 # Make sure the logging directory variable can be found.
 if [[ -z $PATH_LOGS ]]; then
-  echo "$(date '+%Y-%m-%d %T.%5N') - CRIT - [$MODULE] Unable to find a value for the logging directory in the configuration $FILE_CONFIG_INSTALLICIOUS." 
+  echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to find a value for the logging directory in the configuration $FILE_CONFIG_INSTALLICIOUS." 
   exit 1
 else
   # Check for logs directory as it must exist
@@ -31,7 +31,7 @@ else
     mkdir -p "$PATH_LOGS";
     RET_VAL=$?
     if [[ $RET_VAL -ne 0 ]]; then
-      echo "$(date '+%Y-%m-%d %T.%5N') - CRIT - [$MODULE] Unable to create the logs directory $PATH_LOGS specifed in the configuration file $FILE_CONFIG_INSTALLICIOUS. Error Code: $RET_VAL." 
+      echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to create the logs directory $PATH_LOGS specifed in the configuration file $FILE_CONFIG_INSTALLICIOUS. Error Code: $RET_VAL." 
       exit 1
     fi
   fi
@@ -166,10 +166,10 @@ fi
 
 FILE_STATUS_OS="$PATH_STATUS/os.status"
 
-## Current User
+# Current User
 CURRENTUSER="$(whoami)"
 
-## Check Dependencies
+# Check Dependencies
 WHIPTAIL_RESULT=$(sudo bash "$PATH_DEPENDENCIES/whiptail.sh")
 RET_VAL=$?
 if [[ $RET_VAL -ne 0 ]]; then
@@ -177,10 +177,10 @@ if [[ $RET_VAL -ne 0 ]]; then
   exit 1
 fi
 
-## Reads the Model of the Raspberry Pi
+# Reads the Model of the Raspberry Pi
 read PIMODEL < /proc/device-tree/model
 
-## Check for Full vs Lite
+# Check for Full vs Lite
 if [[ -f "/usr/bin/startx" ]]; then
   OSLEVEL="GUI"
   OSLEVELNAME=""
@@ -189,13 +189,13 @@ else
   OSLEVELNAME=" Lite "
 fi
 
-## Reads the Debian Full Version
+# Reads the Debian Full Version
 read DEBIANVERSION < /etc/debian_version
 
-## Reads the OS Release Information
+# Reads the OS Release Information
 . /etc/os-release
 
-## Makes the Version Codename start with an upper for asthetics
+# Makes the Version Codename start with an upper for asthetics
 CODENAME=${VERSION_CODENAME^}
 
 if [[ -z $CODENAME ]]; then
@@ -221,13 +221,13 @@ if [[ -z $CODENAME ]]; then
   fi
 fi
 
-## Get OS 32/64 bit version
+# Get OS 32/64 bit version
 BITS=$(getconf LONG_BIT)
 
-## Reads the Pi Revision without the bits for OTP and overclocking. Only the bottom 24 bits matter.
+# Reads the Pi Revision without the bits for OTP and overclocking. Only the bottom 24 bits matter.
 PRE_REVISION=$(cat /proc/cpuinfo | grep 'Revision' | awk ' {print $3}' | sed -E 's/.*(.{6})/\1/' | sed 's/^0*//')
 
-## Pad a 0 to the front of the revision if it is less than 4 characters long.
+# Pad a 0 to the front of the revision if it is less than 4 characters long.
 if [[ ! -z $PRE_REVISION ]]; then
   REVISION=$(printf "%04x" "0x$PRE_REVISION")
 else
@@ -308,8 +308,28 @@ case $REVISION in
     MEMORY="Unknown";;
 esac
 
-## Writes out the version information to the os.conf file.
+# Reads the Pi Model Number from revision.
+if grep -q "^Revision\s*:\s*[ 123][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]0[9cC][0-9a-fA-F]$" /proc/cpuinfo; then
+  PIMODELNUM=0
+elif grep -q "^Revision\s*:\s*00[0-9a-fA-F][0-9a-fA-F]$" /proc/cpuinfo; then
+  PIMODELNUM=1
+elif grep -q "^Revision\s*:\s*[ 123][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]0[0-36][0-9a-fA-F]$" /proc/cpuinfo ; then
+  PIMODELNUM=1
+elif grep -q "^Revision\s*:\s*[ 123][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]04[0-9a-fA-F]$" /proc/cpuinfo; then
+  PIMODELNUM=2
+elif grep -q "^Revision\s*:\s*[ 123][0-9a-fA-F][0-9a-fA-F]2[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]$" /proc/cpuinfo; then
+  PIMODELNUM=3
+elif grep -q "^Revision\s*:\s*[ 123][0-9a-fA-F][0-9a-fA-F]3[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]$" /proc/cpuinfo; then
+  PIMODELNUM=4
+elif grep -q "^Revision\s*:\s*[ 123][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]04[0-9a-fA-F]$" /proc/cpuinfo; then
+  PIMODELNUM=5
+else
+  PIMODELNUM=99 # Unknown
+fi
+
+# Writes out the version information to the os.conf file.
 echo "II_MODEL=\"${PIMODEL}\"" > $FILE_STATUS_OS
+echo "II_MODEL_NUM=\"${PIMODELNUM}\"" >> $FILE_STATUS_OS
 echo "II_DEBIAN_VERSION=\"${DEBIANVERSION}\"" >> $FILE_STATUS_OS
 echo "II_CODENAME=\"${CODENAME}\"" >> $FILE_STATUS_OS
 echo "II_VERSION_NAME=\"${NAME}\"" >> $FILE_STATUS_OS
@@ -320,7 +340,7 @@ echo "II_MEMORY=\"${MEMORY}\"" >> $FILE_STATUS_OS
 echo "II_FULL_NAME=\"${NAME} ${DEBIANVERSION}${OSLEVELNAME} (${CODENAME})\"" >> $FILE_STATUS_OS
 echo "II_INSTALLICIOUS_PATH=\"${0}\"" >> $FILE_STATUS_OS
 
-## Load Required Variables
+# Load Required Variables
 source $FILE_STATUS_OS
 
 if (whiptail --title "$MODULE" --defaultno --no-button "Cancel" --yes-button "OK" --yesno "Do you want to setup $MODULE? $DESCRIPTION\n\n$II_MODEL with $II_FULL_NAME" 12 80) then

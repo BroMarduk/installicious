@@ -21,7 +21,7 @@ EXIT_CODE=0
 
 # Look for installicious.config file.
 if [[ ! -f $FILE_CONFIG_INSTALLICIOUS ]]; then
-  echo "$(date '+%Y-%m-%d %T.%5N') - CRIT - [$MODULE] Unable to find the configuration file $FILE_CONFIG_INSTALLICIOUS."
+  echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to find the configuration file $FILE_CONFIG_INSTALLICIOUS."
   exit 1
 fi
 echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Found the configuration file $FILE_CONFIG_INSTALLICIOUS."
@@ -30,14 +30,14 @@ echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Found the configuration file
 source $FILE_CONFIG_INSTALLICIOUS
 RET_VAL=$?
 if [[ $RET_VAL -ne 0 ]]; then
-  echo "$(date '+%Y-%m-%d %T.%5N') - CRIT - [$MODULE] Unable to load variables from the configuration file $FILE_CONFIG_INSTALLICIOUS. Error Code: $RET_VAL."
+  echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to load variables from the configuration file $FILE_CONFIG_INSTALLICIOUS. Error Code: $RET_VAL."
   exit 1
 fi
 echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Loaded the configuration file $FILE_CONFIG_INSTALLICIOUS."
 
 # Look for pkupd.config file.
 if [[ ! -f $FILE_CONFIG_PKUPD ]]; then
-  echo "$(date '+%Y-%m-%d %T.%5N') - CRIT - [$MODULE] Unable to find the configuration file $FILE_CONFIG_PKUPD."
+  echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to find the configuration file $FILE_CONFIG_PKUPD."
   exit 1
 fi
 echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Found the configuration file $FILE_CONFIG_PKUPD."
@@ -46,7 +46,7 @@ echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Found the configuration file
 source $FILE_CONFIG_PKUPD
 RET_VAL=$?
 if [[ $RET_VAL -ne 0 ]]; then
-  echo "$(date '+%Y-%m-%d %T.%5N') - CRIT - [$MODULE] Unable to load variables from the configuration file $FILE_CONFIG_PKUPD. Error Code: $RET_VAL."
+  echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to load variables from the configuration file $FILE_CONFIG_PKUPD. Error Code: $RET_VAL."
   exit 1
 fi
 echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Loaded the configuration file $FILE_CONFIG_PKUPD."
@@ -102,7 +102,7 @@ if [[ $II_CODENAME = "Wheezy" || $II_CODENAME = "Jessie" ]]; then
       echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to update package lists to legacy in older raspbian release $II_CODENAME." | sudo tee --append $FILE_LOG_INSTALLER
       STATUS_RC_UPGRADE="Error"
       STATUS="Error"
-      EXIT_CODE=$EXIT_CODE+2
+      EXIT_CODE=$((EXIT_CODE+2))
     else
       if [[ $(grep "http://legacy.raspbian.org/raspbian/" $FILE_SOURCES_LIST) ]]; then 
         echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Successfully updated package lists to legacy in older raspbian release $II_CODENAME" | sudo tee --append $FILE_LOG_INSTALLER
@@ -110,7 +110,7 @@ if [[ $II_CODENAME = "Wheezy" || $II_CODENAME = "Jessie" ]]; then
         echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to update package lists to legacy in older raspbian release $II_CODENAME." | sudo tee --append $FILE_LOG_INSTALLER
         STATUS_RC_UPGRADE="Error"
         STATUS="Error"
-        EXIT_CODE=$EXIT_CODE+2
+        EXIT_CODE=$((EXIT_CODE+2))
       fi
     fi
   fi
@@ -122,7 +122,7 @@ if [[ $II_CODENAME = "Wheezy" || $II_CODENAME = "Jessie" ]]; then
         echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to delete obsolete package source [$FILE_SOURCES_LIST_COLLABORA] in older raspbian release $II_CODENAME" | sudo tee --append $FILE_LOG_INSTALLER
         STATUS_RC_UPGRADE="Error"
         STATUS="Error"
-        EXIT_CODE=$EXIT_CODE+2
+        EXIT_CODE=$((EXIT_CODE+2))
       else
         echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Successfully deleted obsolete package source [$FILE_SOURCES_LIST_COLLABORA] in older raspbian release $II_CODENAME" | sudo tee --append $FILE_LOG_INSTALLER
       fi
@@ -139,7 +139,7 @@ if [[ $II_CODENAME = "Stretch" ]]; then
       echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to update package lists to legacy in older raspbian release $II_CODENAME." | sudo tee --append $FILE_LOG_INSTALLER
       STATUS_RC_UPGRADE="Error"
       STATUS="Error"
-      EXIT_CODE=$EXIT_CODE+2
+      EXIT_CODE=$((EXIT_CODE+2))
     else
       if [[ $(grep "http://legacy.raspbian.org/raspbian/" $FILE_SOURCES_LIST) ]]; then 
         echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Successfully updated package lists to legacy in older raspbian release $II_CODENAME" | sudo tee --append $FILE_LOG_INSTALLER
@@ -173,7 +173,7 @@ if [[ $EXIT_CODE -eq 0 ]]; then
     echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to successfully complete the apt-get Update. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
     STATUS_UPDATE="Error"
     STATUS="Error"
-    EXIT_CODE=$EXIT_CODE+4
+    EXIT_CODE=$((EXIT_CODE+4))
   else
     if [[ $SKIPPED_UPDATE -ne 1 ]]; then
       echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Successfully completed the apt-get Update." | sudo tee --append $FILE_LOG_INSTALLER
@@ -198,7 +198,7 @@ if [[ $EXIT_CODE -eq 0 ]]; then
       echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to successfully complete the apt-get Distribution Upgrade. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
       STATUS_UPGRADE="Error"
       STATUS="Error"
-      EXIT_CODE=$EXIT_CODE+8
+      EXIT_CODE=$((EXIT_CODE+8))
     else
       if [[ $SKIPPED_UPGRADE -ne 1 ]]; then
         echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Successfully completed the apt-get Distribution Upgrade." | sudo tee --append $FILE_LOG_INSTALLER
@@ -221,7 +221,7 @@ if [[ $EXIT_CODE -eq 0 ]]; then
         echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to successfully complete the apt-get Auto-Remove. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
         STATUS_AUTOREMOVE="Error"
         STATUS="Error"
-        EXIT_CODE=$EXIT_CODE+16
+        EXIT_CODE=$((EXIT_CODE+16))
       else
         if [[ $SKIPPED_AUTORUN -ne 1 ]]; then
           echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Successfully completed the apt-get Auto-Remove." | sudo tee --append $FILE_LOG_INSTALLER
@@ -261,9 +261,9 @@ if [[ $II_CODENAME = "Wheezy" ]]; then
   fi
 else
   if [[ $EXIT_CODE -eq 0 ]]; then
-    echo -e "[  \e[1;32mOK\e[0m  ] Installicious successfully customized the package updates for the Raspberry Pi."
+    echo -e "[  \e[0;32mOK\e[0m  ] Installicious successfully customized the package updates for the Raspberry Pi."
   else
-    echo -e "[ \e[1;31mFAIL\e[0m ] Installicious could not customize the package updates for the Raspberry Pi. Error Code: $EXIT_CODE."
+    echo -e "[ \e[0;31mFAIL\e[0m ] Installicious could not customize the package updates for the Raspberry Pi. Error Code: $EXIT_CODE."
   fi
 fi
 

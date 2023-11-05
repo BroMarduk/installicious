@@ -4,10 +4,11 @@
 MODULE="Process Options"
 DESCRIPTION="Processes the selected options previously selected based on the current configuration of hardware and Raspberry Pi OS."
 FILE_CONFIG_INSTALLICIOUS="config/installicious.config"
+EXIT_REBOOT=255
 
 # Look for installicious.config file in the same directory.
 if [[ ! -f $FILE_CONFIG_INSTALLICIOUS ]]; then
-  echo "$(date '+%Y-%m-%d %T.%5N') - CRIT - [$MODULE] Unable to find the configuration file $FILE_CONFIG_INSTALLICIOUS."
+  echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to find the configuration file $FILE_CONFIG_INSTALLICIOUS."
   exit 1
 fi
 
@@ -15,7 +16,7 @@ fi
 source $FILE_CONFIG_INSTALLICIOUS
 RET_VAL=$?
 if [[ $RET_VAL -ne 0 ]]; then
-  echo "$(date '+%Y-%m-%d %T.%5N') - CRIT - [$MODULE] Unable to load variables from the configuration file $FILE_CONFIG_INSTALLICIOUS."
+  echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to load variables from the configuration file $FILE_CONFIG_INSTALLICIOUS."
   exit 1
 fi
 
@@ -39,7 +40,7 @@ if [[ -s $FILE_STATUS_OPTIONS ]]; then
         RET_VAL=$?
         if [[ $RET_VAL -eq 0 ]]; then
           # declare -n STATUS_OPTIONS_ITEM=${OPTIONS_ITEM^^}_STATUS
-          STATUS_OPTIONS_ITEM_VARNAME="RCONF_GPU_MEM_SPLIT_LITE_${OPTIONS_ITEM^^}_STATUS"
+          STATUS_OPTIONS_ITEM_VARNAME="${OPTIONS_ITEM^^}_STATUS"
           STATUS_OPTIONS_ITEM=${!STATUS_OPTIONS_ITEM_VARNAME}
         fi
       else
@@ -50,6 +51,11 @@ if [[ -s $FILE_STATUS_OPTIONS ]]; then
         if [[ -e $OPTIONS_INSTALLER ]]; then
           echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Processing the script $OPTIONS_INSTALLER to process option $OPTIONS_ITEM." | sudo tee --append $FILE_LOG_INSTALLER
           bash "$OPTIONS_INSTALLER"
+          RET_VAL=$?
+          if [[ $RET_VAL -eq $EXIT_REBOOT ]]; then
+            echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Stopping due to reboot result from script $OPTIONS_INSTALLER." | sudo tee --append $FILE_LOG_INSTALLER
+            exit 0
+          fi
         else
           echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to find the script $OPTIONS_INSTALLER to process option $OPTIONS_ITEM." | sudo tee --append $FILE_LOG_INSTALLER
         fi

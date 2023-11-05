@@ -47,9 +47,16 @@ else
   login="User '$loginFrom' on $loginDate ($loginIP)"
 fi
 
-# Get SSH Information
-ssh_failures=`grep sshd /var/log/auth.log | awk /failure/ | wc -l`
-ssh_week=`cat /var/log/auth.log | grep "Accepted password" | awk /$user/ | wc -l`
+# Get SSH Information - handle Wheezy differently.
+if [[ $numversion -ge 8 ]]; then
+  ssh_failures=`journalctl -u ssh.service | grep "sshd" | awk /failure/ | wc -l`
+  ssh_week=`journalctl -u ssh.service | grep "Accepted password" | awk /$user/ | wc -l`
+else
+  ssh_failures=`grep sshd /var/log/auth.log | awk /failure/ | wc -l`
+  ssh_week=`grep "Accepted password" /var/log/auth.log | awk /$user/ | wc -l`
+fi
+
+# Get Login Counts
 logins=`who -q`
 logins_count=`echo $logins | cut -d"=" -f2`
 
@@ -147,4 +154,3 @@ $(tput setaf 1)  Internal IP   :$(tput setaf 2) $ipInternal
 $(tput setaf 1)  External IP   :$(tput setaf 2) $ipExternal
 $(tput setaf 1)  Weather 05255 :$(tput setaf 2) $weatherDisplay
 $(tput sgr0)"
-
