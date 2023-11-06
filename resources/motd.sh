@@ -26,7 +26,7 @@ esac
 # Set login information
 if [[ $numversion -ge 9 ]]; then
   # Read login details for newer versions
-  read loginFrom loginIP loginDate loginStatus <<< $(last $user --time-format iso -2 | awk 'NR==2 { print $1,$3,$4,$5 }')
+  read loginFrom loginIP loginDate loginStatus <<< `last $user --time-format iso -2 | awk 'NR==2 { print $1,$3,$4,$5 }'`
 
   # TTY login adjustments
   if [[ $loginDate == "-" ]]; then
@@ -41,7 +41,7 @@ if [[ $numversion -ge 9 ]]; then
 
   # Format login date and check online status
   if [[ $loginDate == *T* ]]; then
-    login="$(date -d $loginDate +"%a, %-d %b %Y, %-I:%M:%S %p") ($loginIP)"
+    login=`date -d "$loginDate" +"%a, %-d %b %Y, %-I:%M:%S %p"`" ($loginIP)"
     if [[ $loginStatus == still ]]; then
       login="$login [ONLINE]"
     fi
@@ -51,7 +51,7 @@ if [[ $numversion -ge 9 ]]; then
   fi
 else
   # Read login details for older versions
-  read loginFrom loginIP loginDate <<< $(last $user -2 | awk 'NR==2 { print $1,$3,$4 ", "  $5 " " $6 " " $7 }')
+  read loginFrom loginIP loginDate <<< `last $user -2 | awk 'NR==2 { print $1,$3,$4 ", "  $5 " " $6 " " $7 }'`
 
   # Local login check
   if [[ $loginIP == ":0" ]]; then
@@ -101,7 +101,7 @@ fi
 if [[ -f /etc/motd.d/%%MOTD_NAME%%/results-ip ]]; then
   read ipExternal < /etc/motd.d/%%MOTD_NAME%%/results-ip
   if [[ -z $ipExternal ]]; then
-    ipExternal = "None"
+    ipExternal="None"
   fi
 else
   ipExternal="None"
@@ -129,7 +129,7 @@ else
 fi
 
 # Get Temperature
-cpuTemp0=`cat /sys/class/thermal/thermal_zone0/temp)`
+cpuTemp0=`cat /sys/class/thermal/thermal_zone0/temp`
 cpuTemp1=$(($cpuTemp0/1000))
 cpuTemp2=$(($cpuTemp0/100))
 cpuTempM=$(($cpuTemp2 % $cpuTemp1))
@@ -141,7 +141,7 @@ elif [[ -f /opt/vc/bin/vcgencmd ]]; then
   gpuTemp=`(/opt/vc/bin/vcgencmd measure_temp | grep -o '[0-9]*\.[0-9]*')`
 fi
 
-if [[ -z gpuTemp ]]; then
+if [[ -z $gpuTemp ]]; then
   temperatureOutput="CPU: $cpuTemp °C"
 else
   temperatureOutput="CPU: $cpuTemp °C | GPU: $gpuTemp °C"
