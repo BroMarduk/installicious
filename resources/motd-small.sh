@@ -33,7 +33,6 @@ if [[ $numversion -ge 9 ]]; then
     loginDate=$loginIP
     loginIP=$loginFrom
   fi
-
   # Local login check
   if [[ $loginIP == ":0" ]]; then
     loginIP="Local"
@@ -58,9 +57,11 @@ else
     loginIP="Local"
   fi
 
-  # Format login information
   login="User '$loginFrom' on $loginDate ($loginIP)"
 fi
+
+# Get OS Bits
+bits=`getconf LONG_BIT`
 
 # Get OS Bits
 bits=`getconf LONG_BIT`
@@ -141,6 +142,7 @@ echo "$(tput setaf 1)______            _   _      _
 |___/ \__,_|_| |_\_| \_/\___|\__|
 $(tput setaf 2)
 `date +"%A, %-e %B %Y, %r"`
+$(tput setaf 1)Raspbian $version - $raspbian $bits (`uname -r`)
 $(tput setaf 1)Raspbian $version - $raspbian $bits (`uname -r`)
 $machine [`hostname`]
 
