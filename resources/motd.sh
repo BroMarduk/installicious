@@ -151,7 +151,7 @@ clear
 
 echo "$(tput setaf 2)
    .~~.   .~~.       `date +"%A, %-e %B %Y, %r"`
-  '. \ ' ' / .'      Raspbian $version - $raspbian $bits-bit (`uname -r | awk -F '-' '{ print $1 }'` Kernel `uname -m`)$(tput setaf 1)
+  '. \ ' ' / .'      Raspbian $version - $raspbian $bits-bit (`uname -r | cut -d'-' -f1` Kernel `uname -m`)$(tput setaf 1)
    .~ .~~~..~.
   : .~.'~'.~. :      _/_/_/                        _/      _/              _/
  ~ (   ) (   ) ~    _/    _/    _/_/_/  _/_/_/    _/_/    _/    _/_/    _/_/_/_/
