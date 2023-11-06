@@ -145,7 +145,7 @@ echo "$(tput setaf 1)______            _   _      _
 |___/ \__,_|_| |_\_| \_/\___|\__|
 $(tput setaf 2)
 `date +"%A, %-e %B %Y, %r"`
-$(tput setaf 1)Raspbian $version - $raspbian $bits (`uname -r | cut -d'-' -f1` Kernel `uname -m`)
+$(tput setaf 1)$raspbian $bits - Raspbian $version (`uname -r | cut -d'-' -f1` Kernel)
 $machine [`hostname`]
 
 Login  :$(tput setaf 2) $login
