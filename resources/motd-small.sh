@@ -30,6 +30,9 @@ if [[ $numversion -ge 9 ]]; then
     loginDate=$loginIP
     loginIP=$loginFrom
   fi
+  if [[ $loginIP == ":0" ]]; then
+    loginIP="Local"
+  fi
   if [[ $loginDate == *T* ]]; then
     login="$(date -d $loginDate +"%-d %b %Y, %-I:%M %p") ($loginIP)"
     if [[ $loginStatus == still ]]; then
@@ -46,11 +49,17 @@ else
     raspbian="Wheezy"
   fi
   read loginFrom loginIP loginDate <<< $(last $user -2 | awk 'NR==2 { print $1,$3,$4 ", "  $5 " " $6 " " $7 }')
+  if [[ $loginIP == ":0" ]]; then
+    loginIP="Local"
+  fi
   login="User '$loginFrom' on $loginDate ($loginIP)"
 fi
 
+# Get OS Bits
+bits=`getconf LONG_BIT`
+
 # Get Uptime Information
-upSeconds="$(/usr/bin/cut -d. -f1 /proc/uptime)"
+upSeconds=`/usr/bin/cut -d. -f1 /proc/uptime`
 secs=$(($upSeconds%60))c
 mins=$(($upSeconds/60%60))
 hours=$(($upSeconds/3600%24))
@@ -59,7 +68,7 @@ days=$(($upSeconds/86400))
 uptime=`printf "%d days, %02d hours %02d minutes %02d seconds" $days $hours $mins $secs`
 
 # Get Internal IP Information
-ipInternal=$(hostname -I)
+ipInternal=`hostname -I`
 
 if [[ -z $ipInternal ]]; then
   ipInternal="None"
@@ -97,7 +106,7 @@ else
 fi
 
 # Get Temperature
-cpuTemp0=$(cat /sys/class/thermal/thermal_zone0/temp)
+cpuTemp0=`cat /sys/class/thermal/thermal_zone0/temp)`
 cpuTemp1=$(($cpuTemp0/1000))
 cpuTemp2=$(($cpuTemp0/100))
 cpuTempM=$(($cpuTemp2 % $cpuTemp1))
@@ -125,7 +134,7 @@ echo "$(tput setaf 1)______            _   _      _
 |___/ \__,_|_| |_\_| \_/\___|\__|
 $(tput setaf 2)
 `date +"%A, %-e %B %Y, %r"`
-$(tput setaf 1)Raspbian $version - $raspbian (`uname -r`)
+$(tput setaf 1)Raspbian $version - $raspbian $bits (`uname -r`)
 $machine [`hostname`]
 
 Login  :$(tput setaf 2) $login
