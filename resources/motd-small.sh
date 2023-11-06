@@ -58,6 +58,7 @@ else
     loginIP="Local"
   fi
 
+  # Format login information
   login="User '$loginFrom' on $loginDate ($loginIP)"
 fi
 
