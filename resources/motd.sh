@@ -10,28 +10,38 @@ machine=`tr -d '\0' < /proc/device-tree/model`
 read version < /etc/debian_version
 numversion=${version%%.*}
 
+# Determine Raspbian version name
+case $numversion in
+  14) raspbian="Forky" ;;
+  13) raspbian="Trixie" ;;
+  12) raspbian="Bookworm" ;;
+  11) raspbian="Bullseye" ;;
+  10) raspbian="Buster" ;;
+  9) raspbian="Stretch" ;;
+  8) raspbian="Jessie" ;;
+  7) raspbian="Wheezy" ;;
+  *) raspbian="Unknown" ;;
+esac
+
+# Set login information
 if [[ $numversion -ge 9 ]]; then
+  # Read login details for newer versions
   read loginFrom loginIP loginDate loginStatus <<< $(last $user --time-format iso -2 | awk 'NR==2 { print $1,$3,$4,$5 }')
-  if [[ $numversion -gt 13 ]]; then
-    raspbian="Forky"
-  elif [[ $numversion -eq 13 ]]; then
-    raspbian="Trixie"
-  elif [[ $numversion -eq 12 ]]; then
-    raspbian="Bookworm"
-  elif [[ $numversion -eq 11 ]]; then
-    raspbian="Bullseye"
-  elif [[ $numversion -eq 10 ]]; then
-    raspbian="Buster"
-  else
-    raspbian="Stretch"
-  fi
-  # TTY login
-  if [[ $loginDate == - ]]; then
+
+  # TTY login adjustments
+  if [[ $loginDate == "-" ]]; then
     loginDate=$loginIP
     loginIP=$loginFrom
   fi
+
+  # Local login check
+  if [[ $loginIP == ":0" ]]; then
+    loginIP="Local"
+  fi
+
+  # Format login date and check online status
   if [[ $loginDate == *T* ]]; then
-    login="$(date -d $loginDate +"%a, %-d %b %Y, %-I:%M:%S %p") ($loginIP)"
+    login="$(date -d "$loginDate" +"%a, %-d %b %Y, %-I:%M:%S %p") ($loginIP)"
     if [[ $loginStatus == still ]]; then
       login="$login [ONLINE]"
     fi
@@ -40,14 +50,20 @@ if [[ $numversion -ge 9 ]]; then
     login="None"
   fi
 else
-  if [[ $numversion -eq 8 ]]; then
-    raspbian="Jessie"
-  else
-    raspbian="Wheezy"
+  # Read login details for older versions
+  read loginFrom loginIP loginDate <<< $(last $user -2 | awk 'NR==2 { print $1,$3,$4 ", " $5 " " $6 " " $7 }')
+
+  # Local login check
+  if [[ $loginIP == ":0" ]]; then
+    loginIP="Local"
   fi
-  read loginFrom loginIP loginDate <<< $(last $user -2 | awk 'NR==2 { print $1,$3,$4 ", "  $5 " " $6 " " $7 }')
+
+  # Format login information
   login="User '$loginFrom' on $loginDate ($loginIP)"
 fi
+
+# Get OS Bits
+bits=`getconf LONG_BIT`
 
 # Get SSH Information - handle Wheezy differently.
 if [[ $numversion -ge 8 ]]; then
@@ -63,7 +79,7 @@ logins=`who -q`
 logins_count=`echo $logins | cut -d"=" -f2`
 
 # Get Uptime Information
-upSeconds="$(/usr/bin/cut -d. -f1 /proc/uptime)"
+upSeconds=`/usr/bin/cut -d. -f1 /proc/uptime`
 secs=$((${upSeconds}%60))
 mins=$((${upSeconds}/60%60))
 hours=$((${upSeconds}/3600%24))
@@ -75,7 +91,7 @@ uptime=`printf "%d days, %02d hours %02d minutes %02d seconds" $days $hours $min
 read one five fifteen rest < /proc/loadavg
 
 # Get Internal IP Information
-ipInternal=$(hostname -I)
+ipInternal=`hostname -I`
 
 if [[ -z $ipInternal ]]; then
   ipInternal="None"
@@ -113,7 +129,7 @@ else
 fi
 
 # Get Temperature
-cpuTemp0=$(cat /sys/class/thermal/thermal_zone0/temp)
+cpuTemp0=`cat /sys/class/thermal/thermal_zone0/temp)`
 cpuTemp1=$(($cpuTemp0/1000))
 cpuTemp2=$(($cpuTemp0/100))
 cpuTempM=$(($cpuTemp2 % $cpuTemp1))
@@ -135,7 +151,7 @@ clear
 
 echo "$(tput setaf 2)
    .~~.   .~~.       `date +"%A, %-e %B %Y, %r"`
-  '. \ ' ' / .'      Raspbian $version - $raspbian (`uname -rm`)$(tput setaf 1)
+  '. \ ' ' / .'      Raspbian $version - $raspbian $bits-bit (`uname -rm`)$(tput setaf 1)
    .~ .~~~..~.
   : .~.'~'.~. :      _/_/_/                        _/      _/              _/
  ~ (   ) (   ) ~    _/    _/    _/_/_/  _/_/_/    _/_/    _/    _/_/    _/_/_/_/
@@ -143,7 +159,7 @@ echo "$(tput setaf 2)
  ~ .~ (   ) ~. ~  _/    _/  _/    _/  _/    _/  _/    _/_/  _/          _/
   (  : '~' :  )  _/_/_/      _/_/_/  _/    _/  _/      _/    _/_/_/      _/_/
    '~ .~~~. ~'
-       '~'       ${machine} [`hostname`] 
+       '~'       ${machine} [`hostname`]
 
 $(tput setaf 1)  Last Login    :$(tput setaf 2) $login
 $(tput setaf 1)  SSH Logins    :$(tput setaf 2) Current: $logins_count | Failed: ${ssh_failures} | All '$user': $ssh_week
