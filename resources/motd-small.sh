@@ -41,6 +41,7 @@ if [[ $numversion -ge 9 ]]; then
 
   # Format login date and check online status
   if [[ $loginDate == *T* ]]; then
+    login="$(date -d $loginDate +"%a, %-d %b %Y, %-I:%M:%S %p") ($loginIP)"
     login="$(date -d $loginDate +"%-d %b %Y, %-I:%M %p") ($loginIP)"
     if [[ $loginStatus == still ]]; then
       login="$login [ON]"
@@ -51,7 +52,7 @@ if [[ $numversion -ge 9 ]]; then
   fi
 else
   # Read login details for older versions
-  read loginFrom loginIP loginDate <<< $(last $user -2 | awk 'NR==2 { print $1,$3,$4 ", " $5 " " $6 " " $7 }')
+  read loginFrom loginIP loginDate <<< $(last $user -2 | awk 'NR==2 { print $1,$3,$4 ", "  $5 " " $6 " " $7 }')
 
   # Local login check
   if [[ $loginIP == ":0" ]]; then
@@ -70,7 +71,7 @@ bits=`getconf LONG_BIT`
 
 # Get Uptime Information
 upSeconds=`/usr/bin/cut -d. -f1 /proc/uptime`
-secs=$(($upSeconds%60))c
+secs=$(($upSeconds%60))
 mins=$(($upSeconds/60%60))
 hours=$(($upSeconds/3600%24))
 days=$(($upSeconds/86400))
@@ -123,9 +124,9 @@ cpuTempM=$(($cpuTemp2 % $cpuTemp1))
 cpuTemp="$cpuTemp1.$cpuTempM" 
 
 if [[ -f /usr/bin/vcgencmd ]]; then
-  gpuTemp="$(/usr/bin/vcgencmd measure_temp | grep -o '[0-9]*\.[0-9]*')"
+  gpuTemp=`(/usr/bin/vcgencmd measure_temp | grep -o '[0-9]*\.[0-9]*')`
 elif [[ -f /opt/vc/bin/vcgencmd ]]; then
-  gpuTemp="$(/opt/vc/bin/vcgencmd measure_temp | grep -o '[0-9]*\.[0-9]*')"
+  gpuTemp=`(/opt/vc/bin/vcgencmd measure_temp | grep -o '[0-9]*\.[0-9]*')`
 fi
 
 if [[ -z gpuTemp ]]; then

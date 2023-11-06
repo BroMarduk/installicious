@@ -41,7 +41,7 @@ if [[ $numversion -ge 9 ]]; then
 
   # Format login date and check online status
   if [[ $loginDate == *T* ]]; then
-    login="$(date -d "$loginDate" +"%a, %-d %b %Y, %-I:%M:%S %p") ($loginIP)"
+    login="$(date -d $loginDate +"%a, %-d %b %Y, %-I:%M:%S %p") ($loginIP)"
     if [[ $loginStatus == still ]]; then
       login="$login [ONLINE]"
     fi
@@ -51,7 +51,7 @@ if [[ $numversion -ge 9 ]]; then
   fi
 else
   # Read login details for older versions
-  read loginFrom loginIP loginDate <<< $(last $user -2 | awk 'NR==2 { print $1,$3,$4 ", " $5 " " $6 " " $7 }')
+  read loginFrom loginIP loginDate <<< $(last $user -2 | awk 'NR==2 { print $1,$3,$4 ", "  $5 " " $6 " " $7 }')
 
   # Local login check
   if [[ $loginIP == ":0" ]]; then
@@ -80,10 +80,10 @@ logins_count=`echo $logins | cut -d"=" -f2`
 
 # Get Uptime Information
 upSeconds=`/usr/bin/cut -d. -f1 /proc/uptime`
-secs=$((${upSeconds}%60))
-mins=$((${upSeconds}/60%60))
-hours=$((${upSeconds}/3600%24))
-days=$((${upSeconds}/86400))
+secs=$(($upSeconds%60))
+mins=$(($upSeconds/60%60))
+hours=$(($upSeconds/3600%24))
+days=$(($upSeconds/86400))
 
 uptime=`printf "%d days, %02d hours %02d minutes %02d seconds" $days $hours $mins $secs`
 
@@ -136,9 +136,9 @@ cpuTempM=$(($cpuTemp2 % $cpuTemp1))
 cpuTemp="$cpuTemp1.$cpuTempM" 
 
 if [[ -f /usr/bin/vcgencmd ]]; then
-  gpuTemp="$(/usr/bin/vcgencmd measure_temp | grep -o '[0-9]*\.[0-9]*')"
+  gpuTemp=`(/usr/bin/vcgencmd measure_temp | grep -o '[0-9]*\.[0-9]*')`
 elif [[ -f /opt/vc/bin/vcgencmd ]]; then
-  gpuTemp="$(/opt/vc/bin/vcgencmd measure_temp | grep -o '[0-9]*\.[0-9]*')"
+  gpuTemp=`(/opt/vc/bin/vcgencmd measure_temp | grep -o '[0-9]*\.[0-9]*')`
 fi
 
 if [[ -z gpuTemp ]]; then
@@ -162,7 +162,7 @@ echo "$(tput setaf 2)
        '~'       ${machine} [`hostname`]
 
 $(tput setaf 1)  Last Login    :$(tput setaf 2) $login
-$(tput setaf 1)  SSH Logins    :$(tput setaf 2) Current: $logins_count | Failed: ${ssh_failures} | All '$user': $ssh_week
+$(tput setaf 1)  SSH Logins    :$(tput setaf 2) Current: $logins_count | Failed: $ssh_failures | All '$user': $ssh_week
 $(tput setaf 1)  Uptime        :$(tput setaf 2) $uptime
 $(tput setaf 1)  Disk Space    :$(tput setaf 2) `df -h ~ | awk 'NR==2 { printf "Total: %sB, Used: %sB, Free: %sB",$2,$3,$4; }'`
 $(tput setaf 1)  Memory        :$(tput setaf 2) `free -m | awk 'NR==2 { printf "Used: %sMB, Free: %sMB",$3,$4; }'` (`ps ax | wc -l | tr -d " "` Processes)
