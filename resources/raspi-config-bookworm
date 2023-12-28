@@ -952,11 +952,13 @@ do_vnc() {
       mkdir -p $HOMEDIR/.config/wayvnc/
       if ! [ -e $HOMEDIR/.config/wayvnc/config ] ; then
         cat << EOF > $HOMEDIR/.config/wayvnc/config
+use_relative_paths=true
 address=0.0.0.0
 enable_auth=true
 enable_pam=true
-private_key_file=$HOMEDIR/.config/wayvnc/key.pem
-certificate_file=$HOMEDIR/.config/wayvnc/cert.pem
+private_key_file=key.pem
+certificate_file=cert.pem
+rsa_private_key_file=rsa_key.pem
 EOF
         chown -R $USER:$USER $HOMEDIR/.config/wayvnc/config
       fi
@@ -966,6 +968,12 @@ EOF
         IP=$(ifconfig | grep inet | head -n 1 | cut -d ' ' -f 10)
         openssl req -x509 -newkey rsa:4096 -sha256 -days 3650 -nodes -keyout $HOMEDIR/.config/wayvnc/key.pem -out $HOMEDIR/.config/wayvnc/cert.pem -subj /CN=$HOSTNAME -addext subjectAltName=DNS:$HOSTNAME,DNS:$HOSTNAME,IP:$IP 2> /dev/null
         chown -R $USER:$USER $HOMEDIR/.config/wayvnc/*.pem
+        echo "Done"
+      fi
+      if ! [ -e $HOMEDIR/.config/wayvnc/rsa_key.pem ] ; then
+        echo "Generating RSA key..."
+        ssh-keygen -m pem -f $HOMEDIR/.config/wayvnc/rsa_key.pem -t rsa -N "" > /dev/null
+        chown -R $USER:$USER $HOMEDIR/.config/wayvnc/rsa_key.pem
         echo "Done"
       fi
       if is_installed wayvnc || apt-get install "$APT_GET_FLAGS" wayvnc; then
@@ -985,7 +993,7 @@ NoDisplay=true
 Exec=/usr/bin/wayvnc --render-cursor --keyboard=$VNCKBD
 OnlyShowIn=wayfire
 EOF
-        sudo -u $USER XDG_RUNTIME_DIR=/run/user/$SUDO_UID WAYLAND_DISPLAY=wayland-1 wayvnc --render-cursor --keyboard=$VNCKBD &
+        sudo -u $USER XDG_RUNTIME_DIR=/run/user/$SUDO_UID WAYLAND_DISPLAY=wayland-1 wayvnc --render-cursor --keyboard=$VNCKBD 2> /dev/null &
         STATUS=enabled
       else
         return 1
@@ -1009,6 +1017,11 @@ EOF
     if is_installed realvnc-vnc-server; then
       systemctl disable vncserver-x11-serviced.service
       systemctl stop vncserver-x11-serviced.service
+    fi
+    if is_wayfire; then
+      if [ -e $HOMEDIR/.config/wayvnc/config ] ; then
+        rm $HOMEDIR/.config/wayvnc/config
+      fi
     fi
     STATUS=disabled
   else
@@ -1634,8 +1647,8 @@ EOF
 do_boot_order() {
   if [ "$INTERACTIVE" = True ]; then
     BOOTOPT=$(whiptail --title "Raspberry Pi Software Configuration Tool (raspi-config)" --menu "Boot Device Order" $WT_HEIGHT $WT_WIDTH $WT_MENU_HEIGHT \
-      "B1 SD Card Boot" "Boot from SD Card if available, otherwise boot from USB" \
-      "B2 USB Boot" "Boot from USB if available, otherwise boot from SD Card" \
+      "B1 SD Card Boot" "Boot from SD Card if available, otherwise boot from NVMe or USB" \
+      "B2 NVMe/USB Boot" "Boot from NVMe if available, otherwise boot from USB or SD Card" \
       "B3 Network Boot" "Boot from network if SD card boot fails" \
       3>&1 1>&2 2>&3)
   else
@@ -1646,14 +1659,13 @@ do_boot_order() {
     CURDATE=$(date -d "$(vcgencmd bootloader_version |  head -n 1)" +%Y%m%d)
     FILNAME="none"
     EEBASE=$(rpi-eeprom-update | grep RELEASE | sed 's/.*(//g' | sed 's/[^\/]*)//g')
-    if grep -q "stable" /etc/default/rpi-eeprom-update ; then
-      EEPATH="${EEBASE}/stable/pieeprom*.bin"
+    if grep FIRMWARE_RELEASE_STATUS /etc/default/rpi-eeprom-update | egrep -Eq "stable|latest"; then
+      EEPATH="${EEBASE}/latest/pieeprom*.bin"
     else
-      EEPATH="${EEBASE}/critical/pieeprom*.bin"
+      EEPATH="${EEBASE}/default/pieeprom*.bin"
     fi
     for filename in $EEPATH ; do
       FILDATE=$(date -d "$(echo $filename | sed 's/.*\///g' | cut -d - -f 2- | cut -d . -f 1)" +%Y%m%d)
-      echo $FILDATE
       if [ $FILDATE -eq $CURDATE ]; then
         FILNAME=$filename
       fi
@@ -1670,20 +1682,30 @@ do_boot_order() {
     sed $EECFG -i -e "/NET_BOOT_MAX_RETRIES/d"
     case "$BOOTOPT" in
       B1*)
-        if ! grep -q "BOOT_ORDER" $EECFG ; then
-          sed $EECFG -i -e "\$a[all]\nBOOT_ORDER=0xf41"
+        if is_pifive; then
+           ORD=0xf461
         else
-          sed $EECFG -i -e "s/^BOOT_ORDER=.*/BOOT_ORDER=0xf41/"
+           ORD=0xf41
+        fi
+        if ! grep -q "BOOT_ORDER" $EECFG ; then
+          sed $EECFG -i -e "\$a[all]\nBOOT_ORDER=${ORD}"
+        else
+          sed $EECFG -i -e "s/^BOOT_ORDER=.*/BOOT_ORDER=${ORD}/"
         fi
         STATUS="SD Card"
         ;;
       B2*)
-        if ! grep -q "BOOT_ORDER" $EECFG ; then
-          sed $EECFG -i -e "\$a[all]\nBOOT_ORDER=0xf14"
+        if is_pifive; then
+           ORD=0xf146
         else
-          sed $EECFG -i -e "s/^BOOT_ORDER=.*/BOOT_ORDER=0xf14/"
+           ORD=0xf14
         fi
-        STATUS="USB"
+        if ! grep -q "BOOT_ORDER" $EECFG ; then
+          sed $EECFG -i -e "\$a[all]\nBOOT_ORDER=${ORD}"
+        else
+          sed $EECFG -i -e "s/^BOOT_ORDER=.*/BOOT_ORDER=${ORD}/"
+        fi
+        STATUS="NVMe/USB"
         ;;
       B3*)
         if ! grep -q "BOOT_ORDER" $EECFG ; then
@@ -1720,11 +1742,11 @@ do_boot_rom() {
   if [ $? -eq 0 ]; then
     case "$BOOTOPT" in
       E1*)
-        sed /etc/default/rpi-eeprom-update -i -e "s/^FIRMWARE_RELEASE_STATUS.*/FIRMWARE_RELEASE_STATUS=\"stable\"/"
+        sed /etc/default/rpi-eeprom-update -i -e "s/^FIRMWARE_RELEASE_STATUS.*/FIRMWARE_RELEASE_STATUS=\"latest\"/"
         EETYPE="Latest version"
         ;;
       E2*)
-        sed /etc/default/rpi-eeprom-update -i -e "s/^FIRMWARE_RELEASE_STATUS.*/FIRMWARE_RELEASE_STATUS=\"critical\"/"
+        sed /etc/default/rpi-eeprom-update -i -e "s/^FIRMWARE_RELEASE_STATUS.*/FIRMWARE_RELEASE_STATUS=\"default\"/"
         EETYPE="Factory default"
         ;;
       *)
@@ -1740,10 +1762,10 @@ do_boot_rom() {
     fi
     if [ "$DEFAULTS" -eq 0 ]; then # yes
       EEBASE=$(rpi-eeprom-update | grep RELEASE | sed 's/.*(//g' | sed 's/[^\/]*)//g')
-      if grep -q "stable" /etc/default/rpi-eeprom-update ; then
-        EEPATH="${EEBASE}/stable/"
+      if grep FIRMWARE_RELEASE_STATUS /etc/default/rpi-eeprom-update | egrep -Eq "stable|latest"; then
+        EEPATH="${EEBASE}/latest/"
       else
-        EEPATH="${EEBASE}/critical/"
+        EEPATH="${EEBASE}/default/"
       fi
       MATCH=".*/pieeprom-[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9].bin"
       FILNAME="$(find "${EEPATH}" -maxdepth 1 -type f -regex "${MATCH}" | sort -r | head -n1)"
@@ -3307,7 +3329,7 @@ do_advanced_menu() {
       "A1 Expand Filesystem" "Ensures that all of the SD card is available" \
       "A2 Network Interface Names" "Enable/disable predictable network i/f names" \
       "A3 Network Proxy Settings" "Configure network proxy settings" \
-      "A4 Boot Order" "Choose network or USB device boot" \
+      "A4 Boot Order" "Choose network or USB or NVMe device boot" \
       "A5 Bootloader Version" "Select latest or default boot ROM software" \
       "A6 Wayland" "Switch between X and Wayland backends" \
       "A7 Audio Config" "Set audio control system" \

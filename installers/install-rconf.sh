@@ -26,6 +26,7 @@ FILE_LOCALE_GEN="/etc/locale.gen"
 FILE_RC_LOCAL="/etc/rc.local"
 FILE_CONSOLE_BLANKING="/sys/module/kernel/parameters/consoleblank"
 FILE_TIME_ZONE="/etc/timezone"
+FILE_WPA_SUPPLICANT="/etc/wpa_supplicant/wpa_supplicant.conf"
 FILE_LOCAL_TIME="/etc/localtime"
 FILE_LIGHTDM_CONFIG="/etc/lightdm/lightdm.conf"
 FILE_RASPI_CONFIG="/usr/bin/raspi-config"
@@ -204,7 +205,7 @@ else
     echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Package update completed during this installation so skipping Package Updates." | sudo tee --append $FILE_LOG_INSTALLER
     NEED_PKG_UPDATE=0
   else
-    if [[ ! -z $PKUPD_UPDATE_RUN && $(($UPDATE_NOW_UNIX - $(date --date="$PKUPD_UPDATE_RUN" +%s))) -lt $ACCEPTABLE_TIME_DELTA_SEC ]]; then  
+    if [[ ! -z $PKUPD_UPDATE_RUN && $(($UPDATE_NOW_UNIX - $(date --date="$PKUPD_UPDATE_RUN" +%s))) -lt $ACCEPTABLE_TIME_DELTA_SEC ]]; then
       echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Package Update is current as it was run less than $ACCEPTABLE_TIME_DELTA_SEC seconds ago. Last run $PKUPD_UPDATE_RUN." | sudo tee --append $FILE_LOG_INSTALLER
       NEED_PKG_UPDATE=0
     else
@@ -221,7 +222,7 @@ else
       echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Package Upgrade completed during this installation so skipping upgrades to raspi-config." | sudo tee --append $FILE_LOG_INSTALLER
       NEED_PKG_UPGRADE=0
     else
-      if [[ ! -z $PKUPD_UPGRADE_RUN && $(($UPDATE_NOW_UNIX - $(date --date="$PKUPD_UPGRADE_RUN" +%s))) -lt $ACCEPTABLE_TIME_DELTA_SEC ]]; then  
+      if [[ ! -z $PKUPD_UPGRADE_RUN && $(($UPDATE_NOW_UNIX - $(date --date="$PKUPD_UPGRADE_RUN" +%s))) -lt $ACCEPTABLE_TIME_DELTA_SEC ]]; then
         echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Package Upgrade is current as it was run less than $ACCEPTABLE_TIME_DELTA_SEC seconds ago. Last run $PKUPD_UPGRADE_RUN." | sudo tee --append $FILE_LOG_INSTALLER
         NEED_PKG_UPGRADE=0
       else
@@ -443,17 +444,31 @@ fi
 
 # Set the screen blanking setting (GUI)
 if [[ $SUPPORT_RPI_CONFIG_CMDLINE -le $SUPPORT_RPI_CONFIG_CMDLINE_FULL ]]; then
-  sudo raspi-config nonint do_blanking $RCONF_BLANKING
+  CURRENT_BLANKING=`sudo raspi-config nonint get_blanking`
   RET_VAL=$?
   if [[ $RET_VAL -ne 0 ]]; then
-    echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to successfully complete the screen blanking change to [$RCONF_BLANKING]. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
+    echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to successfully get the current screen blanking configuration. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
     STATUS_BLANKING="Error"
     STATUS="Error"
     EXIT_CODE=$((EXIT_CODE+4))
   else
-    echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Successfully completed the screen blanking change to [$RCONF_BLANKING]." | sudo tee --append $FILE_LOG_INSTALLER 
-    STATUS_BLANKING="Completed"
-    REBOOT_REQUIRED=2
+    if [[ $CURRENT_BLANKING != $RCONF_BLANKING ]]; then
+      sudo raspi-config nonint do_blanking $RCONF_BLANKING
+      RET_VAL=$?
+      if [[ $RET_VAL -ne 0 ]]; then
+        echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to successfully complete the screen blanking change to [$RCONF_BLANKING]. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
+        STATUS_BLANKING="Error"
+        STATUS="Error"
+        EXIT_CODE=$((EXIT_CODE+4))
+      else
+        echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Successfully completed the screen blanking change to [$RCONF_BLANKING]." | sudo tee --append $FILE_LOG_INSTALLER
+        STATUS_BLANKING="Completed"
+        REBOOT_REQUIRED=2
+      fi
+    else
+      echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Screen blanking already set to [$RCONF_BLANKING]. Skipping configuration." | sudo tee --append $FILE_LOG_INSTALLER
+      STATUS_BLANKING="Skipped"
+    fi
   fi
 elif [[ $SUPPORT_RPI_CONFIG_CMDLINE -le $SUPPORT_RPI_CONFIG_CMDLINE_BASIC ]]; then
   if [[ $II_OS_LEVEL != "Lite" ]]; then
@@ -696,20 +711,72 @@ fi
 
 # Configure the WiFi country.
 if [[ $SUPPORT_RPI_CONFIG_CMDLINE -le $SUPPORT_RPI_CONFIG_CMDLINE_BASIC ]]; then
-    sudo raspi-config nonint do_wifi_country "$RCONF_WIFI_COUNTRY" > NULL
+  CURRENT_WIFI_COUNTRY=`sudo raspi-config nonint get_wifi_country`
   RET_VAL=$?
   if [[ $RET_VAL -ne 0 ]]; then
-    echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to successfully complete the WiFi country configuration to [$RCONF_WIFI_COUNTRY]. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
+    echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to successfully get the current WiFi country configuration. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
     STATUS_CONFIGURE_WIFI_COUNTRY="Error"
     STATUS="Error"
     EXIT_CODE=$((EXIT_CODE+4))
   else
-    echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Successfully completed the WiFi county configuration to [$RCONF_WIFI_COUNTRY]." | sudo tee --append $FILE_LOG_INSTALLER 
-    STATUS_CONFIGURE_WIFI_COUNTRY="Completed"
+    if [[ $CURRENT_WIFI_COUNTRY != $RCONF_WIFI_COUNTRY ]]; then
+      sudo raspi-config nonint do_wifi_country "$RCONF_WIFI_COUNTRY" > NULL
+      RET_VAL=$?
+      if [[ $RET_VAL -ne 0 ]]; then
+        echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to successfully complete the WiFi country configuration to [$RCONF_WIFI_COUNTRY]. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
+        STATUS_CONFIGURE_WIFI_COUNTRY="Error"
+        STATUS="Error"
+        EXIT_CODE=$((EXIT_CODE+4))
+      else
+        echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Successfully completed the WiFi county configuration to [$RCONF_WIFI_COUNTRY]." | sudo tee --append $FILE_LOG_INSTALLER
+        REBOOT_REQUIRED=2
+        STATUS_CONFIGURE_WIFI_COUNTRY="Completed"
+      fi
+    else
+      echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] WiFi county already set to [$RCONF_WIFI_COUNTRY]. Skipping configuration." | sudo tee --append $FILE_LOG_INSTALLER
+      STATUS_CONFIGURE_WIFI_COUNTRY="Skipped"
+    fi
   fi
 else
-  echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] The WiFi country setting is not supported for this level. Skipping configuration." | sudo tee --append $FILE_LOG_INSTALLER
-  STATUS_CONFIGURE_WIFI_COUNTRY="Skipped"
+  if [[ -f $FILE_WPA_SUPPLICANT ]]; then
+    CURRENT_WIFI_COUNTRY=`sudo grep "^country=" $FILE_WPA_SUPPLICANT | cut -d'=' -f2`
+    RET_VAL=$?
+    if [[ $RET_VAL -ne 0 ]]; then
+      echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to successfully get the current WiFi country configuration. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
+      STATUS_CONFIGURE_WIFI_COUNTRY="Error"
+      STATUS="Error"
+      EXIT_CODE=$((EXIT_CODE+4))
+    else
+      if [[ -z $CURRENT_WIFI_COUNTRY || $CURRENT_WIFI_COUNTRY != $RCONF_WIFI_COUNTRY ]]; then
+        if grep -q "^country=" "$WPA_SUPPLICANT_CONF"; then
+          # It exists, so let's update it
+          sudo sed -i "s/^country=.*/country=$RCONF_WIFI_COUNTRY/" $FILE_WPA_SUPPLICANT
+        else
+          # It doesn't exist, so let's add it at the beginning of the file
+          sudo sed -i "1icountry=$RCONF_WIFI_COUNTRY" "$WPA_SUPPLICANT_CONF"
+        fi
+        RET_VAL=$?
+        if [[ $RET_VAL -ne 0 ]]; then
+          echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to successfully complete the WiFi country configuration to [$RCONF_WIFI_COUNTRY]. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
+          STATUS_CONFIGURE_WIFI_COUNTRY="Error"
+          STATUS="Error"
+          EXIT_CODE=$((EXIT_CODE+4))
+        else
+          echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Successfully completed the WiFi county configuration to [$RCONF_WIFI_COUNTRY]." | sudo tee --append $FILE_LOG_INSTALLER
+          REBOOT_REQUIRED=2
+          STATUS_CONFIGURE_WIFI_COUNTRY="Completed"
+        fi
+      else
+        echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] WiFi county already set to [$RCONF_WIFI_COUNTRY]. Skipping configuration." | sudo tee --append $FILE_LOG_INSTALLER
+        STATUS_CONFIGURE_WIFI_COUNTRY="Skipped"
+      fi
+    fi
+  else
+    echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to find the WPA configuration file [$FILE_WPA_SUPPLICANT]." | sudo tee --append $FILE_LOG_INSTALLER
+    STATUS_CONFIGURE_WIFI_COUNTRY="Error"
+    STATUS="Error"
+    EXIT_CODE=$((EXIT_CODE+4))
+  fi
 fi
 
 # Configure the Locale and Keyboard settings.
@@ -767,7 +834,7 @@ if [[ $SUPPORT_RPI_CONFIG_CMDLINE -le $SUPPORT_RPI_CONFIG_CMDLINE_BASIC ]]; then
         if [[ $REBOOT_REQUIRED -ne 1 ]]; then
           REBOOT_REQUIRED=2
         fi
-        echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Successfully changed the locale to [$RCONF_LOCALE] - Reboot required." | sudo tee --append $FILE_LOG_INSTALLER 
+        echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Successfully changed the locale to [$RCONF_LOCALE]. Reboot required." | sudo tee --append $FILE_LOG_INSTALLER
         STATUS_CHANGE_LOCALE="Completed"
       fi
     else
@@ -810,7 +877,7 @@ if [[ $SUPPORT_RPI_CONFIG_CMDLINE -le $SUPPORT_RPI_CONFIG_CMDLINE_BASIC ]]; then
                 REBOOT_REQUIRED=2
               fi
               STATUS_CHANGE_LOCALE="Completed"
-              echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Successfully changed the locale to [$RCONF_LOCALE] - Reboot required." | sudo tee --append $FILE_LOG_INSTALLER 
+              echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Successfully changed the locale to [$RCONF_LOCALE]. Reboot required." | sudo tee --append $FILE_LOG_INSTALLER
             fi
           fi
         fi

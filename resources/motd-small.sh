@@ -1,10 +1,16 @@
 #!/bin/bash
 
 # Get User
-user=`whoami`
+if [ -n "$SUDO_USER" ]; then
+    # If run with sudo, use the original user's name
+    user="$SUDO_USER"
+else
+    # Otherwise, use the current user's name
+    user="$(whoami)"
+fi
 
 # Get Device
-machine=`tr -d '\0' < /proc/device-tree/model`
+machine=$(tr -d '\0' < /proc/device-tree/model)
 
 # Get Version and Login Information - This method works for all verions of Raspian/Raspberry Pi OS
 read version < /etc/debian_version
@@ -26,7 +32,7 @@ esac
 # Set login information
 if [[ $numversion -ge 9 ]]; then
   # Read login details for newer versions
-  read loginFrom loginIP loginDate loginStatus <<< `last $user --time-format iso -2 | awk 'NR==2 { print $1,$3,$4,$5 }'`
+  read loginFrom loginIP loginDate loginStatus <<< $(last $user --time-format iso -2 | awk 'NR==2 { print $1,$3,$4,$5 }')
 
   # TTY login adjustments
   if [[ $loginDate == "-" ]]; then
@@ -41,7 +47,7 @@ if [[ $numversion -ge 9 ]]; then
 
   # Format login date and check online status
   if [[ $loginDate == *T* ]]; then
-    login=`date -d "$loginDate" +"%-d %b %Y, %-I:%M %p"`" ($loginIP)"
+    login=$(date -d "$loginDate" +"%-d %b %Y, %-I:%M %p")" ($loginIP)"
     if [[ $loginStatus == still ]]; then
       login="$login [ON]"
     fi
@@ -51,7 +57,7 @@ if [[ $numversion -ge 9 ]]; then
   fi
 else
   # Read login details for older versions
-  read loginFrom loginIP loginDate <<< `last $user -2 | awk 'NR==2 { print $1,$3,$4 ", "  $5 " " $6 " " $7 }'`
+  read loginFrom loginIP loginDate <<< $(last $user -2 | awk 'NR==2 { print $1,$3,$4 ", "  $5 " " $6 " " $7 }')
 
   # Local login check
   if [[ $loginIP == ":0" ]]; then
@@ -63,22 +69,19 @@ else
 fi
 
 # Get OS Bits
-bits=`getconf LONG_BIT`
-
-# Get OS Bits
-bits=`getconf LONG_BIT`
+bits=$(getconf LONG_BIT)
 
 # Get Uptime Information
-upSeconds=`/usr/bin/cut -d. -f1 /proc/uptime`
+upSeconds=$(/usr/bin/cut -d. -f1 /proc/uptime)
 secs=$(($upSeconds%60))
 mins=$(($upSeconds/60%60))
 hours=$(($upSeconds/3600%24))
 days=$(($upSeconds/86400))
 
-uptime=`printf "%d days, %02d hours %02d minutes %02d seconds" $days $hours $mins $secs`
+uptime=$(printf "%d days, %02d hours %02d minutes %02d seconds" $days $hours $mins $secs)
 
 # Get Internal IP Information
-ipInternal=`hostname -I`
+ipInternal=$(hostname -I)
 
 if [[ -z $ipInternal ]]; then
   ipInternal="None"
@@ -97,35 +100,38 @@ fi
 # Get Weather Information
 if [[ -f /etc/motd.d/%%MOTD_NAME%%/results-weather ]]; then
   read weather < /etc/motd.d/%%MOTD_NAME%%/results-weather
-  if [[ -z $weather ]]; then
+  if [[ -z "$weather" ]]; then
     weatherDisplay="None"
   else
     if [[ -f /etc/motd.d/%%MOTD_NAME%%/results-weather-date ]]; then
       read weatherDate < /etc/motd.d/%%MOTD_NAME%%/results-weather-date
-      if [[ -z $weatherDate ]]; then
-        weatherDisplay="$weather ($weatherDate)"
+      if [[ -z "$weatherDate" ]]; then
+        weatherDisplay="$weather"
       else
-        weatherDisplay=$weather
+        formattedDate=${weatherDate//,}
+        shortWeatherDate=$(date -d "$formattedDate" +"%m/%d %I:%M %p")
+        weatherDisplay="$weather ($shortWeatherDate)"
       fi
     else
-      weatherDisplay=$weather
+      weatherDisplay="$weather"
     fi
   fi
 else
   weatherDisplay="None"
 fi
 
+
 # Get Temperature
-cpuTemp0=`cat /sys/class/thermal/thermal_zone0/temp`
+cpuTemp0=$(cat /sys/class/thermal/thermal_zone0/temp)
 cpuTemp1=$(($cpuTemp0/1000))
 cpuTemp2=$(($cpuTemp0/100))
 cpuTempM=$(($cpuTemp2 % $cpuTemp1))
-cpuTemp="$cpuTemp1.$cpuTempM" 
+cpuTemp="$cpuTemp1.$cpuTempM"
 
 if [[ -f /usr/bin/vcgencmd ]]; then
-  gpuTemp=`(/usr/bin/vcgencmd measure_temp | grep -o '[0-9]*\.[0-9]*')`
+  gpuTemp=$((/usr/bin/vcgencmd measure_temp | grep -o '[0-9]*\.[0-9]*'))
 elif [[ -f /opt/vc/bin/vcgencmd ]]; then
-  gpuTemp=`(/opt/vc/bin/vcgencmd measure_temp | grep -o '[0-9]*\.[0-9]*')`
+  gpuTemp=$((/opt/vc/bin/vcgencmd measure_temp | grep -o '[0-9]*\.[0-9]*'))
 fi
 
 if [[ -z $gpuTemp ]]; then
@@ -143,14 +149,14 @@ echo "$(tput setaf 1)______            _   _      _
 | |/ / (_| | | | | |\  |  __/ |_
 |___/ \__,_|_| |_\_| \_/\___|\__|
 $(tput setaf 2)
-`date +"%A, %-e %B %Y, %r"`
-$(tput setaf 1)$raspbian $bits - Raspbian $version (`uname -r | cut -d'-' -f1` Kernel)
-$machine [`hostname`]
+$(date +"%A, %-e %B %Y, %r")
+$(tput setaf 1)$raspbian $bits - Raspbian $version ($(uname -r | cut -d'-' -f1) Kernel)
+$machine [$(hostname)]
 
 Login  :$(tput setaf 2) $login
 $(tput setaf 1)Uptime :$(tput setaf 2) $uptime
-$(tput setaf 1)Disk   :$(tput setaf 2) `df -h ~ | awk 'NR==2 { printf "Total: %sB, Used: %sB, Free: %sB",$2,$3,$4; }'`
-$(tput setaf 1)Memory :$(tput setaf 2) `free -m | awk 'NR==2 { printf "Used: %sMB, Free: %sMB",$3,$4; }'` (`ps ax | wc -l | tr -d " "` Processes)
+$(tput setaf 1)Disk   :$(tput setaf 2) $(df -h ~ | awk 'NR==2 { printf "Total: %sB, Used: %sB, Free: %sB",$2,$3,$4; }')
+$(tput setaf 1)Memory :$(tput setaf 2) $(free -m | awk 'NR==2 { printf "Used: %sMB, Free: %sMB",$3,$4; }') ($(ps ax | wc -l | tr -d " ") Processes)
 $(tput setaf 1)Temp   :$(tput setaf 2) $temperatureOutput
 $(tput setaf 1)IPs    :$(tput setaf 2) Int: $ipInternal Ext: $ipExternal
 $(tput setaf 1)WX     :$(tput setaf 2) $weatherDisplay
