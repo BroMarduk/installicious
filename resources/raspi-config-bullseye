@@ -131,8 +131,8 @@ deb_ver () {
 }
 
 calc_wt_size() {
-  # NOTE: it's tempting to redirect stderr to /dev/null, so supress error
-  # output from tput. However in this case, tput detects neither stdout or
+  # NOTE: it's tempting to redirect stderr to /dev/null, so supress error 
+  # output from tput. However in this case, tput detects neither stdout or 
   # stderr is a tty and so only gives default 80, 24 values
   WT_HEIGHT=18
   WT_WIDTH=$(tput cols)
@@ -651,9 +651,9 @@ do_hostname() {
   if [ "$INTERACTIVE" = True ]; then
     whiptail --msgbox "\
 Please note: RFCs mandate that a hostname's labels \
-may contain only the ASCII letters 'a' through 'z' (case-insensitive),
+may contain only the ASCII letters 'a' through 'z' (case-insensitive), 
 the digits '0' through '9', and the hyphen.
-Hostname labels cannot begin or end with a hyphen.
+Hostname labels cannot begin or end with a hyphen. 
 No other symbols, punctuation characters, or blank spaces are permitted.\
 " 20 70 1
   fi
@@ -2531,7 +2531,7 @@ do_apply_os_config() {
     printf "Unrecognised flavour. Ignoring\n"
   fi
 
-  # TODO: currently ignores en_gb settings as we assume we are running in a
+  # TODO: currently ignores en_gb settings as we assume we are running in a 
   # first boot context, where UK English settings are default
   case "$NOOBSLANGUAGE" in
     "en")
@@ -2693,7 +2693,7 @@ EOF
   # there is now a modified initramfs ready for use...
 
   # modify config.txt
-  sed -i /boot/config.txt -e "/initramfs.*/d"
+  sed -i /boot/config.txt -e "/initramfs.*/d" 
   echo initramfs "$INITRD" >> /boot/config.txt
 
   # modify command line
@@ -2978,7 +2978,7 @@ do_system_menu() {
       "S7 Splash Screen" "Choose graphical splash screen or text boot" \
       "S8 Power LED" "Set behaviour of power LED" \
       3>&1 1>&2 2>&3)
-  elif is_live ; then
+  elif is_live ; then 
     FUN=$(whiptail --title "Raspberry Pi Software Configuration Tool (raspi-config)" --menu "System Options" $WT_HEIGHT $WT_WIDTH $WT_MENU_HEIGHT --cancel-button Back --ok-button Select \
       "S1 Wireless LAN" "Enter SSID and passphrase" \
       "S3 Password" "Change password for the '$USER' user" \
@@ -3121,7 +3121,7 @@ do_performance_menu() {
   fi
 }
 
-do_internationalisation_menu() {
+do_internationalization_menu() {
   FUN=$(whiptail --title "Raspberry Pi Software Configuration Tool (raspi-config)" --menu "Localization Options" $WT_HEIGHT $WT_WIDTH $WT_MENU_HEIGHT --cancel-button Back --ok-button Select \
     "L1 Locale" "Configure language and regional settings" \
     "L2 Timezone" "Configure time zone" \
@@ -3271,7 +3271,7 @@ if [ "$INTERACTIVE" = True ]; then
         2\ *) do_display_menu ;;
         3\ *) do_interface_menu ;;
         4\ *) do_performance_menu ;;
-        5\ *) do_internationalisation_menu ;;
+        5\ *) do_internationalization_menu ;;
         6\ *) do_advanced_menu ;;
         8\ *) do_update ;;
         9\ *) do_about ;;

@@ -131,8 +131,11 @@ do_about() {
 This tool provides a straightforward way of doing initial
 configuration of the Raspberry Pi. Although it can be run
 at any time, some of the options may have difficulties if
-you have heavily customised your installation.\
+you have heavily customised your installation.
+
+$(dpkg -s raspi-config 2> /dev/null | grep Version)\
 " 20 70 1
+  return 0
 }
 
 get_can_expand() {
@@ -2758,7 +2761,7 @@ do_performance_menu() {
   fi
 }
 
-do_internationalisation_menu() {
+do_internationalization_menu() {
   FUN=$(whiptail --title "Raspberry Pi Software Configuration Tool (raspi-config)" --menu "Localization Options" $WT_HEIGHT $WT_WIDTH $WT_MENU_HEIGHT --cancel-button Back --ok-button Select \
     "L1 Locale" "Configure language and regional settings" \
     "L2 Timezone" "Configure time zone" \
@@ -2891,7 +2894,7 @@ if [ "$INTERACTIVE" = True ]; then
         2\ *) do_display_menu ;;
         3\ *) do_interface_menu ;;
         4\ *) do_performance_menu ;;
-        5\ *) do_internationalisation_menu ;;
+        5\ *) do_internationalization_menu ;;
         6\ *) do_advanced_menu ;;
         8\ *) do_update ;;
         9\ *) do_about ;;

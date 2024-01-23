@@ -158,6 +158,10 @@ deb_ver () {
   echo $ver
 }
 
+get_package_version() {
+  dpkg-query --showformat='${Version}' --show "$1"
+}
+
 can_configure() {
   if [ ! -e /etc/init.d/lightdm ]; then
     return 1
@@ -939,6 +943,15 @@ do_vnc() {
   fi
   if [ $RET -eq 0 ]; then
     if is_installed wayvnc; then
+      wayvnc_version="$(get_package_version wayvnc)"
+      if dpkg --compare-versions "$wayvnc_version" lt 0.8; then
+        whiptail --msgbox "WayVNC version 0.8 or greater is required (have $wayvnc_version)" 20 60 1
+        return 1
+      fi
+
+      systemctl stop wayvnc.service
+
+      # In case wayvnc is already running via older xdg-autostart machanism
       pkill wayvnc
       if [ -e /etc/xdg/autostart/wayvnc.desktop ] ; then
         rm /etc/xdg/autostart/wayvnc.desktop
@@ -949,51 +962,9 @@ do_vnc() {
       systemctl stop vncserver-x11-serviced.service
     fi
     if is_wayfire; then
-      mkdir -p $HOMEDIR/.config/wayvnc/
-      if ! [ -e $HOMEDIR/.config/wayvnc/config ] ; then
-        cat << EOF > $HOMEDIR/.config/wayvnc/config
-use_relative_paths=true
-address=0.0.0.0
-enable_auth=true
-enable_pam=true
-private_key_file=key.pem
-certificate_file=cert.pem
-rsa_private_key_file=rsa_key.pem
-EOF
-        chown -R $USER:$USER $HOMEDIR/.config/wayvnc/config
-      fi
-      if ! [ -e $HOMEDIR/.config/wayvnc/key.pem ] || ! [ -e $HOMEDIR/.config/wayvnc/cert.pem ] ; then
-        echo "Generating key..."
-        HOSTNAME=$(cat /etc/hostname)
-        IP=$(ifconfig | grep inet | head -n 1 | cut -d ' ' -f 10)
-        openssl req -x509 -newkey rsa:4096 -sha256 -days 3650 -nodes -keyout $HOMEDIR/.config/wayvnc/key.pem -out $HOMEDIR/.config/wayvnc/cert.pem -subj /CN=$HOSTNAME -addext subjectAltName=DNS:$HOSTNAME,DNS:$HOSTNAME,IP:$IP 2> /dev/null
-        chown -R $USER:$USER $HOMEDIR/.config/wayvnc/*.pem
-        echo "Done"
-      fi
-      if ! [ -e $HOMEDIR/.config/wayvnc/rsa_key.pem ] ; then
-        echo "Generating RSA key..."
-        ssh-keygen -m pem -f $HOMEDIR/.config/wayvnc/rsa_key.pem -t rsa -N "" > /dev/null
-        chown -R $USER:$USER $HOMEDIR/.config/wayvnc/rsa_key.pem
-        echo "Done"
-      fi
-      if is_installed wayvnc || apt-get install "$APT_GET_FLAGS" wayvnc; then
-        KBL=$(grep XKBLAYOUT /etc/default/keyboard | cut -d \" -f 2)
-        KBV=$(grep XKBVARIANT /etc/default/keyboard | cut -d \" -f 2)
-        if [ -z $KBV ] ; then
-          VNCKBD="$KBL"
-        else
-          VNCKBD="$KBL-$KBV"
-        fi
-        cat << EOF > /etc/xdg/autostart/wayvnc.desktop
-[Desktop Entry]
-Type=Application
-Name=wayvnc
-Comment=Start wayvnc
-NoDisplay=true
-Exec=/usr/bin/wayvnc --render-cursor --keyboard=$VNCKBD
-OnlyShowIn=wayfire
-EOF
-        sudo -u $USER XDG_RUNTIME_DIR=/run/user/$SUDO_UID WAYLAND_DISPLAY=wayland-1 wayvnc --render-cursor --keyboard=$VNCKBD 2> /dev/null &
+      if is_installed wayvnc; then
+        systemctl enable wayvnc.service &&
+        systemctl start wayvnc.service &&
         STATUS=enabled
       else
         return 1
@@ -1009,19 +980,12 @@ EOF
     fi
   elif [ $RET -eq 1 ]; then
     if is_installed wayvnc; then
-      pkill wayvnc
-      if [ -e /etc/xdg/autostart/wayvnc.desktop ] ; then
-        rm /etc/xdg/autostart/wayvnc.desktop
-      fi
+      systemctl disable wayvnc.service
+      systemctl stop wayvnc.service
     fi
     if is_installed realvnc-vnc-server; then
       systemctl disable vncserver-x11-serviced.service
       systemctl stop vncserver-x11-serviced.service
-    fi
-    if is_wayfire; then
-      if [ -e $HOMEDIR/.config/wayvnc/config ] ; then
-        rm $HOMEDIR/.config/wayvnc/config
-      fi
     fi
     STATUS=disabled
   else
@@ -2254,7 +2218,7 @@ do_audioconf() {
     if [ "$PPENABLED" = 0 ] ; then
       DEFAULT=2
     fi
-    if ! is_installed pulseaudio && ! is_installed pipewire-pulse ; then 
+    if ! is_installed pulseaudio && ! is_installed pipewire-pulse ; then
       whiptail --msgbox "No audio systems installed" 20 60 1
       RET=1
     else
@@ -3302,8 +3266,8 @@ do_performance_menu() {
   fi
 }
 
-do_internationalisation_menu() {
-  FUN=$(whiptail --title "Raspberry Pi Software Configuration Tool (raspi-config)" --menu "Localisation Options" $WT_HEIGHT $WT_WIDTH $WT_MENU_HEIGHT --cancel-button Back --ok-button Select \
+do_internationalization_menu() {
+  FUN=$(whiptail --title "Raspberry Pi Software Configuration Tool (raspi-config)" --menu "Localization Options" $WT_HEIGHT $WT_WIDTH $WT_MENU_HEIGHT --cancel-button Back --ok-button Select \
     "L1 Locale" "Configure language and regional settings" \
     "L2 Timezone" "Configure time zone" \
     "L3 Keyboard" "Set keyboard layout to match your keyboard" \
@@ -3409,7 +3373,7 @@ if [ "$INTERACTIVE" = True ]; then
         "2 Display Options" "Configure display settings" \
         "3 Interface Options" "Configure connections to peripherals" \
         "4 Performance Options" "Configure performance settings" \
-        "5 Localisation Options" "Configure language and regional settings" \
+        "5 Localization Options" "Configure language and regional settings" \
         "6 Advanced Options" "Configure advanced settings" \
         "8 Update" "Update this tool to the latest version" \
         "9 About raspi-config" "Information about this configuration tool" \
@@ -3419,7 +3383,7 @@ if [ "$INTERACTIVE" = True ]; then
         "1 System Options" "Configure system settings" \
         "2 Display Options" "Configure display settings" \
         "3 Interface Options" "Configure connections to peripherals" \
-        "5 Localisation Options" "Configure language and regional settings" \
+        "5 Localization Options" "Configure language and regional settings" \
         "6 Advanced Options" "Configure advanced settings" \
         "8 Update" "Update this tool to the latest version" \
         "9 About raspi-config" "Information about this configuration tool" \
@@ -3434,7 +3398,7 @@ if [ "$INTERACTIVE" = True ]; then
         2\ *) do_display_menu ;;
         3\ *) do_interface_menu ;;
         4\ *) do_performance_menu ;;
-        5\ *) do_internationalisation_menu ;;
+        5\ *) do_internationalization_menu ;;
         6\ *) do_advanced_menu ;;
         8\ *) do_update ;;
         9\ *) do_about ;;
