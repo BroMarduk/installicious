@@ -120,7 +120,6 @@ else
   weatherDisplay="None"
 fi
 
-
 # Get Temperature
 cpuTemp0=$(cat /sys/class/thermal/thermal_zone0/temp)
 cpuTemp1=$(($cpuTemp0/1000))
@@ -129,15 +128,21 @@ cpuTempM=$(($cpuTemp2 % $cpuTemp1))
 cpuTemp="$cpuTemp1.$cpuTempM"
 
 if [[ -f /usr/bin/vcgencmd ]]; then
-  gpuTemp=$((/usr/bin/vcgencmd measure_temp | grep -o '[0-9]*\.[0-9]*'))
+  gpuTemp=$(/usr/bin/vcgencmd measure_temp | grep -o '[0-9]*\.[0-9]*')
+  pmicTemp=$(/usr/bin/vcgencmd measure_temp pmic | grep -o '[0-9]*\.[0-9]*') # Only works on Pi 4 or above
 elif [[ -f /opt/vc/bin/vcgencmd ]]; then
-  gpuTemp=$((/opt/vc/bin/vcgencmd measure_temp | grep -o '[0-9]*\.[0-9]*'))
+  gpuTemp=$(/opt/vc/bin/vcgencmd measure_temp pmic | grep -o '[0-9]*\.[0-9]*')
+  pmicTemp=$(/opt/vc/bin/vcgencmd measure_temp pmic | grep -o '[0-9]*\.[0-9]*') # Only works on Pi 4 or above
 fi
 
 if [[ -z $gpuTemp ]]; then
   temperatureOutput="CPU: $cpuTemp °C"
 else
-  temperatureOutput="CPU: $cpuTemp °C | GPU: $gpuTemp °C"
+  if [[ -z $pmicTemp ]]; then
+    temperatureOutput="CPU: $cpuTemp °C | GPU: $gpuTemp °C"
+  else
+    temperatureOutput="CPU: $cpuTemp °C | GPU: $gpuTemp °C | PMIC: $pmicTemp °C"
+  fi
 fi
 
 clear

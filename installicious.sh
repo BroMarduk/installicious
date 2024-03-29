@@ -201,8 +201,10 @@ CODENAME=${VERSION_CODENAME^}
 if [[ -z $CODENAME ]]; then
   read DEBIAN_VERSION < /etc/debian_version
   NUM_VERSION=${DEBIAN_VERSION%%.*}
-  if [[ $NUM_VERSION -gt 12 ]]; then
-    CODENAME="Trixie"
+  if [[ $NUM_VERSION -gt 13 ]]; then
+    CODENAME="Forky"  # Not Released
+  elif [[ $NUM_VERSION -eq 13 ]]; then
+    CODENAME="Trixie" # Not Released
   elif [[ $NUM_VERSION -eq 12 ]]; then
     CODENAME="Bookworm"
   elif [[ $NUM_VERSION -eq 11 ]]; then
@@ -295,14 +297,14 @@ case $REVISION in
   #  c03115 Raspberry Pi 4 B 1.5 (Sony)
   #  c03130 Raspberry Pi 400 1.0 (Sony)
   #  c03140 Raspberry Pi Compute Module 4 1.0 (Sony)
-  #  c04100 Raspberry Pi 5 B 1.0 (Sony)
-  "c03111" | "c03112" | "c03114" | "c03115" | "c03130" | "c03140" | "c04100")
+  #  c04170 Raspberry Pi 5 B 1.0 (Sony)
+  "c03111" | "c03112" | "c03114" | "c03115" | "c03130" | "c03140" | "c04170")
     MEMORY="4096";;
   #  d03114 Raspberry Pi 4 B 1.4 (Sony)
   #  d03115 Raspberry Pi 4 B 1.5 (Sony)
   #  d03140 Raspberry Pi Compute Module 4 1.0 (Sony)
-  #  d04100 Raspberry Pi 5 B 1.0 (Sony)
-  "d03114" | "d03115" | "d03140" | "d04100")
+  #  d04170 Raspberry Pi 5 B 1.0 (Sony)
+  "d03114" | "d03115" | "d03140" | "d04170")
     MEMORY="8192";;
   *)
     MEMORY="Unknown";;
@@ -321,7 +323,7 @@ elif grep -q "^Revision\s*:\s*[ 123][0-9a-fA-F][0-9a-fA-F]2[0-9a-fA-F][0-9a-fA-F
   PIMODELNUM=3
 elif grep -q "^Revision\s*:\s*[ 123][0-9a-fA-F][0-9a-fA-F]3[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]$" /proc/cpuinfo; then
   PIMODELNUM=4
-elif grep -q "^Revision\s*:\s*[ 123][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]04[0-9a-fA-F]$" /proc/cpuinfo; then
+elif grep -q "^Revision\s*:\s*[ 123][0-9a-fA-F][0-9a-fA-F]4[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]$" /proc/cpuinfo; then
   PIMODELNUM=5
 else
   PIMODELNUM=99 # Unknown
