@@ -23,7 +23,6 @@ source lib/status.sh 2>/dev/null || true
 source lib/state.sh  2>/dev/null || true
 source lib/reboot.sh 2>/dev/null || true
 PATH_ZONE_INFO="/usr/share/zoneinfo"
-PATH_HOME="/home"
 PATH_LINK_TIME_ZONE="/etc/localtime"
 FILE_CONFIG_INSTALLICIOUS="config/installicious.config"
 FILE_CONFIG_RCONF="config/rconf.config"
@@ -34,26 +33,16 @@ FILE_STATUS_RCONF_NAME="rconf.status"
 FILE_STATUS_PKUPD_NAME="pkupd.status"
 FILE_STATUS_PKUPD_TIME_NAME="pkupd.status.time"
 FILE_SOURCES_LIST="/etc/apt/sources.list"
-FILE_SOURCES_LIST_COLLABORA="/etc/apt/sources.list.d/collabora.list"
 FILE_LOCALE_CONFIG="/etc/default/locale"
 FILE_KEYBOARD_CONFIG="/etc/default/keyboard"
-FILE_KEYBOARD_CONFIG_WHEEZY="/etc/kbd/config"
-FILE_KEYBOARD_MAP=".config/lxkeymap.cfg"
-FILE_INSTALLER_RCONF_REBOOT="install-rconf-reboot"
-FILE_SCRIPT_PROCESS_OPTIONS="process-options"
 FILE_LOCALE_GEN="/etc/locale.gen"
-FILE_RC_LOCAL="/etc/rc.local"
 FILE_CONSOLE_BLANKING="/sys/module/kernel/parameters/consoleblank"
 FILE_TIME_ZONE="/etc/timezone"
 FILE_WPA_SUPPLICANT="/etc/wpa_supplicant/wpa_supplicant.conf"
 FILE_LOCAL_TIME="/etc/localtime"
 FILE_LIGHTDM_CONFIG="/etc/lightdm/lightdm.conf"
 FILE_RASPI_CONFIG="/usr/bin/raspi-config"
-FILE_LEGACY_CONFIG="legacy-config.sh"
 EXIT_REBOOT=255
-SUPPORT_RPI_CONFIG_CMDLINE_FULL=0
-SUPPORT_RPI_CONFIG_CMDLINE_BASIC=1
-SUPPORT_RPI_CONFIG_CMDLINE_NONE=2
 STATUS_UPDATE_RASPI_CONFIG="Not Run"
 STATUS_RC_UPGRADE="Not Run"
 STATUS_OVERSCAN="Not Run"
@@ -254,63 +243,6 @@ fi
 
 # Do Package Updates in case they were not done.
 if [[ $NEED_PKG_UPDATE -ne 0 ]]; then
-  if [[ $II_CODENAME = "Wheezy" || $II_CODENAME = "Jessie" ]]; then
-    if [[ $(grep "http://legacy.raspbian.org/raspbian/" $FILE_SOURCES_LIST) ]]; then
-      echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Package lists to legacy in older raspbian release $II_CODENAME already updated to legacy." | sudo tee --append $FILE_LOG_INSTALLER
-    else
-      sudo sed -i "s/mirrordirector/legacy/g" $FILE_SOURCES_LIST
-      if [[ $RET_VAL -ne 0 ]]; then
-        echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to update package lists to legacy in older raspbian release $II_CODENAME." | sudo tee --append $FILE_LOG_INSTALLER
-        STATUS_RC_UPGRADE="Error"
-        STATUS="Error"
-        EXIT_CODE=$((EXIT_CODE+2))
-      else
-        if [[ $(grep "http://legacy.raspbian.org/raspbian/" $FILE_SOURCES_LIST) ]]; then
-          echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Successfully updated package lists to legacy in older raspbian release $II_CODENAME" | sudo tee --append $FILE_LOG_INSTALLER
-        else
-          echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to update package lists to legacy in older raspbian release $II_CODENAME." | sudo tee --append $FILE_LOG_INSTALLER
-          STATUS_RC_UPGRADE="Error"
-          STATUS="Error"
-          EXIT_CODE=$((EXIT_CODE+2))
-        fi
-      fi
-    fi
-    if [[ $II_CODENAME = "Wheezy" ]]; then
-      if [[ -f $FILE_SOURCES_LIST_COLLABORA ]]; then
-        echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Found obsolete package source [$FILE_SOURCES_LIST_COLLABORA] in older raspbian release $II_CODENAME" | sudo tee --append $FILE_LOG_INSTALLER
-        sudo rm $FILE_SOURCES_LIST_COLLABORA
-        if [[ $RET_VAL -ne 0 ]]; then
-          echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to delete obsolete package source [$FILE_SOURCES_LIST_COLLABORA] in older raspbian release $II_CODENAME" | sudo tee --append $FILE_LOG_INSTALLER
-          STATUS_RC_UPGRADE="Error"
-          STATUS="Error"
-          EXIT_CODE=$((EXIT_CODE+2))
-        else
-          echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Successfully deleted obsolete package source [$FILE_SOURCES_LIST_COLLABORA] in older raspbian release $II_CODENAME" | sudo tee --append $FILE_LOG_INSTALLER
-        fi
-      fi
-    fi
-  fi
-
-  if [[ $II_CODENAME = "Stretch" ]]; then
-    if [[ $(grep "http://legacy.raspbian.org/raspbian/" $FILE_SOURCES_LIST) ]]; then
-      echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Package lists to legacy in older raspbian release $II_CODENAME already updated to legacy." | sudo tee --append $FILE_LOG_INSTALLER
-    else
-      sudo sed -i "s/raspbian.raspberrypi/legacy.raspbian/g" $FILE_SOURCES_LIST
-      if [[ $RET_VAL -ne 0 ]]; then
-        echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to update package lists to legacy in older raspbian release $II_CODENAME." | sudo tee --append $FILE_LOG_INSTALLER
-        STATUS_RC_UPGRADE="Error"
-        STATUS="Error"
-        EXIT_CODE=$((EXIT_CODE+2))
-      else
-        if [[ $(grep "http://legacy.raspbian.org/raspbian/" $FILE_SOURCES_LIST) ]]; then
-          echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Successfully updated package lists to legacy in older raspbian release $II_CODENAME" | sudo tee --append $FILE_LOG_INSTALLER
-        else
-          echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to update package lists to legacy in older raspbian release $II_CODENAME." | sudo tee --append $FILE_LOG_INSTALLER
-        fi
-      fi
-    fi
-  fi
-
   sudo DEBIAN_FRONTEND="noninteractive" apt-get update --yes
   RET_VAL=$?
   if [[ $RET_VAL -ne 0 ]]; then
@@ -349,70 +281,23 @@ else
   STATUS_RC_UPGRADE="Completed"
 fi
 
-# Check if raspi-config is supported on this OS for some functions - May need to fine tune it based on features.
-if [[ ! -z $II_CODENAME ]]; then
-  if [[ $II_CODENAME = "Wheezy" || $II_CODENAME = "Jessie" || $II_CODENAME = "Stretch" ]]; then
-    if [[ $II_CODENAME = "Wheezy" ]]; then
-      SUPPORT_RPI_CONFIG_CMDLINE=$SUPPORT_RPI_CONFIG_CMDLINE_NONE
-    else
-      SUPPORT_RPI_CONFIG_CMDLINE=$SUPPORT_RPI_CONFIG_CMDLINE_BASIC
-    fi
-  else
-    SUPPORT_RPI_CONFIG_CMDLINE=$SUPPORT_RPI_CONFIG_CMDLINE_FULL
-  fi
-else
-  echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to determine the OS Codename for Raspi-Config support. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
-  exit 1
-fi
+# Bullseye/Bookworm/Trixie all support the modern non-interactive raspi-config
+# CLI directly; the legacy support-tier gating is gone.
 
-# Check if we need to copy new raspi-config files to /usr/bin to support non-pi users.  Only for Jessie and Wheezy.
-if [[ $II_CODENAME == "Wheezy" || $II_CODENAME = "Jessie" ]]; then
-    if [[ -f "$PATH_RESOURCES/raspi-config-${II_CODENAME,,}" ]]; then
-    sudo cp "$PATH_RESOURCES/raspi-config-${II_CODENAME,,}" $FILE_RASPI_CONFIG
-    RET_VAL=$?
-    if [[ $RET_VAL -ne 0 ]]; then
-      echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to copy the raspi-config-${II_CODENAME,,} file to /usr/bin. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
-      STATUS_UPDATE_RASPI_CONFIG="Error"
-      STATUS="Error"
-      EXIT_CODE=$((EXIT_CODE+4))
-    else
-      sudo chmod 755 $FILE_RASPI_CONFIG
-      RET_VAL=$?
-      if [[ $RET_VAL -ne 0 ]]; then
-        echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to set the permissions on the raspi-config file in /usr/bin. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
-        STATUS_UPDATE_RASPI_CONFIG="Error"
-        STATUS="Error"
-        EXIT_CODE=$((EXIT_CODE+4))
-      else
-        sed -i "s/SYS_USER=\"[^\"]*\"/SYS_USER=\"$USER_USERNAME\"/" $FILE_RASPI_CONFIG
-        RET_VAL=$?
-        if [[ $RET_VAL -ne 0 ]]; then
-          echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to set the default user to [$USER_USERNAME]. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
-          STATUS_UPDATE_RASPI_CONFIG="Error"
-          STATUS="Error"
-          EXIT_CODE=$((EXIT_CODE+4))
-        else
-          echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Successfully copied the new raspi-config file to /usr/bin, update user, and set permissions." | sudo tee --append $FILE_LOG_INSTALLER
-        fi
-      fi
-    fi
+# Change 'Localisation' to 'Localization' in raspi-config file.
+if sudo grep -q "Localisation " "$FILE_RASPI_CONFIG"; then
+  sed -i "s/Localisation /Localization /" $FILE_RASPI_CONFIG
+  RET_VAL=$?
+  if [[ $RET_VAL -ne 0 ]]; then
+    echo "$(date '+%Y-%m-%d %T.%5N') - WARN - [$MODULE] Unable to apply full English mode to raspi-config. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
+    STATUS_UPDATE_RASPI_CONFIG="Warning"
+  else
+    echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Successfully applied full English mode to the raspi-config file." | sudo tee --append $FILE_LOG_INSTALLER
+    STATUS_UPDATE_RASPI_CONFIG="Completed"
   fi
 else
-  # Change 'Localisation' to 'Localization' in raspi-config file.
-  if sudo grep -q "Localisation " "$FILE_RASPI_CONFIG"; then
-    sed -i "s/Localisation /Localization /" $FILE_RASPI_CONFIG
-    RET_VAL=$?
-    if [[ $RET_VAL -ne 0 ]]; then
-      echo "$(date '+%Y-%m-%d %T.%5N') - WARN - [$MODULE] Unable to apply full English mode to raspi-config. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
-      STATUS_UPDATE_RASPI_CONFIG="Warning"
-    else
-      echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Successfully applied full English mode to the raspi-config file." | sudo tee --append $FILE_LOG_INSTALLER
-      STATUS_UPDATE_RASPI_CONFIG="Completed"
-    fi
-  else
-    echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Raspi-config file already current and in full English mode." | sudo tee --append $FILE_LOG_INSTALLER
-    STATUS_UPDATE_RASPI_CONFIG="Skipped"
-  fi
+  echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Raspi-config file already current and in full English mode." | sudo tee --append $FILE_LOG_INSTALLER
+  STATUS_UPDATE_RASPI_CONFIG="Skipped"
 fi
 
 #TODO add if [[ $II_MODEL_NUM -ge $RPI_MODEL_4 ]]; then for the new overscan setting with 2 HDMIs
@@ -432,20 +317,7 @@ else
 fi
 
 if [[ $CURRENT_OVERSCAN -ne $RCONF_OVERSCAN ]]; then
-  if [[ $SUPPORT_RPI_CONFIG_CMDLINE -le $SUPPORT_RPI_CONFIG_CMDLINE_BASIC ]]; then
-    sudo raspi-config nonint do_overscan $RCONF_OVERSCAN
-  else
-    if grep -q "^#disable_overscan" $FILE_BOOT_CONFIG; then
-      # If disable_overscan is commented out, uncomment it and set the value
-      sudo sed -i "s/^#disable_overscan=.*/disable_overscan=$RCONF_OVERSCAN/" $FILE_BOOT_CONFIG
-    elif grep -q "^disable_overscan" $FILE_BOOT_CONFIG; then
-      # If disable_overscan is not commented, just change its value
-      sudo sed -i "s/^disable_overscan=.*/disable_overscan=$RCONF_OVERSCAN/" $FILE_BOOT_CONFIG
-    else
-      # If disable_overscan doesn't exist, add it
-      echo "disable_overscan=$RCONF_OVERSCAN" | sudo tee -a $FILE_BOOT_CONFIG
-    fi
-  fi
+  sudo raspi-config nonint do_overscan $RCONF_OVERSCAN
   RET_VAL=$?
   if [[ $RET_VAL -ne 0 ]]; then
     echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to successfully complete the overscan change to [$RCONF_OVERSCAN]. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
@@ -462,79 +334,31 @@ else
 fi
 
 # Set the screen blanking setting (GUI)
-if [[ $SUPPORT_RPI_CONFIG_CMDLINE -le $SUPPORT_RPI_CONFIG_CMDLINE_FULL ]]; then
-  CURRENT_BLANKING=`sudo raspi-config nonint get_blanking`
-  RET_VAL=$?
-  if [[ $RET_VAL -ne 0 ]]; then
-    echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to successfully get the current screen blanking configuration. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
-    STATUS_BLANKING="Error"
-    STATUS="Error"
-    EXIT_CODE=$((EXIT_CODE+4))
-  else
-    if [[ $CURRENT_BLANKING != $RCONF_BLANKING ]]; then
-      sudo raspi-config nonint do_blanking $RCONF_BLANKING
-      RET_VAL=$?
-      if [[ $RET_VAL -ne 0 ]]; then
-        echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to successfully complete the screen blanking change to [$RCONF_BLANKING]. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
-        STATUS_BLANKING="Error"
-        STATUS="Error"
-        EXIT_CODE=$((EXIT_CODE+4))
-      else
-        echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Successfully completed the screen blanking change to [$RCONF_BLANKING]." | sudo tee --append $FILE_LOG_INSTALLER
-        STATUS_BLANKING="Completed"
-        REBOOT_REQUIRED=2
-      fi
+CURRENT_BLANKING=$(sudo raspi-config nonint get_blanking)
+RET_VAL=$?
+if [[ $RET_VAL -ne 0 ]]; then
+  echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to successfully get the current screen blanking configuration. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
+  STATUS_BLANKING="Error"
+  STATUS="Error"
+  EXIT_CODE=$((EXIT_CODE+4))
+else
+  if [[ $CURRENT_BLANKING != $RCONF_BLANKING ]]; then
+    sudo raspi-config nonint do_blanking $RCONF_BLANKING
+    RET_VAL=$?
+    if [[ $RET_VAL -ne 0 ]]; then
+      echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to successfully complete the screen blanking change to [$RCONF_BLANKING]. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
+      STATUS_BLANKING="Error"
+      STATUS="Error"
+      EXIT_CODE=$((EXIT_CODE+4))
     else
-      echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Screen blanking already set to [$RCONF_BLANKING]. Skipping configuration." | sudo tee --append $FILE_LOG_INSTALLER
-      STATUS_BLANKING="Skipped"
-    fi
-  fi
-elif [[ $SUPPORT_RPI_CONFIG_CMDLINE -le $SUPPORT_RPI_CONFIG_CMDLINE_BASIC ]]; then
-  if [[ $II_OS_LEVEL != "Lite" ]]; then
-    # Double checked this and in Jessie/Stretch times are in minutes not seconds.
-    BLANKING_MINUTES=$(($RCONF_BLANKING_SECONDS / 60))
-    # Check if the line is commented out or has a value other than X -s xxx
-    if grep -q "^#xserver-command=" $FILE_LIGHTDM_CONFIG; then
-      # Uncomment the line and set the value
-      sed -i "/^#xserver-command=/s/^#xserver-command=.*/xserver-command=X -s $BLANKING_MINUTES/" $FILE_LIGHTDM_CONFIG
-      RET_VAL=$?
-      if [[ $RET_VAL -ne 0 ]]; then
-        echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to successfully complete the screen blanking change to [$BLANKING_MINUTES]. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
-        STATUS_BLANKING="Error"
-        STATUS="Error"
-        EXIT_CODE=$((EXIT_CODE+4))
-      else
-        echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Successfully completed the screen blanking change to [$BLANKING_MINUTES]." | sudo tee --append $FILE_LOG_INSTALLER
-        STATUS_BLANKING="Completed"
-        REBOOT_REQUIRED=2
-      fi
-    elif grep -q "^xserver-command=X -s [0-9]\+" $FILE_LIGHTDM_CONFIG; then
-      # Replace the xxx value with TIMEOUT
-      if grep -q "^xserver-command=X -s $BLANKING_MINUTES\+" $FILE_LIGHTDM_CONFIG; then
-        echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] The screen blanking is already set to [$BLANKING_MINUTES]. Skipping configuration.." | sudo tee --append $FILE_LOG_INSTALLER
-        STATUS_BLANKING="Skipped"
-      else
-        sed -i "/^xserver-command=X -s [0-9]\+/s/[0-9]\+/$BLANKING_MINUTES/" $FILE_LIGHTDM_CONFIG
-        RET_VAL=$?
-        if [[ $RET_VAL -ne 0 ]]; then
-          echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to successfully complete the screen blanking change to [$BLANKING_MINUTES]. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
-          STATUS_BLANKING="Error"
-          STATUS="Error"
-          EXIT_CODE=$((EXIT_CODE+4))
-        else
-          echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Successfully completed the screen blanking change to [$BLANKING_MINUTES]." | sudo tee --append $FILE_LOG_INSTALLER
-          STATUS_BLANKING="Completed"
-          REBOOT_REQUIRED=2
-        fi
-      fi
+      echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Successfully completed the screen blanking change to [$RCONF_BLANKING]." | sudo tee --append $FILE_LOG_INSTALLER
+      STATUS_BLANKING="Completed"
+      REBOOT_REQUIRED=2
     fi
   else
-    echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] No need to change GUI screen blanking in Lite version of [$II_CODENAME]." | sudo tee --append $FILE_LOG_INSTALLER
+    echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Screen blanking already set to [$RCONF_BLANKING]. Skipping configuration." | sudo tee --append $FILE_LOG_INSTALLER
     STATUS_BLANKING="Skipped"
   fi
-else
-  echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] The screen blanking is not supported on Wheezy. Change directly from desktop." | sudo tee --append $FILE_LOG_INSTALLER
-  STATUS_BLANKING="Skipped"
 fi
 
 # Set the console blanking setting
@@ -558,24 +382,9 @@ else
       STATUS="Error"
       EXIT_CODE=$((EXIT_CODE+4))
     else
-      if [[ $SUPPORT_RPI_CONFIG_CMDLINE -le $SUPPORT_RPI_CONFIG_CMDLINE_NONE ]]; then   # Wheezy requires an additional setting be changed also
-        sudo sed -i "/^#*BLANK_TIME=/c\BLANK_TIME=$RCONF_BLANKING_SECONDS" $FILE_KEYBOARD_CONFIG_WHEEZY
-        RET_VAL=$?
-        if [[ $RET_VAL -ne 0 ]]; then
-          echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to successfully complete the Wheezy-pecific console blanking change to [$RCONF_BLANKING_SECONDS]. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
-          STATUS_BLANKING_CONSOLE="Error"
-          STATUS="Error"
-          EXIT_CODE=$((EXIT_CODE+4))
-        else
-          echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Successfully completed the Wheezy-specific console blanking change to [$RCONF_BLANKING_SECONDS]." | sudo tee --append $FILE_LOG_INSTALLER
-          REBOOT_REQUIRED=2
-          STATUS_BLANKING_CONSOLE="Completed"
-        fi
-      else
-        echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Successfully completed the Wheezy-specific console blanking change to [$RCONF_BLANKING_SECONDS]." | sudo tee --append $FILE_LOG_INSTALLER
-        REBOOT_REQUIRED=2
-        STATUS_BLANKING_CONSOLE="Completed"
-      fi
+      echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Successfully completed the console blanking change to [$RCONF_BLANKING_SECONDS]." | sudo tee --append $FILE_LOG_INSTALLER
+      REBOOT_REQUIRED=2
+      STATUS_BLANKING_CONSOLE="Completed"
     fi
   else
     echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] The console blanking is already set to [$RCONF_BLANKING_SECONDS]. Skipping configuration." | sudo tee --append $FILE_LOG_INSTALLER
@@ -609,26 +418,16 @@ if [[ $GPU_MEM_SPLIT -ne $GPU_MEM_CURRENT ]]; then
       STATUS_GPU_MEM_SPLIT="Completed"
     fi
   else
-    # Set the GPU memory split if supported by model
-    if [[ $SUPPORT_RPI_CONFIG_CMDLINE -eq $SUPPORT_RPI_CONFIG_CMDLINE_BASIC ]]; then
-      if [[ $II_CODENAME = "Bookworm" ]]; then
-        # Bookworm stopped supporting do_memory_split in raspi-config.
-        sudo $PATH_SCRIPTS/$FILE_LEGACY_CONFIG nonint do_memory_split $GPU_MEM_SPLIT
-      else
-        sudo raspi-config nonint do_memory_split $GPU_MEM_SPLIT
-      fi
+    # Set the GPU memory split via direct config.txt edit. Modern raspi-config
+    # on Bookworm dropped do_memory_split, and Trixie follows; manual sed of
+    # /boot/firmware/config.txt is the supported path on all our target OSes.
+    if grep -q "^#gpu_mem" $FILE_BOOT_CONFIG; then
+      sudo sed -i "s/^#gpu_mem=.*/gpu_mem=$GPU_MEM_SPLIT/" $FILE_BOOT_CONFIG
+    elif grep -q "^gpu_mem" $FILE_BOOT_CONFIG; then
+      sudo sed -i "s/^gpu_mem=.*/gpu_mem=$GPU_MEM_SPLIT/" $FILE_BOOT_CONFIG
     else
-      if grep -q "^#gpu_mem" $FILE_BOOT_CONFIG; then
-        # If disable_overscan is commented out, uncomment it and set the value
-        sudo sed -i "s/^#gpu_mem=.*/gpu_mem=$GPU_MEM_SPLIT/" $FILE_BOOT_CONFIG
-      elif grep -q "^gpu_mem" $FILE_BOOT_CONFIG; then
-        # If disable_overscan is not commented, just change its value
-        sudo sed -i "s/^gpu_mem=.*/gpu_mem=$GPU_MEM_SPLIT/" $FILE_BOOT_CONFIG
-      else
-        # If disable_overscan doesn't exist, add it
-        sudo echo "# uncomment to force a gpu_mem size for the GPU" | sudo tee -a $FILE_BOOT_CONFIG > /dev/null
-        sudo echo "gpu_mem=$GPU_MEM_SPLIT" | sudo tee -a $FILE_BOOT_CONFIG > /dev/null
-      fi
+      echo "# uncomment to force a gpu_mem size for the GPU" | sudo tee -a $FILE_BOOT_CONFIG > /dev/null
+      echo "gpu_mem=$GPU_MEM_SPLIT" | sudo tee -a $FILE_BOOT_CONFIG > /dev/null
     fi
     RET_VAL=$?
     if [[ $RET_VAL -ne 0 ]]; then
@@ -652,365 +451,146 @@ else
   fi
 fi
 
-# Configure the time zone. Use raspi-config if supported, otherwise use symbolic link.
-if [[ $SUPPORT_RPI_CONFIG_CMDLINE -le $SUPPORT_RPI_CONFIG_CMDLINE_BASIC ]]; then
-  TIME_ZONE=$(timedatectl | grep "Time zone" | awk '{print $3}')
-  if [[ $TIME_ZONE = $RCONF_TIME_ZONE ]]; then
-    echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] The time zone is already set to [$RCONF_TIME_ZONE.] Skipping configuration." | sudo tee --append $FILE_LOG_INSTALLER
-    STATUS_CHANGE_TIME_ZONE="Skipped"
-  else
-    if [[ $SUPPORT_RPI_CONFIG_CMDLINE -le $SUPPORT_RPI_CONFIG_CMDLINE_FULL ]]; then
-      sudo raspi-config nonint do_change_timezone "$RCONF_TIME_ZONE"
-      RET_VAL=$?
-      if [[ $RET_VAL -ne 0 ]]; then
-        echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to successfully change the time zone to [$RCONF_TIME_ZONE]. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
-        STATUS_CHANGE_TIME_ZONE="Error"
-        STATUS="Error"
-        EXIT_CODE=$((EXIT_CODE+4))
-      else
-        echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Successfully changed the time zone to [$RCONF_TIME_ZONE]." | sudo tee --append $FILE_LOG_INSTALLER
-        STATUS_CHANGE_TIME_ZONE="Completed"
-      fi
-    else
-      sudo ln -sf $PATH_ZONE_INFO/$RCONF_TIME_ZONE $PATH_LINK_TIME_ZONE
-      RET_VAL=$?
-      if [[ $RET_VAL -ne 0 ]]; then
-        echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to successfully change the time zone to [$RCONF_TIME_ZONE]. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
-        STATUS_CHANGE_TIME_ZONE="Error"
-        STATUS="Error"
-        EXIT_CODE=$((EXIT_CODE+4))
-      else
-        echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Successfully changed the time zone to [$RCONF_TIME_ZONE]." | sudo tee --append $FILE_LOG_INSTALLER
-        STATUS_CHANGE_TIME_ZONE="Completed"
-      fi
-    fi
-  fi
+# Configure the time zone via raspi-config (supported on all target OSes).
+TIME_ZONE=$(timedatectl | grep "Time zone" | awk '{print $3}')
+if [[ $TIME_ZONE = $RCONF_TIME_ZONE ]]; then
+  echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] The time zone is already set to [$RCONF_TIME_ZONE]. Skipping configuration." | sudo tee --append $FILE_LOG_INSTALLER
+  STATUS_CHANGE_TIME_ZONE="Skipped"
 else
-  read TIME_ZONE < $FILE_TIME_ZONE
-  if [[ $TIME_ZONE = $RCONF_TIME_ZONE ]]; then
-    echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] The time zone is already set to [$RCONF_TIME_ZONE.] Skipping configuration." | sudo tee --append $FILE_LOG_INSTALLER
-    STATUS_CHANGE_TIME_ZONE="Skipped"
-  else
-    if [[ -f $FILE_LOCAL_TIME ]]; then
-      sudo rm $FILE_LOCAL_TIME
-      RET_VAL=$?
-      if [[ $RET_VAL -ne 0 ]]; then
-        echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to remove the local time zone file [$FILE_LOCAL_TIME]. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
-        STATUS_CHANGE_TIME_ZONE="Error"
-        STATUS="Error"
-        EXIT_CODE=$((EXIT_CODE+4))
-      else
-        echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Successfully removed the local time zone file [$FILE_LOCAL_TIME]." | sudo tee --append $FILE_LOG_INSTALLER
-      fi
-    else
-      echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] The local time zone file [$FILE_LOCAL_TIME] was not found and therefore does not need deleted." | sudo tee --append $FILE_LOG_INSTALLER
-    fi
-    echo $RCONF_TIME_ZONE | sudo tee $FILE_TIME_ZONE
-    RET_VAL=$?
-    if [[ $RET_VAL -ne 0 ]]; then
-      echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to successfully change the time zone to [$RCONF_TIME_ZONE]. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
-      STATUS_CHANGE_TIME_ZONE="Error"
-      STATUS="Error"
-      EXIT_CODE=$((EXIT_CODE+4))
-    else
-      sudo dpkg-reconfigure -f noninteractive tzdata
-      STATUS_CHANGE_TIME_ZONE="Completed"
-      if [[ $RET_VAL -ne 0 ]]; then
-        echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to successfully change the time zone to [$RCONF_TIME_ZONE]. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
-        STATUS_CHANGE_TIME_ZONE="Error"
-        STATUS="Error"
-        EXIT_CODE=$((EXIT_CODE+4))
-      else
-        echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Successfully changed the time zone to [$RCONF_TIME_ZONE]." | sudo tee --append $FILE_LOG_INSTALLER
-        STATUS_CHANGE_TIME_ZONE="Completed"
-      fi
-    fi
-  fi
-fi
-
-# Configure the WiFi country.
-if [[ $SUPPORT_RPI_CONFIG_CMDLINE -le $SUPPORT_RPI_CONFIG_CMDLINE_BASIC ]]; then
-  CURRENT_WIFI_COUNTRY=`sudo raspi-config nonint get_wifi_country`
+  sudo raspi-config nonint do_change_timezone "$RCONF_TIME_ZONE"
   RET_VAL=$?
   if [[ $RET_VAL -ne 0 ]]; then
-    echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to successfully get the current WiFi country configuration. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
-    STATUS_CONFIGURE_WIFI_COUNTRY="Error"
+    echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to successfully change the time zone to [$RCONF_TIME_ZONE]. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
+    STATUS_CHANGE_TIME_ZONE="Error"
     STATUS="Error"
     EXIT_CODE=$((EXIT_CODE+4))
   else
-    if [[ $CURRENT_WIFI_COUNTRY != $RCONF_WIFI_COUNTRY ]]; then
-      sudo raspi-config nonint do_wifi_country "$RCONF_WIFI_COUNTRY" > NULL
-      RET_VAL=$?
-      if [[ $RET_VAL -ne 0 ]]; then
-        echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to successfully complete the WiFi country configuration to [$RCONF_WIFI_COUNTRY]. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
-        STATUS_CONFIGURE_WIFI_COUNTRY="Error"
-        STATUS="Error"
-        EXIT_CODE=$((EXIT_CODE+4))
-      else
-        echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Successfully completed the WiFi county configuration to [$RCONF_WIFI_COUNTRY]." | sudo tee --append $FILE_LOG_INSTALLER
-        REBOOT_REQUIRED=2
-        STATUS_CONFIGURE_WIFI_COUNTRY="Completed"
-      fi
-    else
-      echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] WiFi county already set to [$RCONF_WIFI_COUNTRY]. Skipping configuration." | sudo tee --append $FILE_LOG_INSTALLER
-      STATUS_CONFIGURE_WIFI_COUNTRY="Skipped"
-    fi
+    echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Successfully changed the time zone to [$RCONF_TIME_ZONE]." | sudo tee --append $FILE_LOG_INSTALLER
+    STATUS_CHANGE_TIME_ZONE="Completed"
   fi
+fi
+
+# Configure the WiFi country via raspi-config (supported on all target OSes).
+CURRENT_WIFI_COUNTRY=$(sudo raspi-config nonint get_wifi_country)
+RET_VAL=$?
+if [[ $RET_VAL -ne 0 ]]; then
+  echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to successfully get the current WiFi country configuration. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
+  STATUS_CONFIGURE_WIFI_COUNTRY="Error"
+  STATUS="Error"
+  EXIT_CODE=$((EXIT_CODE+4))
 else
-  if [[ -f $FILE_WPA_SUPPLICANT ]]; then
-    CURRENT_WIFI_COUNTRY=`sudo grep "^country=" $FILE_WPA_SUPPLICANT | cut -d'=' -f2`
+  if [[ $CURRENT_WIFI_COUNTRY != $RCONF_WIFI_COUNTRY ]]; then
+    sudo raspi-config nonint do_wifi_country "$RCONF_WIFI_COUNTRY" >/dev/null
     RET_VAL=$?
     if [[ $RET_VAL -ne 0 ]]; then
-      echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to successfully get the current WiFi country configuration. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
+      echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to successfully complete the WiFi country configuration to [$RCONF_WIFI_COUNTRY]. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
       STATUS_CONFIGURE_WIFI_COUNTRY="Error"
       STATUS="Error"
       EXIT_CODE=$((EXIT_CODE+4))
     else
-      if [[ -z $CURRENT_WIFI_COUNTRY || $CURRENT_WIFI_COUNTRY != $RCONF_WIFI_COUNTRY ]]; then
-        if grep -q "^country=" "$WPA_SUPPLICANT_CONF"; then
-          # It exists, so let's update it
-          sudo sed -i "s/^country=.*/country=$RCONF_WIFI_COUNTRY/" $FILE_WPA_SUPPLICANT
-        else
-          # It doesn't exist, so let's add it at the beginning of the file
-          sudo sed -i "1icountry=$RCONF_WIFI_COUNTRY" "$WPA_SUPPLICANT_CONF"
-        fi
-        RET_VAL=$?
-        if [[ $RET_VAL -ne 0 ]]; then
-          echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to successfully complete the WiFi country configuration to [$RCONF_WIFI_COUNTRY]. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
-          STATUS_CONFIGURE_WIFI_COUNTRY="Error"
-          STATUS="Error"
-          EXIT_CODE=$((EXIT_CODE+4))
-        else
-          echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Successfully completed the WiFi county configuration to [$RCONF_WIFI_COUNTRY]." | sudo tee --append $FILE_LOG_INSTALLER
-          REBOOT_REQUIRED=2
-          STATUS_CONFIGURE_WIFI_COUNTRY="Completed"
-        fi
-      else
-        echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] WiFi county already set to [$RCONF_WIFI_COUNTRY]. Skipping configuration." | sudo tee --append $FILE_LOG_INSTALLER
-        STATUS_CONFIGURE_WIFI_COUNTRY="Skipped"
-      fi
+      echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Successfully completed the WiFi country configuration to [$RCONF_WIFI_COUNTRY]." | sudo tee --append $FILE_LOG_INSTALLER
+      REBOOT_REQUIRED=2
+      STATUS_CONFIGURE_WIFI_COUNTRY="Completed"
     fi
   else
-    echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to find the WPA configuration file [$FILE_WPA_SUPPLICANT]." | sudo tee --append $FILE_LOG_INSTALLER
-    STATUS_CONFIGURE_WIFI_COUNTRY="Error"
-    STATUS="Error"
-    EXIT_CODE=$((EXIT_CODE+4))
+    echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] WiFi country already set to [$RCONF_WIFI_COUNTRY]. Skipping configuration." | sudo tee --append $FILE_LOG_INSTALLER
+    STATUS_CONFIGURE_WIFI_COUNTRY="Skipped"
   fi
 fi
 
 # Configure the Locale and Keyboard settings.
-if [[ $SUPPORT_RPI_CONFIG_CMDLINE -le $SUPPORT_RPI_CONFIG_CMDLINE_BASIC ]]; then
-  # Get the current locale settings.
-  source "$FILE_LOCALE_CONFIG"
+# Modern raspi-config supports do_change_locale + do_configure_keyboard on all
+# target OSes. The keyboard layout depends on the locale being active, so when
+# both are changing we set REBOOT_REQUIRED=1 to flag an intermediate reboot
+# (handled by the systemd-resume mechanism — install-rconf re-runs after the
+# reboot and completes the keyboard layout step).
+source "$FILE_LOCALE_CONFIG"
+RET_VAL=$?
+if [[ $RET_VAL -ne 0 ]]; then
+  echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to load the current locale. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
+  STATUS_CHANGE_LOCALE="Error"
+  STATUS="Error"
+  EXIT_CODE=$((EXIT_CODE+8))
+fi
+
+source "$FILE_KEYBOARD_CONFIG"
+RET_VAL=$?
+if [[ $RET_VAL -ne 0 ]]; then
+  echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to load the current keyboard settings. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
+  STATUS_CONFIG_KEYBOARD_LANGUAGE="Error"
+  STATUS="Error"
+  EXIT_CODE=$((EXIT_CODE+8))
+fi
+
+# If both locale and keyboard layout are changing, schedule the keyboard
+# layout step for after the reboot (the new locale must be active first).
+if [[ $LANG != $RCONF_LOCALE && $XKBLAYOUT != $RCONF_KEYBOARD_LANG ]]; then
+  echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Different locale and keyboard settings requires intermediate reboot." | sudo tee --append $FILE_LOG_INSTALLER
+  REBOOT_REQUIRED=1
+else
+  echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] No intermediate reboot required." | sudo tee --append $FILE_LOG_INSTALLER
+fi
+
+# Change the locale if it is not already set correctly.
+if [[ $LANG != $RCONF_LOCALE ]]; then
+  sudo raspi-config nonint do_change_locale "$RCONF_LOCALE"
   RET_VAL=$?
   if [[ $RET_VAL -ne 0 ]]; then
-    echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to load the current locale. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
-    STATUS_GPU_MEM_SPLIT="Error"
+    echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to successfully change the locale to [$RCONF_LOCALE]. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
+    STATUS_CHANGE_LOCALE="Error"
     STATUS="Error"
-    EXIT_CODE=$((EXIT_CODE+8))
-  fi
-
-  # Get the current keyboard settings.
-  source "$FILE_KEYBOARD_CONFIG"
-  RET_VAL=$?
-  if [[ $RET_VAL -ne 0 ]]; then
-    echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to load the current locale. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
-    STATUS_GPU_MEM_SPLIT="Error"
-    STATUS="Error"
-    EXIT_CODE=$((EXIT_CODE+8))
-  fi
-
-  # If both local and keyboard need changed, then we need to reboot in between.
-  if [[ $II_OS_LEVEL = "Lite" || $SUPPORT_RPI_CONFIG_CMDLINE -le $SUPPORT_RPI_CONFIG_CMDLINE_BASIC ]]; then
-    if [[ $LANG != $RCONF_LOCALE && $XKBLAYOUT != $RCONF_KEYBOARD_LANG ]]; then
-      echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Different locale and keyboard settings requires intermediate reboot." | sudo tee --append $FILE_LOG_INSTALLER
-      REBOOT_REQUIRED=1
-    else
-      echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] No intermidate reboot required." | sudo tee --append $FILE_LOG_INSTALLER
-    fi
+    EXIT_CODE=$((EXIT_CODE+4))
   else
-    GUI_KB_LAYOUT=$(grep "^layout" $PATH_HOME/$USER_USERNAME/$FILE_KEYBOARD_MAP| cut -d'=' -f2 | tr -d '"' | tr -d [:blank:])
-    if [[ $LANG != $RCONF_LOCALE && ($XKBLAYOUT != $RCONF_KEYBOARD_LANG || $GUI_KB_LAYOUT != $RCONF_KEYBOARD_LANG) ]]; then
-      echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Different locale and keyboard settings requires intermediate reboot." | sudo tee --append $FILE_LOG_INSTALLER
-      REBOOT_REQUIRED=1
-    else
-      echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] No intermidate reboot required." | sudo tee --append $FILE_LOG_INSTALLER
+    if [[ $REBOOT_REQUIRED -ne 1 ]]; then
+      REBOOT_REQUIRED=2
     fi
-  fi
-
-  # Change the locale if it is not already set correctly.
-  if [[ $LANG != $RCONF_LOCALE ]]; then
-    if [[ $SUPPORT_RPI_CONFIG_CMDLINE -le $SUPPORT_RPI_CONFIG_CMDLINE_FULL ]]; then
-      # Use raspi-config to change the locale if supported.
-      sudo raspi-config nonint do_change_locale "$RCONF_LOCALE"
-      RET_VAL=$?
-      if [[ $RET_VAL -ne 0 ]]; then
-        echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to successfully change the locale to [$RCONF_LOCALE]. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
-        STATUS_CHANGE_LOCALE="Error"
-        STATUS="Error"
-        EXIT_CODE=$((EXIT_CODE+4))
-      else
-        if [[ $REBOOT_REQUIRED -ne 1 ]]; then
-          REBOOT_REQUIRED=2
-        fi
-        echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Successfully changed the locale to [$RCONF_LOCALE]. Reboot required." | sudo tee --append $FILE_LOG_INSTALLER
-        STATUS_CHANGE_LOCALE="Completed"
-      fi
-    else
-      # Comment all the locales in the locale.gen file.
-      sudo sed -i "s/^[^#]/# &/" $FILE_LOCALE_GEN
-      RET_VAL=$?
-      if [[ $RET_VAL -ne 0 ]]; then
-        echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to successfully uncomment the locale [$RCONF_LOCALE]. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
-        STATUS_CHANGE_LOCALE="Error"
-        STATUS="Error"
-        EXIT_CODE=$((EXIT_CODE+4))
-      else
-        # Uncomment the locale in the locale.gen file.
-        sudo sed -i "s/# $RCONF_LOCALE/$RCONF_LOCALE/" $FILE_LOCALE_GEN
-        RET_VAL=$?
-        if [[ $RET_VAL -ne 0 ]]; then
-          echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to successfully uncomment the locale [$RCONF_LOCALE]. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
-          STATUS_CHANGE_LOCALE="Error"
-          STATUS="Error"
-          EXIT_CODE=$((EXIT_CODE+4))
-        else
-          # Generate the locale.
-          sudo locale-gen
-          if [[ $RET_VAL -ne 0 ]]; then
-          echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to successfully generate the locale [$RCONF_LOCALE]. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
-          STATUS_CHANGE_LOCALE="Error"
-          STATUS="Error"
-          EXIT_CODE=$((EXIT_CODE+4))
-          else
-            # Update the locale.
-            sudo localectl set-locale LANG=$RCONF_LOCALE
-            RET_VAL=$?
-            if [[ $RET_VAL -ne 0 ]]; then
-              echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to successfully change the locale to [$RCONF_LOCALE]. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
-              STATUS_CHANGE_LOCALE="Error"
-              STATUS="Error"
-              EXIT_CODE=$((EXIT_CODE+4))
-            else
-              if [[ $REBOOT_REQUIRED -ne 1 ]]; then
-                REBOOT_REQUIRED=2
-              fi
-              STATUS_CHANGE_LOCALE="Completed"
-              echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Successfully changed the locale to [$RCONF_LOCALE]. Reboot required." | sudo tee --append $FILE_LOG_INSTALLER
-            fi
-          fi
-        fi
-      fi
-    fi
-  else
-      echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Skipped changing locale because it was already [$RCONF_LOCALE]." | sudo tee --append $FILE_LOG_INSTALLER
-      STATUS_CHANGE_LOCALE="Skipped"
-  fi
-
-  # See if we need (one of the settings changed) or can (no pending reboot) change keyboard or model.
-  if [[ $REBOOT_REQUIRED -eq 0 && $XKBLAYOUT != $RCONF_KEYBOARD_LANG && ( -z $GUI_KB_LAYOUT || $GUI_KB_LAYOUT != $RCONF_KEYBOARD_LANG ) ]]; then
-
-    # Check if the keyboard model is already set to the desired setting.
-    if [[ $XKBMODEL != $RCONF_KEYBOARD_MODEL ]]; then
-      sudo sed -i "s/XKBMODEL=\".*\"/XKBMODEL=\"$RCONF_KEYBOARD_MODEL\"/" "$FILE_KEYBOARD_CONFIG"
-      RET_VAL=$?
-      if [[ $RET_VAL -ne 0 ]]; then
-        echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to successfully configure the keyboard model to [$RCONF_KEYBOARD_MODEL]. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
-        STATUS_CONFIG_KEYBOARD_MODEL="Error"
-        STATUS="Error"
-        EXIT_CODE=$((EXIT_CODE+4))
-      else
-        echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Successfully configured the keyboard model to [$RCONF_KEYBOARD_MODEL]." | sudo tee --append $FILE_LOG_INSTALLER
-        STATUS_CONFIG_KEYBOARD_MODEL="Completed"
-      fi
-    else
-        echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Skipped changing keyboard model because it was already [$RCONF_KEYBOARD_MODEL]." | sudo tee --append $FILE_LOG_INSTALLER
-        STATUS_CONFIG_KEYBOARD_MODEL="Skipped"
-    fi
-
-    # Set the keyboard language
-    if [[ $SUPPORT_RPI_CONFIG_CMDLINE -le $SUPPORT_RPI_CONFIG_CMDLINE_FULL ]]; then
-      if [[ $XKBLAYOUT != $RCONF_KEYBOARD_LANG ]]; then
-        sudo raspi-config nonint do_configure_keyboard "$RCONF_KEYBOARD_LANG"
-        RET_VAL=$?
-        if [[ $RET_VAL -ne 0 ]]; then
-          echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to successfully configure the keyboard language to [$RCONF_KEYBOARD_LANG]. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
-          STATUS_CONFIG_KEYBOARD_LANGUAGE="Error"
-          STATUS="Error"
-          EXIT_CODE=$((EXIT_CODE+4))
-        else
-          echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Successfully configured the keyboard language to [$RCONF_KEYBOARD_LANG]." | sudo tee --append $FILE_LOG_INSTALLER
-          STATUS_CONFIG_KEYBOARD_LANGUAGE="Completed"
-        fi
-      else
-        echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Skipped changing keyboard language because it was already [$RCONF_KEYBOARD_LANG]." | sudo tee --append $FILE_LOG_INSTALLER
-        STATUS_CONFIG_KEYBOARD_LANGUAGE="Skipped"
-      fi
-    else
-      if [[ $XKBLAYOUT != $RCONF_KEYBOARD_LANG ]]; then
-        sudo sed -i "s/XKBLAYOUT=\".*\"/XKBLAYOUT=\"$RCONF_KEYBOARD_LANG\"/" "$FILE_KEYBOARD_CONFIG"
-        RET_VAL=$?
-        if [[ $RET_VAL -ne 0 ]]; then
-          echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to successfully configure the keyboard language to [$RCONF_KEYBOARD_LANG]. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
-          STATUS_CONFIG_KEYBOARD_LANGUAGE="Error"
-          STATUS="Error"
-          EXIT_CODE=$((EXIT_CODE+4))
-        else
-          sudo service keyboard-setup restart
-          RET_VAL=$?
-          if [[ $RET_VAL -ne 0 ]]; then
-            echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to successfully restart the keyboard service with language [$RCONF_KEYBOARD_LANG.] Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
-            STATUS_CONFIG_KEYBOARD_LANGUAGE="Error"
-            STATUS="Error"
-            EXIT_CODE=$((EXIT_CODE+4))
-          fi
-        fi
-      else
-        echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Skipped changing keyboard language because it was already [$RCONF_KEYBOARD_LANG]." | sudo tee --append $FILE_LOG_INSTALLER
-        STATUS_CONFIG_KEYBOARD_MODEL="Skipped"
-      fi
-
-      if [[ $II_OS_LEVEL = "Lite" ]]; then
-        echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Successfully configured the keyboard language to [$RCONF_KEYBOARD_LANG]." | sudo tee --append $FILE_LOG_INSTALLER
-        STATUS_CONFIG_KEYBOARD_LANGUAGE="Completed"
-      else
-        if [[ $SUPPORT_RPI_CONFIG_CMDLINE -le $SUPPORT_RPI_CONFIG_CMDLINE_NONE ]]; then
-          if [[ -z $PATH_HOME/$USER_USERNAME/$FILE_KEYBOARD_MAP ]]; then
-            echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to successfully set the GUI keyboard language to [$RCONF_KEYBOARD_LANG]. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
-            STATUS_CONFIG_KEYBOARD_LANGUAGE="Error"
-            STATUS="Error"
-            EXIT_CODE=$((EXIT_CODE+4))
-          else
-            sudo sed -i "/^layout =/c\layout = $RCONF_KEYBOARD_LANG" $PATH_HOME/$USER_USERNAME/$FILE_KEYBOARD_MAP
-            RET_VAL=$?
-            if [[ $RET_VAL -ne 0 ]]; then
-              echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to successfully set the GUI keyboard language to [$RCONF_KEYBOARD_LANG]. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
-              STATUS_CONFIG_KEYBOARD_LANGUAGE="Error"
-              STATUS="Error"
-              EXIT_CODE=$((EXIT_CODE+4))
-            else
-              echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Successfully set the GUI keyboard language to [$RCONF_KEYBOARD_LANG]. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
-            fi
-          fi
-        fi
-      fi
-    fi
-  else
-    if [[ $REBOOT_REQUIRED -ne 0 ]]; then
-      echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Skipped changing keyboard language because of pending reboot." | sudo tee --append $FILE_LOG_INSTALLER
-    else
-      echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Skipped changing keyboard model because it was already [$RCONF_KEYBOARD_MODEL]." | sudo tee --append $FILE_LOG_INSTALLER
-      echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Skipped changing keyboard language because it was already [$RCONF_KEYBOARD_LANG]." | sudo tee --append $FILE_LOG_INSTALLER
-      if [[ ! -z $GUI_KB_LAYOUT ]]; then
-        echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Skipped changing gui keyboard language because it was already [$RCONF_KEYBOARD_LANG]." | sudo tee --append $FILE_LOG_INSTALLER
-      fi
-    fi
-    STATUS_CHANGE_LOCALE="Skipped"
+    echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Successfully changed the locale to [$RCONF_LOCALE]. Reboot required." | sudo tee --append $FILE_LOG_INSTALLER
+    STATUS_CHANGE_LOCALE="Completed"
   fi
 else
-  echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] The keyboard language and model settings are not supported for this level Use Raspi-Config. Skipping configuration." | sudo tee --append $FILE_LOG_INSTALLER
-  STATUS_CONFIG_KEYBOARD_LANGUAGE="Skipped"
-  STATUS_CONFIG_KEYBOARD_MODEL="Skipped"
+  echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Skipped changing locale because it was already [$RCONF_LOCALE]." | sudo tee --append $FILE_LOG_INSTALLER
+  STATUS_CHANGE_LOCALE="Skipped"
+fi
+
+# Configure keyboard model + layout when there's no pending reboot. On a
+# locale-change cycle this runs on the post-reboot pass, when the new locale
+# is active and the keyboard layout call can succeed cleanly.
+if [[ $REBOOT_REQUIRED -eq 0 && $XKBLAYOUT != $RCONF_KEYBOARD_LANG ]]; then
+  if [[ $XKBMODEL != $RCONF_KEYBOARD_MODEL ]]; then
+    sudo sed -i "s/XKBMODEL=\".*\"/XKBMODEL=\"$RCONF_KEYBOARD_MODEL\"/" "$FILE_KEYBOARD_CONFIG"
+    RET_VAL=$?
+    if [[ $RET_VAL -ne 0 ]]; then
+      echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to configure the keyboard model to [$RCONF_KEYBOARD_MODEL]. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
+      STATUS_CONFIG_KEYBOARD_MODEL="Error"
+      STATUS="Error"
+      EXIT_CODE=$((EXIT_CODE+4))
+    else
+      echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Successfully configured the keyboard model to [$RCONF_KEYBOARD_MODEL]." | sudo tee --append $FILE_LOG_INSTALLER
+      STATUS_CONFIG_KEYBOARD_MODEL="Completed"
+    fi
+  else
+    echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Skipped changing keyboard model because it was already [$RCONF_KEYBOARD_MODEL]." | sudo tee --append $FILE_LOG_INSTALLER
+    STATUS_CONFIG_KEYBOARD_MODEL="Skipped"
+  fi
+
+  sudo raspi-config nonint do_configure_keyboard "$RCONF_KEYBOARD_LANG"
+  RET_VAL=$?
+  if [[ $RET_VAL -ne 0 ]]; then
+    echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to configure the keyboard language to [$RCONF_KEYBOARD_LANG]. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
+    STATUS_CONFIG_KEYBOARD_LANGUAGE="Error"
+    STATUS="Error"
+    EXIT_CODE=$((EXIT_CODE+4))
+  else
+    echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Successfully configured the keyboard language to [$RCONF_KEYBOARD_LANG]." | sudo tee --append $FILE_LOG_INSTALLER
+    STATUS_CONFIG_KEYBOARD_LANGUAGE="Completed"
+  fi
+else
+  if [[ $REBOOT_REQUIRED -ne 0 ]]; then
+    echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Skipped changing keyboard language because of pending reboot (will run on resume)." | sudo tee --append $FILE_LOG_INSTALLER
+  else
+    echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Skipped changing keyboard model because it was already [$RCONF_KEYBOARD_MODEL]." | sudo tee --append $FILE_LOG_INSTALLER
+    echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Skipped changing keyboard language because it was already [$RCONF_KEYBOARD_LANG]." | sudo tee --append $FILE_LOG_INSTALLER
+  fi
 fi
 # Format the date and time for the status file.
 CURRENT_RUN="$(date '+%Y-%m-%d %T.%5N')"
