@@ -92,17 +92,10 @@ else
   fi
 fi
 
-# Make sure the dependencies directory variable can be found.
-if [[ -z $PATH_DEPENDENCIES ]]; then
-  echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to find a value for the dependencies directory in the configuration $FILE_CONFIG_INSTALLICIOUS." | sudo tee --append $FILE_LOG_INSTALLER
-  exit 1
-else
-  # Check for dependencies directory as it must exist.
-  if [[ ! -d $PATH_DEPENDENCIES ]]; then
-    echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to find the dependencies directory $PATH_DEPENDENCIES specifed in the configuration file $FILE_CONFIG_INSTALLICIOUS." | sudo tee --append $FILE_LOG_INSTALLER
-    exit 1
-  fi
-fi
+# PATH_DEPENDENCIES is legacy — the lib/apt.sh helpers replaced the
+# dependencies/*-up.sh shim scripts, so the directory is no longer required.
+# Left in installicious.config for any unmigrated installer that still
+# references it; if absent, that's fine.
 
 # Make sure the config directory variable can be found.
 if [[ -z $PATH_CONFIG ]]; then

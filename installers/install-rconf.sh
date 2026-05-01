@@ -138,11 +138,17 @@ else
   FILE_LOG_INSTALLER="$PATH_LOGS/$FILE_LOG_INSTALLICIOUS"
 fi
 
-# Check Dependencies
-RASPI_CONFIG_RESULT=$(sudo bash "$PATH_DEPENDENCIES/raspi-config-up.sh")
-RET_VAL=$?
+# Ensure raspi-config is installed (replaces the legacy
+# dependencies/raspi-config-up.sh shim with lib/apt.sh's idempotent helper).
+if declare -F apt_ensure_installed >/dev/null; then
+  apt_ensure_installed raspi-config
+  RET_VAL=$?
+else
+  sudo DEBIAN_FRONTEND=noninteractive apt-get install --yes raspi-config
+  RET_VAL=$?
+fi
 if [[ $RET_VAL -ne 0 ]]; then
-  echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to check for or install package Raspi-Config. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
+  echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to check for or install package raspi-config. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
   exit 1
 fi
 
