@@ -106,7 +106,7 @@ chkeq "empty filter" "$(manifest_filter_by_category nothing "$TMPDIR")" ""
 echo
 echo "=== Test 7: real installers/ directory has 5 valid manifests ==="
 real_ids=$(manifest_list_ids installers | sort | tr "\n" ",")
-chkeq "real installers" "$real_ids" "bash,git,pip,pkupd,zram,"
+chkeq "real installers" "$real_ids" "bash,git,pip,pkupd,rconf,zram,"
 
 # Each registered ID must point to its own install-<id>.sh file.
 mismatched=""
