@@ -1,0 +1,153 @@
+#!/bin/bash
+
+# lib/scheduler.sh - Run installer queues in dependency order.
+#
+# The scheduler reads II_DEPS from each manifest (via lib/manifest.sh) to:
+#   - resolve transitive dependencies (auto-add missing deps to the queue)
+#   - topologically sort the queue so each installer runs after its deps
+#   - execute each installer with `--install`, halting on the reboot signal
+#     (exit code 255)
+#
+# Usage:
+#   source lib/manifest.sh
+#   source lib/log.sh
+#   source lib/scheduler.sh
+#   queue=$(scheduler_resolve_deps git weewx)   # adds transitive deps
+#   sorted=$(scheduler_topo_sort $queue)        # deps-first ordering
+#   scheduler_run_queue $sorted                 # invokes each installer
+#
+# Or in one call:
+#   scheduler_run_resolved git weewx            # resolve + sort + run
+#
+# Returns 0 on full success, 255 on reboot signal, non-zero on any installer
+# failure (continues the queue past failures unless 255 is returned, matching
+# the behavior of the legacy scripts/process-options.sh).
+
+EXIT_REBOOT=255
+
+# scheduler_resolve_deps <id...> -> echo <id...> + transitive deps, one per line.
+# Uses the manifest registry. IDs without an installer are kept in the output
+# but a warning goes to stderr.
+scheduler_resolve_deps() {
+  local -A seen=()
+  local -a queue=("$@")
+  local -a output=()
+  local id deps dep path
+  while [[ ${#queue[@]} -gt 0 ]]; do
+    id="${queue[0]}"
+    queue=("${queue[@]:1}")
+    [[ -n ${seen[$id]:-} ]] && continue
+    seen[$id]=1
+    output+=("$id")
+    path=$(manifest_path_for "$id")
+    if [[ -z $path ]]; then
+      echo "scheduler_resolve_deps: no installer found for ID '$id'" >&2
+      continue
+    fi
+    deps=$(manifest_get_field "$path" "II_DEPS")
+    for dep in $deps; do
+      [[ -n ${seen[$dep]:-} ]] && continue
+      queue+=("$dep")
+    done
+  done
+  printf '%s\n' "${output[@]}"
+}
+
+# scheduler_topo_sort <id...> -> echo IDs in dependency order (deps before
+# dependents), one per line. Returns rc=2 on cycle detection.
+# Edges considered are only those between IDs in the input set; deps not in the
+# set are ignored (caller should resolve_deps first if needed).
+scheduler_topo_sort() {
+  local -a input=("$@")
+  [[ ${#input[@]} -eq 0 ]] && return 0
+  local -A in_set=()
+  local -A indeg=()
+  local -A deps_of=()
+  local id path deps dep
+  for id in "${input[@]}"; do
+    in_set[$id]=1
+    indeg[$id]=0
+    deps_of[$id]=""
+  done
+  for id in "${input[@]}"; do
+    path=$(manifest_path_for "$id")
+    [[ -z $path ]] && continue
+    deps=$(manifest_get_field "$path" "II_DEPS")
+    deps_of[$id]="$deps"
+    for dep in $deps; do
+      [[ -n ${in_set[$dep]:-} ]] || continue
+      indeg[$id]=$((indeg[$id] + 1))
+    done
+  done
+
+  local -a ready=()
+  for id in "${input[@]}"; do
+    [[ ${indeg[$id]} -eq 0 ]] && ready+=("$id")
+  done
+
+  local -a result=()
+  local node
+  while [[ ${#ready[@]} -gt 0 ]]; do
+    node="${ready[0]}"
+    ready=("${ready[@]:1}")
+    result+=("$node")
+    for id in "${input[@]}"; do
+      [[ ${indeg[$id]:-0} -eq 0 ]] && continue
+      for dep in ${deps_of[$id]}; do
+        if [[ $dep == "$node" ]]; then
+          indeg[$id]=$((indeg[$id] - 1))
+          [[ ${indeg[$id]} -eq 0 ]] && ready+=("$id")
+        fi
+      done
+    done
+  done
+
+  if [[ ${#result[@]} -ne ${#input[@]} ]]; then
+    echo "scheduler_topo_sort: cycle detected in dependency graph" >&2
+    return 2
+  fi
+  printf '%s\n' "${result[@]}"
+}
+
+# scheduler_run_queue <id...>
+# Runs each installer with `--install`, halting on exit 255 (reboot signal).
+# Other failures are logged via log_warn and the queue continues.
+# Caller should have called log_init beforehand.
+# Returns: 0 on full success, 255 on reboot, last non-zero rc otherwise.
+scheduler_run_queue() {
+  local id path rc
+  local overall_rc=0
+  for id in "$@"; do
+    path=$(manifest_path_for "$id")
+    if [[ -z $path ]]; then
+      log_warn "Skipping '$id': no installer registered."
+      continue
+    fi
+    log_info "Running installer: $id."
+    bash "$path" --install
+    rc=$?
+    if [[ $rc -eq $EXIT_REBOOT ]]; then
+      log_info "Installer $id requested reboot. Halting queue."
+      return $EXIT_REBOOT
+    fi
+    if [[ $rc -ne 0 ]]; then
+      log_warn "Installer $id exited non-zero ($rc); continuing queue." "$rc"
+      overall_rc=$rc
+    fi
+  done
+  return $overall_rc
+}
+
+# scheduler_run_resolved <id...> - convenience: resolve_deps + topo_sort + run_queue.
+scheduler_run_resolved() {
+  local resolved sorted
+  resolved=$(scheduler_resolve_deps "$@")
+  sorted=$(scheduler_topo_sort $resolved)
+  local sort_rc=$?
+  if [[ $sort_rc -ne 0 ]]; then
+    log_fail "Dependency cycle detected; cannot build execution order." "$sort_rc"
+    return $sort_rc
+  fi
+  # shellcheck disable=SC2086
+  scheduler_run_queue $sorted
+}
