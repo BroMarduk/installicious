@@ -4,12 +4,13 @@
 MODULE="Installicious Main"
 DESCRIPTION="The starting point for Installicious. Run this first and watch the magic happen."
 FILE_CONFIG_INSTALLICIOUS="config/installicious.config"
-CHANGE_LOCALE=0
-REBOOT_REQUIRED=0
+EXIT_REBOOT=255
+RESUME_UNIT_SRC="resources/installicious-resume.service"
+RESUME_UNIT_DEST="/etc/systemd/system/installicious-resume.service"
 
 # Look for installicious.config file in the same directory.
 if [[ ! -f $FILE_CONFIG_INSTALLICIOUS ]]; then
-  echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to find the configuration file $FILE_CONFIG_INSTALLICIOUS." 
+  echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to find the configuration file $FILE_CONFIG_INSTALLICIOUS."
   exit 1
 fi
 
@@ -21,9 +22,18 @@ if [[ $RET_VAL -ne 0 ]]; then
   exit 1
 fi
 
+# Source helper libs. (Must come after config so PATH_* are set, before any
+# state/manifest/apt operations.) Falls back gracefully to the legacy paths if
+# the libs are missing.
+source lib/log.sh    2>/dev/null || true
+source lib/status.sh 2>/dev/null || true
+source lib/state.sh  2>/dev/null || true
+source lib/apt.sh    2>/dev/null || true
+source lib/manifest.sh 2>/dev/null || true
+
 # Make sure the logging directory variable can be found.
 if [[ -z $PATH_LOGS ]]; then
-  echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to find a value for the logging directory in the configuration $FILE_CONFIG_INSTALLICIOUS." 
+  echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to find a value for the logging directory in the configuration $FILE_CONFIG_INSTALLICIOUS."
   exit 1
 else
   # Check for logs directory as it must exist
@@ -31,7 +41,7 @@ else
     mkdir -p "$PATH_LOGS";
     RET_VAL=$?
     if [[ $RET_VAL -ne 0 ]]; then
-      echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to create the logs directory $PATH_LOGS specifed in the configuration file $FILE_CONFIG_INSTALLICIOUS. Error Code: $RET_VAL." 
+      echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to create the logs directory $PATH_LOGS specifed in the configuration file $FILE_CONFIG_INSTALLICIOUS. Error Code: $RET_VAL."
       exit 1
     fi
   fi
@@ -44,45 +54,13 @@ else
   FILE_LOG_INSTALLER="$PATH_LOGS/$FILE_LOG_INSTALLICIOUS"
 fi
 
-# Load the command line parameters if there are any and check for reboot
-if [[ ! -z $* ]]; then
-  REBOOT=$1
-  INSTALLERTYPE=$2
-  NEXTFILE=$3
-
-  # Check for Reboot mode and run back to the installer if a reboot
-  if [[ "${REBOOT,,}" = "--reboot" && ! -z $INSTALLERTYPE && ! -z $NEXTFILE ]]; then
-    echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Installicious processing reboot type $INSTALLERTYPE for file $NEXTFILE.sh." | sudo tee --append $FILE_LOG_INSTALLER
-    # Remove the reboot reference comment and next line containing the script from the rc.local file.
-    sudo sed -i "/# Installicious Reboot/{N;d;}" /etc/rc.local
-    RET_VAL=$?
-    if [[ $RET_VAL -ne 0 ]]; then
-      echo "$(date '+%Y-%m-%d %T.%5N') - WARN - [$MODULE] Unable remove reboot reference comment from the rc.local file. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
-      exit 1
-    else
-      echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Removed reboot reference from the rc.local file." | sudo tee --append $FILE_LOG_INSTALLER
-    fi
-    if [[ "${INSTALLERTYPE,,}" = "script" ]]; then
-      bash "$PATH_SCRIPTS/$NEXTFILE.sh" $REBOOT
-      RET_VAL=$?
-        if [[ $RET_VAL -ne 0 ]]; then
-          echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to process reboot type $INSTALLERTYPE for file $NEXTFILE.sh" Error Code: $RET_VAL.. | sudo tee --append $FILE_LOG_INSTALLER
-          exit 1
-        fi
-      exit 0
-    elif [[ "${INSTALLERTYPE,,}" = "installer" ]]; then
-      bash "$PATH_INSTALLERS/$NEXTFILE.sh" $REBOOT
-      RET_VAL=$?
-        if [[ $RET_VAL -ne 0 ]]; then
-          echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to process reboot type $INSTALLERTYPE for file $NEXTFILE.sh". Error Code: $RET_VAL. | sudo tee --append $FILE_LOG_INSTALLER
-          exit 1
-        fi
-      exit 0
-    else
-      echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to process reboot type $INSTALLERTYPE for file $NEXTFILE.sh". | sudo tee --append $FILE_LOG_INSTALLER
-      exit 1
-    fi
-  fi
+# Resume after a reboot: if the scheduler queue was persisted by request_reboot,
+# hand off to scripts/resume.sh and skip the menus. (Replaces the legacy
+# /etc/rc.local --reboot --reboot-type --next-file arg-parsing flow, which
+# Pillar 3 retired in favor of a systemd-managed resume.)
+if declare -F state_exists >/dev/null && state_exists; then
+  echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Detected pending queue state; resuming via scripts/resume.sh." | sudo tee --append $FILE_LOG_INSTALLER
+  exec bash "$PATH_SCRIPTS/resume.sh"
 fi
 
 # Create the log file for this run of Installicious by outputting new file which will overwrite last.
@@ -142,25 +120,16 @@ fi
 if [[ -z $PATH_STATUS ]]; then
   echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to find a value for the status directory in the configuration $FILE_CONFIG_INSTALLICIOUS." | sudo tee --append $FILE_LOG_INSTALLER
   exit 1
-else
-  # Check for status directory and create if it does not exist.
-  if [[ ! -d $PATH_STATUS ]]; then
-    mkdir -p "$PATH_STATUS";
-    RET_VAL=$?
-    if [[ $RET_VAL -ne 0 ]]; then
-      echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to create the status directory $PATH_STATUS specifed in the configuration file $FILE_CONFIG_INSTALLICIOUS. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
-      exit 1
-    fi
-  else
-    # If it exists, remove any existing status files but will keep status.time files.
-    sudo rm --force "$PATH_STATUS"/*.status
-    RET_VAL=$?
-    if [[ $RET_VAL -ne 0 ]]; then
-      echo "$(date '+%Y-%m-%d %T.%5N') - WARN - [$MODULE] Unable to delete the existing status files in $PATH_STATUS. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
-      exit 1
-    else
-      echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Deleted the existing status files in $PATH_STATUS." | sudo tee --append $FILE_LOG_INSTALLER
-    fi
+fi
+# Status files now encode persistent install state (FW_STATE / FW_VERSION /
+# FW_CONFIG_HASH) — they're how status_should_skip decides whether to re-run.
+# Don't wipe them on every run; let each installer's own skip logic decide.
+if [[ ! -d $PATH_STATUS ]]; then
+  mkdir -p "$PATH_STATUS"
+  RET_VAL=$?
+  if [[ $RET_VAL -ne 0 ]]; then
+    echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to create the status directory $PATH_STATUS. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
+    exit 1
   fi
 fi
 
@@ -169,12 +138,28 @@ FILE_STATUS_OS="$PATH_STATUS/os.status"
 # Current User
 CURRENTUSER="$(whoami)"
 
-# Check Dependencies
-WHIPTAIL_RESULT=$(sudo bash "$PATH_DEPENDENCIES/whiptail.sh")
-RET_VAL=$?
+# Ensure whiptail is installed (uses lib/apt.sh so the cache is reused across
+# installers; replaces the legacy dependencies/whiptail-up.sh shim).
+if declare -F apt_ensure_installed >/dev/null; then
+  apt_ensure_installed whiptail
+  RET_VAL=$?
+else
+  sudo DEBIAN_FRONTEND=noninteractive apt-get install --yes whiptail
+  RET_VAL=$?
+fi
 if [[ $RET_VAL -ne 0 ]]; then
   echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to check for or install package Whiptail. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
   exit 1
+fi
+
+# Install the systemd resume unit if it isn't there yet (one-time setup;
+# no-op on subsequent runs). request_reboot enables the unit only when a
+# reboot is queued, so it stays inert until needed.
+if [[ -f $RESUME_UNIT_SRC && ! -f $RESUME_UNIT_DEST ]]; then
+  echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Installing systemd resume unit at $RESUME_UNIT_DEST." | sudo tee --append $FILE_LOG_INSTALLER
+  sudo cp "$RESUME_UNIT_SRC" "$RESUME_UNIT_DEST" \
+    && sudo systemctl daemon-reload \
+    || echo "$(date '+%Y-%m-%d %T.%5N') - WARN - [$MODULE] Failed to install resume unit; reboot/resume will not auto-fire." | sudo tee --append $FILE_LOG_INSTALLER
 fi
 
 # Reads the Model of the Raspberry Pi
@@ -201,27 +186,26 @@ CODENAME=${VERSION_CODENAME^}
 if [[ -z $CODENAME ]]; then
   read DEBIAN_VERSION < /etc/debian_version
   NUM_VERSION=${DEBIAN_VERSION%%.*}
-  if [[ $NUM_VERSION -gt 13 ]]; then
-    CODENAME="Forky"  # Not Released
-  elif [[ $NUM_VERSION -eq 13 ]]; then
-    CODENAME="Trixie" # Not Released
-  elif [[ $NUM_VERSION -eq 12 ]]; then
-    CODENAME="Bookworm"
-  elif [[ $NUM_VERSION -eq 11 ]]; then
-    CODENAME="Bullseye"
-  elif [[ $NUM_VERSION -eq 10 ]]; then
-    CODENAME="Buster"
-  elif [[ $NUM_VERSION -eq 9 ]]; then
-    CODENAME="Stretch"
-  elif [[ $NUM_VERSION -eq 8 ]]; then
-    CODENAME="Jessie"
-  elif [[ $NUM_VERSION -eq 7 ]]; then
-    CODENAME="Wheezy"
-  else
-    echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to determine the OS Code Name for version $VERSION ($NUM_VERSION)." | sudo tee --append $FILE_LOG_INSTALLER
-    exit 1
-  fi
+  case $NUM_VERSION in
+    14)        CODENAME="Forky"    ;;  # next major (placeholder; not yet supported)
+    13)        CODENAME="Trixie"   ;;
+    12)        CODENAME="Bookworm" ;;
+    11)        CODENAME="Bullseye" ;;
+    *)
+      echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unsupported Debian version $NUM_VERSION (installicious supports Bullseye/Bookworm/Trixie only)." | sudo tee --append $FILE_LOG_INSTALLER
+      exit 1
+      ;;
+  esac
 fi
+
+# Reject pre-Bullseye even if VERSION_CODENAME was set in /etc/os-release.
+case "${CODENAME,,}" in
+  bullseye|bookworm|trixie|forky) ;;
+  *)
+    echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unsupported OS codename '${CODENAME}' (installicious supports Bullseye/Bookworm/Trixie only)." | sudo tee --append $FILE_LOG_INSTALLER
+    exit 1
+    ;;
+esac
 
 # Get OS 32/64 bit version
 BITS=$(getconf LONG_BIT)

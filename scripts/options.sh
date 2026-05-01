@@ -17,6 +17,8 @@ EXIT_REBOOT=255
 source config/installicious.config || exit 1
 source lib/log.sh
 source lib/status.sh
+source lib/state.sh
+source lib/reboot.sh
 source lib/manifest.sh
 source lib/menu.sh
 source lib/scheduler.sh
