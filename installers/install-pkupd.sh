@@ -14,9 +14,14 @@
 # Bumping II_VERSION updates the framework state record but does not bypass the
 # cache TTL. To force a re-run, delete $PATH_STATUS/pkupd.status.time.
 
+# === II_MANIFEST_BEGIN ===
+II_ID="pkupd"
+II_TITLE="Update & Upgrade Packages"
+II_CATEGORY="option"
 II_VERSION="1"
-INSTALLER_ID="pkupd"
-MODULE="Update & Upgrade Packages"
+II_DEPS=""
+II_REQUIRES_REBOOT="conditional"
+# === II_MANIFEST_END ===
 
 source config/installicious.config || exit 1
 source lib/log.sh
@@ -38,17 +43,17 @@ if [[ -z $FILE_LOG_INSTALLICIOUS ]]; then
 else
   FILE_LOG_INSTALLER="$PATH_LOGS/$FILE_LOG_INSTALLICIOUS"
 fi
-log_init "$MODULE" "$FILE_LOG_INSTALLER"
+log_init "$II_TITLE" "$FILE_LOG_INSTALLER"
 
 if [[ $MODE == "uninstall" ]]; then
   log_info "pkupd is not reversible (apt update/upgrade/autoremove cannot be undone). Marking uninstalled."
-  status_mark_uninstalled "$INSTALLER_ID"
+  status_mark_uninstalled "$II_ID"
   echo -e "[  \e[0;32mOK\e[0m  ] Installicious marked package updates as uninstalled."
   exit 0
 fi
 
-status_mark_started "$INSTALLER_ID"
-STATUS_FILE=$(status_file_for "$INSTALLER_ID")
+status_mark_started "$II_ID"
+STATUS_FILE=$(status_file_for "$II_ID")
 
 fail_step() {
   local what="$1"      # short description for log/status
@@ -58,7 +63,7 @@ fail_step() {
   log_fail "$what failed." "$rc"
   status_set "$STATUS_FILE" "$key" "Error"
   status_set "$STATUS_FILE" "PKUPD_STATUS" "Error"
-  status_mark_failed "$INSTALLER_ID" "$what failed (code $rc)"
+  status_mark_failed "$II_ID" "$what failed (code $rc)"
   echo -e "[ \e[0;31mFAIL\e[0m ] Installicious could not $user_msg. Error Code: $rc."
   exit "$rc"
 }
@@ -79,7 +84,7 @@ apt_autoremove_fresh; rc=$?
 status_set "$STATUS_FILE" "PKUPD_AUTOREMOVE" "Completed"
 
 status_set "$STATUS_FILE" "PKUPD_STATUS" "Completed"
-status_mark_complete "$INSTALLER_ID" "$II_VERSION"
+status_mark_complete "$II_ID" "$II_VERSION"
 log_ok "Package update + upgrade + autoremove complete."
 echo -e "[  \e[0;32mOK\e[0m  ] Installicious successfully customized the package updates for the Raspberry Pi."
 exit 0

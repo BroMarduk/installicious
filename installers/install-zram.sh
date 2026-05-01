@@ -27,9 +27,14 @@
 # Bump II_VERSION to force a re-run on the next installicious run.
 # The recorded config hash also forces a re-run if config/zram.config changes.
 
+# === II_MANIFEST_BEGIN ===
+II_ID="zram"
+II_TITLE="ZRAM swap"
+II_CATEGORY="software"
 II_VERSION="1"
-INSTALLER_ID="zram"
-MODULE="ZRAM Installer"
+II_DEPS=""
+II_REQUIRES_REBOOT="conditional"
+# === II_MANIFEST_END ===
 
 source config/installicious.config || exit 1
 source lib/log.sh
@@ -60,9 +65,9 @@ if [[ -z $FILE_LOG_INSTALLICIOUS ]]; then
 else
   FILE_LOG_INSTALLER="$PATH_LOGS/$FILE_LOG_INSTALLICIOUS"
 fi
-log_init "$MODULE" "$FILE_LOG_INSTALLER"
+log_init "$II_TITLE" "$FILE_LOG_INSTALLER"
 
-STATUS_FILE=$(status_file_for "$INSTALLER_ID")
+STATUS_FILE=$(status_file_for "$II_ID")
 
 # Files we may touch. Tracked here so install (backup) and uninstall (restore)
 # stay in lock-step. Overridable from the env for local round-trip tests; the
@@ -97,11 +102,11 @@ detect_swap_manager() {
 }
 
 do_install() {
-  if status_should_skip "$INSTALLER_ID" "$II_VERSION" "$FILE_CONFIG_ZRAM"; then
+  if status_should_skip "$II_ID" "$II_VERSION" "$FILE_CONFIG_ZRAM"; then
     log_info "Zram already configured at recorded version + config. Skipping."
     return 0
   fi
-  status_mark_started "$INSTALLER_ID"
+  status_mark_started "$II_ID"
 
   local swap_manager
   swap_manager=$(detect_swap_manager)
@@ -127,7 +132,7 @@ do_install() {
 
   # Snapshot existing files we may overwrite (backup_create skips missing files).
   local snap
-  snap=$(backup_create "$INSTALLER_ID" "$ZRAMSWAP_DEFAULTS" "$ZRAM_GENERATOR_CONF" "$RPI_SWAP_DROPIN")
+  snap=$(backup_create "$II_ID" "$ZRAMSWAP_DEFAULTS" "$ZRAM_GENERATOR_CONF" "$RPI_SWAP_DROPIN")
   log_info "Backup snapshot: $snap."
 
   # ---- install zram-tools if needed ----
@@ -136,7 +141,7 @@ do_install() {
     local rc=$?
     if [[ $rc -ne 0 ]]; then
       log_fail "Failed to install zram-tools." "$rc"
-      status_mark_failed "$INSTALLER_ID" "apt install zram-tools failed (code $rc)"
+      status_mark_failed "$II_ID" "apt install zram-tools failed (code $rc)"
       status_set "$STATUS_FILE" "ZRAM_STATUS" "Error"
       echo -e "[ \e[0;31mFAIL\e[0m ] Installicious could not install zram-tools. Error Code: $rc."
       return $rc
@@ -207,14 +212,14 @@ EOF
   esac
 
   log_ok "Zram swap configured (${swap_manager}, ${ZRAM_PERCENT_OF_RAM}% of RAM, ${ZRAM_COMPRESSION_ALGO})."
-  status_mark_complete "$INSTALLER_ID" "$II_VERSION" "$FILE_CONFIG_ZRAM"
+  status_mark_complete "$II_ID" "$II_VERSION" "$FILE_CONFIG_ZRAM"
   status_set "$STATUS_FILE" "ZRAM_STATUS" "Completed"
   echo -e "[  \e[0;32mOK\e[0m  ] Installicious successfully configured ZRAM swap."
   return 0
 }
 
 do_uninstall() {
-  case "$(status_state "$INSTALLER_ID")" in
+  case "$(status_state "$II_ID")" in
     uninstalled)
       log_info "Already uninstalled."
       echo -e "[  \e[0;32mOK\e[0m  ] Zram is already uninstalled."
@@ -222,7 +227,7 @@ do_uninstall() {
       ;;
     "")
       log_warn "No install record found for zram; nothing to revert."
-      status_mark_uninstalled "$INSTALLER_ID"
+      status_mark_uninstalled "$II_ID"
       return 0
       ;;
   esac
@@ -236,7 +241,7 @@ do_uninstall() {
   log_info "Reverting zram setup (manager was $swap_manager)."
 
   # 1. Restore or remove the config files we touched.
-  if backup_restore_or_remove "$INSTALLER_ID" \
+  if backup_restore_or_remove "$II_ID" \
        "$ZRAMSWAP_DEFAULTS" "$ZRAM_GENERATOR_CONF" "$RPI_SWAP_DROPIN"; then
     log_info "Config files restored from backup (or removed if not pre-existing)."
   else
@@ -272,7 +277,7 @@ do_uninstall() {
       || log_warn "apt remove zram-tools returned non-zero (continuing)."
   fi
 
-  status_mark_uninstalled "$INSTALLER_ID"
+  status_mark_uninstalled "$II_ID"
   status_set "$STATUS_FILE" "ZRAM_STATUS" "Uninstalled"
   log_ok "Zram swap reverted to pre-install state."
   echo -e "[  \e[0;32mOK\e[0m  ] Installicious successfully uninstalled ZRAM."

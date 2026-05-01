@@ -16,9 +16,14 @@
 #
 # Bump II_VERSION to force re-running install on the next pass.
 
+# === II_MANIFEST_BEGIN ===
+II_ID="bash"
+II_TITLE="Bash Customizer"
+II_CATEGORY="option"
 II_VERSION="1"
-INSTALLER_ID="bash"
-MODULE="Bash Customizer"
+II_DEPS=""
+II_REQUIRES_REBOOT="never"
+# === II_MANIFEST_END ===
 
 source config/installicious.config || exit 1
 source lib/log.sh
@@ -50,7 +55,7 @@ if [[ -z $FILE_LOG_INSTALLICIOUS ]]; then
 else
   FILE_LOG_INSTALLER="$PATH_LOGS/$FILE_LOG_INSTALLICIOUS"
 fi
-log_init "$MODULE" "$FILE_LOG_INSTALLER"
+log_init "$II_TITLE" "$FILE_LOG_INSTALLER"
 
 if [[ -z $TARGET_USER ]]; then
   log_fail "Could not determine target user; pass --target-user=NAME or set SUDO_USER/USER."
@@ -73,18 +78,18 @@ USER_ALIAS_START="# ----- Installicious USER ALIAS (managed) -----"
 USER_ALIAS_END="# ----- END Installicious USER ALIAS -----"
 
 do_install() {
-  if status_should_skip "$INSTALLER_ID" "$II_VERSION"; then
+  if status_should_skip "$II_ID" "$II_VERSION"; then
     log_info "Bash customizations already at recorded version. Skipping."
     return 0
   fi
-  status_mark_started "$INSTALLER_ID"
+  status_mark_started "$II_ID"
 
   log_info "Backing up .bashrc files for $TARGET_USER + root."
   local snap
-  snap=$(backup_create "$INSTALLER_ID" "$ROOT_RC" "$USER_RC")
+  snap=$(backup_create "$II_ID" "$ROOT_RC" "$USER_RC")
   if [[ -z $snap ]]; then
     log_fail "Failed to create backup snapshot."
-    status_mark_failed "$INSTALLER_ID" "backup_create returned empty path"
+    status_mark_failed "$II_ID" "backup_create returned empty path"
     echo -e "[ \e[0;31mFAIL\e[0m ] Installicious could not back up .bashrc files."
     return 1
   fi
@@ -122,7 +127,7 @@ alias egrep='egrep --color=auto'
 alias sudo='sudo '
 EOF
 
-  status_mark_complete "$INSTALLER_ID" "$II_VERSION"
+  status_mark_complete "$II_ID" "$II_VERSION"
   log_ok "Bash customizations applied for root and $TARGET_USER."
   echo -e "[  \e[0;32mOK\e[0m  ] Installicious successfully customized bash."
   return 0
@@ -131,7 +136,7 @@ EOF
 do_uninstall() {
   if [[ $RESTORE_BACKUP -eq 1 ]]; then
     log_info "Restoring .bashrc files from latest backup snapshot."
-    if ! backup_restore_latest "$INSTALLER_ID" "$ROOT_RC" "$USER_RC"; then
+    if ! backup_restore_latest "$II_ID" "$ROOT_RC" "$USER_RC"; then
       log_warn "No backup snapshot available; falling back to strip-block uninstall."
       RESTORE_BACKUP=0
     fi
@@ -142,7 +147,7 @@ do_uninstall() {
     block_remove "$ROOT_RC" "$ROOT_ALIAS_START" "$ROOT_ALIAS_END"
     block_remove "$USER_RC" "$USER_ALIAS_START" "$USER_ALIAS_END"
   fi
-  status_mark_uninstalled "$INSTALLER_ID"
+  status_mark_uninstalled "$II_ID"
   log_ok "Bash customizations removed."
   echo -e "[  \e[0;32mOK\e[0m  ] Installicious successfully removed bash customizations."
   return 0

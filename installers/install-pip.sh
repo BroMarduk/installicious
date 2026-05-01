@@ -13,9 +13,14 @@
 #
 # Bump II_VERSION to force a re-run on the next installicious run.
 
+# === II_MANIFEST_BEGIN ===
+II_ID="pip"
+II_TITLE="Python pip"
+II_CATEGORY="software"
 II_VERSION="1"
-INSTALLER_ID="pip"
-MODULE="PIP Installer"
+II_DEPS=""
+II_REQUIRES_REBOOT="never"
+# === II_MANIFEST_END ===
 
 source config/installicious.config || exit 1
 source lib/log.sh
@@ -37,16 +42,16 @@ if [[ -z $FILE_LOG_INSTALLICIOUS ]]; then
 else
   FILE_LOG_INSTALLER="$PATH_LOGS/$FILE_LOG_INSTALLICIOUS"
 fi
-log_init "$MODULE" "$FILE_LOG_INSTALLER"
+log_init "$II_TITLE" "$FILE_LOG_INSTALLER"
 
-STATUS_FILE=$(status_file_for "$INSTALLER_ID")
+STATUS_FILE=$(status_file_for "$II_ID")
 
 do_install() {
-  if status_should_skip "$INSTALLER_ID" "$II_VERSION"; then
+  if status_should_skip "$II_ID" "$II_VERSION"; then
     log_info "Pip already installed at recorded version. Skipping."
     return 0
   fi
-  status_mark_started "$INSTALLER_ID"
+  status_mark_started "$II_ID"
 
   if apt_is_installed python3-pip; then
     status_set "$STATUS_FILE" "PIP_FW_PRE_INSTALLED" "true"
@@ -59,21 +64,21 @@ do_install() {
   local rc=$?
   if [[ $rc -ne 0 ]]; then
     log_fail "Failed to install python3-pip." "$rc"
-    status_mark_failed "$INSTALLER_ID" "apt-get install python3-pip failed (code $rc)"
+    status_mark_failed "$II_ID" "apt-get install python3-pip failed (code $rc)"
     status_set "$STATUS_FILE" "PIP_STATUS" "Error"
     echo -e "[ \e[0;31mFAIL\e[0m ] Installicious could not install Pip. Error Code: $rc."
     return $rc
   fi
 
   log_ok "Pip installed."
-  status_mark_complete "$INSTALLER_ID" "$II_VERSION"
+  status_mark_complete "$II_ID" "$II_VERSION"
   status_set "$STATUS_FILE" "PIP_STATUS" "Completed"
   echo -e "[  \e[0;32mOK\e[0m  ] Installicious successfully installed Pip."
   return 0
 }
 
 do_uninstall() {
-  case "$(status_state "$INSTALLER_ID")" in
+  case "$(status_state "$II_ID")" in
     uninstalled)
       log_info "Already uninstalled."
       echo -e "[  \e[0;32mOK\e[0m  ] Pip is already uninstalled."
@@ -81,7 +86,7 @@ do_uninstall() {
       ;;
     "")
       log_warn "No install record found for pip; nothing to revert."
-      status_mark_uninstalled "$INSTALLER_ID"
+      status_mark_uninstalled "$II_ID"
       return 0
       ;;
   esac
@@ -96,14 +101,14 @@ do_uninstall() {
     local rc=$?
     if [[ $rc -ne 0 ]]; then
       log_fail "Failed to remove python3-pip." "$rc"
-      status_mark_failed "$INSTALLER_ID" "apt remove python3-pip failed (code $rc)"
+      status_mark_failed "$II_ID" "apt remove python3-pip failed (code $rc)"
       status_set "$STATUS_FILE" "PIP_STATUS" "Error"
       echo -e "[ \e[0;31mFAIL\e[0m ] Installicious could not remove Pip. Error Code: $rc."
       return $rc
     fi
   fi
 
-  status_mark_uninstalled "$INSTALLER_ID"
+  status_mark_uninstalled "$II_ID"
   status_set "$STATUS_FILE" "PIP_STATUS" "Uninstalled"
   log_ok "Pip uninstalled."
   echo -e "[  \e[0;32mOK\e[0m  ] Installicious successfully uninstalled Pip."
