@@ -1,142 +1,156 @@
 #!/bin/bash
 
-MODULE="Bash Updates"
-DESCRIPTION="Some Bash shell updates to make commands work a bit better."
-PATH_HOME="/home"
-PATH_ROOT="/root"
-FILE_CONFIG_INSTALLICIOUS="config/installicious.config"
-FILE_CONFIG_USER="config/user.config"
-FILE_STATUS_OS_NAME="os.status"
-FILE_BASHRC=".bashrc"
-FILE_STATUS_BASH_NAME="bash.status"
-STATUS_BASH_ROOT="Not Run"
-STATUS_BASH_USER="Not Run"
-STATUS="Not Run"
-EXIT_CODE=0
+# Module:      Bash Customizer
+# Description: Installs bash customizations (PS1 prompt + color/listing aliases)
+#              for root and the target user. Idempotent: re-running replaces the
+#              managed blocks in place. Reversible:
+#                --uninstall                  strips the managed blocks (default)
+#                --uninstall --restore-backup restores .bashrc from latest backup
+#
+# Usage:
+#   bash installers/install-bash.sh                     # install
+#   bash installers/install-bash.sh --uninstall         # strip managed blocks
+#   bash installers/install-bash.sh --uninstall --restore-backup
+#                                                       # restore from latest snapshot
+#   --target-user=NAME overrides the auto-detected user (SUDO_USER or USER).
+#
+# Bump II_VERSION to force re-running install on the next pass.
 
-# Look for installicious conf file.
-if [[ ! -f $FILE_CONFIG_INSTALLICIOUS ]]; then
-  echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to find the configuration file $FILE_CONFIG_INSTALLICIOUS."
-  exit 1
-fi
+II_VERSION="1"
+INSTALLER_ID="bash"
+MODULE="Bash Customizer"
 
-## Input installicious config and check if it was successful.
-source $FILE_CONFIG_INSTALLICIOUS
-RET_VAL=$?
-if [[ $RET_VAL -ne 0 ]]; then
-  echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to load variables from the configuration file $FILE_CONFIG_INSTALLICIOUS. Error Code: $RET_VAL."
-  exit 1
-fi
+source config/installicious.config || exit 1
+source lib/log.sh
+source lib/status.sh
+source lib/backup.sh
+source lib/block.sh
 
-# Look for user conf file.
-if [[ ! -f $FILE_CONFIG_USER ]]; then
-  echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to find the configuration file $FILE_CONFIG_USER." | sudo tee --append $FILE_LOG_INSTALLER
-  exit 1
-fi
+MODE="install"
+RESTORE_BACKUP=0
+TARGET_USER="${SUDO_USER:-${USER:-}}"
 
-## Input user config and check if it was successful.
-source $FILE_CONFIG_USER
-RET_VAL=$?
-if [[ $RET_VAL -ne 0 ]]; then
-  echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to load variables from the configuration file $FILE_CONFIG_USER." | sudo tee --append $FILE_LOG_INSTALLER
-  exit 1
-fi
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --install)         MODE="install" ;;
+    --uninstall)       MODE="uninstall" ;;
+    --restore-backup)  RESTORE_BACKUP=1 ;;
+    --target-user=*)   TARGET_USER="${1#*=}" ;;
+    -h|--help)
+      sed -n '/^# Usage:/,/^# Bump II_VERSION/p' "$0" | sed 's/^# \{0,1\}//'
+      exit 0
+      ;;
+    *) echo "Unknown argument: $1" >&2; exit 2 ;;
+  esac
+  shift
+done
 
-FILE_STATUS_OS="$PATH_STATUS/$FILE_STATUS_OS_NAME"
-FILE_STATUS_BASH="$PATH_STATUS/$FILE_STATUS_BASH_NAME"
-
-# Set log file name and path for the script.
 if [[ -z $FILE_LOG_INSTALLICIOUS ]]; then
   FILE_LOG_INSTALLER="$PATH_LOGS/installicious.log"
 else
   FILE_LOG_INSTALLER="$PATH_LOGS/$FILE_LOG_INSTALLICIOUS"
 fi
+log_init "$MODULE" "$FILE_LOG_INSTALLER"
 
-# No Dependencies
+if [[ -z $TARGET_USER ]]; then
+  log_fail "Could not determine target user; pass --target-user=NAME or set SUDO_USER/USER."
+  exit 2
+fi
+USER_HOME=$(getent passwd "$TARGET_USER" 2>/dev/null | cut -d: -f6)
+if [[ -z $USER_HOME || ! -d $USER_HOME ]]; then
+  log_fail "Could not resolve home directory for user '$TARGET_USER'."
+  exit 2
+fi
 
-# Load OS Statuses
-if [[ -e $FILE_STATUS_OS ]]; then
-  source $FILE_STATUS_OS
-  RET_VAL=$?
-  if [[ $RET_VAL -ne 0 ]]; then
-    echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to load required OS Status from file $FILE_STATUS_OS. Error Code: $RET_VAL." | sudo tee --append $FILE_LOG_INSTALLER
-    exit 1
-  else
-    echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Successfully loaded the required OS Status from file $FILE_STATUS_OS." | sudo tee --append $FILE_LOG_INSTALLER
+ROOT_RC="/root/.bashrc"
+USER_RC="$USER_HOME/.bashrc"
+
+ROOT_PS1_START="# ----- Installicious ROOT PS1 (managed) -----"
+ROOT_PS1_END="# ----- END Installicious ROOT PS1 -----"
+ROOT_ALIAS_START="# ----- Installicious ROOT ALIAS (managed) -----"
+ROOT_ALIAS_END="# ----- END Installicious ROOT ALIAS -----"
+USER_ALIAS_START="# ----- Installicious USER ALIAS (managed) -----"
+USER_ALIAS_END="# ----- END Installicious USER ALIAS -----"
+
+do_install() {
+  if status_should_skip "$INSTALLER_ID" "$II_VERSION"; then
+    log_info "Bash customizations already at recorded version. Skipping."
+    return 0
   fi
+  status_mark_started "$INSTALLER_ID"
+
+  log_info "Backing up .bashrc files for $TARGET_USER + root."
+  local snap
+  snap=$(backup_create "$INSTALLER_ID" "$ROOT_RC" "$USER_RC")
+  if [[ -z $snap ]]; then
+    log_fail "Failed to create backup snapshot."
+    status_mark_failed "$INSTALLER_ID" "backup_create returned empty path"
+    echo -e "[ \e[0;31mFAIL\e[0m ] Installicious could not back up .bashrc files."
+    return 1
+  fi
+  log_info "Snapshot at $snap."
+
+  log_info "Configuring $ROOT_RC."
+  block_ensure "$ROOT_RC" "$ROOT_PS1_START" "$ROOT_PS1_END" <<'EOF'
+# Root: red username, blue working dir
+PS1='${debian_chroot:+($debian_chroot)}\[\033[01;31m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '
+EOF
+  block_ensure "$ROOT_RC" "$ROOT_ALIAS_START" "$ROOT_ALIAS_END" <<'EOF'
+export LS_OPTIONS='--color=auto'
+if command -v dircolors >/dev/null 2>&1; then
+  eval "$(dircolors -b)"
+fi
+alias ls='ls $LS_OPTIONS'
+alias ll='ls $LS_OPTIONS -l'
+alias l='ls $LS_OPTIONS -lA'
+alias rm='rm -i'
+alias cp='cp -i'
+alias mv='mv -i'
+alias dir='ls $LS_OPTIONS -la'
+EOF
+
+  log_info "Configuring $USER_RC."
+  block_ensure "$USER_RC" "$USER_ALIAS_START" "$USER_ALIAS_END" <<'EOF'
+force_color_prompt=yes
+alias ls='ls --color=auto'
+alias dir='ls -la --color=auto'
+alias vdir='vdir --color=auto'
+alias grep='grep --color=auto'
+alias fgrep='fgrep --color=auto'
+alias egrep='egrep --color=auto'
+# Trailing space lets aliases be expanded after sudo.
+alias sudo='sudo '
+EOF
+
+  status_mark_complete "$INSTALLER_ID" "$II_VERSION"
+  log_ok "Bash customizations applied for root and $TARGET_USER."
+  echo -e "[  \e[0;32mOK\e[0m  ] Installicious successfully customized bash."
+  return 0
+}
+
+do_uninstall() {
+  if [[ $RESTORE_BACKUP -eq 1 ]]; then
+    log_info "Restoring .bashrc files from latest backup snapshot."
+    if ! backup_restore_latest "$INSTALLER_ID" "$ROOT_RC" "$USER_RC"; then
+      log_warn "No backup snapshot available; falling back to strip-block uninstall."
+      RESTORE_BACKUP=0
+    fi
+  fi
+  if [[ $RESTORE_BACKUP -eq 0 ]]; then
+    log_info "Stripping managed blocks from .bashrc files."
+    block_remove "$ROOT_RC" "$ROOT_PS1_START"   "$ROOT_PS1_END"
+    block_remove "$ROOT_RC" "$ROOT_ALIAS_START" "$ROOT_ALIAS_END"
+    block_remove "$USER_RC" "$USER_ALIAS_START" "$USER_ALIAS_END"
+  fi
+  status_mark_uninstalled "$INSTALLER_ID"
+  log_ok "Bash customizations removed."
+  echo -e "[  \e[0;32mOK\e[0m  ] Installicious successfully removed bash customizations."
+  return 0
+}
+
+if [[ $MODE == "install" ]]; then
+  do_install
 else
-  echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to load required OS Status due to missing file $FILE_STATUS_OS." | sudo tee --append $FILE_LOG_INSTALLER
-  exit 1
+  do_uninstall
 fi
-
-# Update Root User's Bash Prompt
-sudo sed -i "s/^# force_color_prompt=yes/force_color_prompt=yes/" $PATH_ROOT/$FILE_BASHRC
-
-if [[ -z $(sudo grep "PS1='\${debian_chroot:+(\$debian_chroot)}\\\033\[01;31m\\\]\\\u@\\\h\\\033\[00m\\\\]:\\\033\[01;34m\\\]\\\w " /root/$FILE_BASHRC) ]]; then
-  sudo sed -i "/# PS1='\${debian_chroot:+(\$debian_chroot)}\\\\h:\\\\w\\\\\$ '/a \PS1='\${debian_chroot:+(\$debian_chroot)}\\\\033[01;31m\\\\]\\\\u@\\\\h\\\\033[00m\\\\]:\\\\033[01;34m\\\\]\\\\w \\\\\$\\\\033[00m\\\\] '" /root/$FILE_BASHRC
-fi
-
-sudo sed -i "s/^# export LS_OPTIONS01CHWURSiD!='--color=auto'/export LS_OPTIONS='--color=auto'/" $PATH_ROOT/$FILE_BASHRC
-sudo sed -i "s/^# eval \"\$(dircolors)\"/eval \"\$(dircolors)\"/" $PATH_ROOT/$FILE_BASHRC
-sudo sed -i "s/^# alias ls='ls \$LS_OPTIONS'/alias ls='ls \$LS_OPTIONS'/" $PATH_ROOT/$FILE_BASHRC
-sudo sed -i "s/^# alias ll='ls \$LS_OPTIONS -l'/alias ll='ls \$LS_OPTIONS -l'/" $PATH_ROOT/$FILE_BASHRC
-sudo sed -i "s/^# alias l='ls \$LS_OPTIONS -lA'/alias l='ls \$LS_OPTIONS -lA'/" $PATH_ROOT/$FILE_BASHRC
-sudo sed -i "s/^# alias rm='rm -i'/alias rm='rm -i'/" $PATH_ROOT/$FILE_BASHRC
-sudo sed -i "s/^# alias cp='cp -i'/alias cp='cp -i'/" $PATH_ROOT/$FILE_BASHRC
-sudo sed -i "s/^# alias mv='mv -i'/alias mv='mv -i'/" $PATH_ROOT/$FILE_BASHRC
-
-if [[ -z $(sudo grep "alias dir='ls \$LS_OPTIONS -la'" $PATH_ROOT/$FILE_BASHRC) ]]; then
-  sudo sed -i "/alias l='ls \$LS_OPTIONS -lA'/a alias dir='ls \$LS_OPTIONS -la'" $PATH_ROOT/$FILE_BASHRC
-fi
-
-sudo sed -i "s/^#$//" $PATH_ROOT/$FILE_BASHRC
-
-STATUS_BASH_ROOT="Completed"
-
-# Update Pi User's Bash Prompt
-sudo sed -i "s/^# force_color_prompt=yes/force_color_prompt=yes/" $PATH_HOME/$USER_USERNAME/$FILE_BASHRC
-sudo sed -i "s/^    #alias dir='dir --color=auto'/    alias dir='ls -la --color=auto'/" $PATH_HOME/$USER_USERNAME/$FILE_BASHRC
-sudo sed -i "/^    #alias vdir='vdir --color=auto'/{n; d;}" $PATH_HOME/$USER_USERNAME/$FILE_BASHRC
-sudo sed -i "s/^    #alias vdir='vdir --color=auto'/    alias vdir='vdir --color=auto'/" $PATH_HOME/$USER_USERNAME/$FILE_BASHRC
-sudo sed -i "s/^#alias ll='ls -l'/alias ll='ls -l'/" $PATH_HOME/$USER_USERNAME/$FILE_BASHRC
-sudo sed -i "s/^#alias la='ls -A'/alias la='ls -A'/" $PATH_HOME/$USER_USERNAME/$FILE_BASHRC
-sudo sed -i "s/^#alias l='ls -CF'/alias l='ls -CF'/" $PATH_HOME/$USER_USERNAME/$FILE_BASHRC
-
-if [[ -z $(grep "alias sudo='sudo '" $PATH_HOME/$USER_USERNAME/$FILE_BASHRC) ]]; then
-  sudo echo >> $PATH_HOME/$USER_USERNAME/$FILE_BASHRC
-  sudo echo "# Enable aliases for sudo" >> $PATH_HOME/$USER_USERNAME/$FILE_BASHRC
-  sudo echo "alias sudo='sudo '" >> $PATH_HOME/$USER_USERNAME/$FILE_BASHRC
-fi
-
-STATUS_BASH_USER="Completed"
-
-# Write status
-STATUS="Completed"
-
-CURRENT_RUN="$(date '+%Y-%m-%d %T.%5N')"
-
-# Remove existing status file.
-if [[ -e $FILE_STATUS_BASH ]]; then
-  sudo rm --force "$FILE_STATUS_BASH"
-fi
-
-echo "BASH_LAST_RUN=\"${CURRENT_RUN}\"" > $FILE_STATUS_BASH
-echo "BASH_ROOT=\"${STATUS_BASH_ROOT}\"" >> $FILE_STATUS_BASH
-echo "BASH_USER=\"${STATUS_BASH_USER}\"" >> $FILE_STATUS_BASH
-echo "BASH_STATUS=\"${STATUS}\"" >> $FILE_STATUS_BASH
-
-if [[ $II_CODENAME = "Wheezy" ]]; then
-  if [[ $EXIT_CODE -eq 0 ]]; then
-    echo -e "[ \e[0;32mok\e[0m ] Installicious successfully customized the bash customizations for the Raspberry Pi."
-  else
-    echo -e "[\e[0;31mFAIL\e[0m] Installicious could not customize the bash customizations for the Raspberry Pi. Error Code: $EXIT_CODE."
-  fi
-else
-  if [[ $EXIT_CODE -eq 0 ]]; then
-    echo -e "[  \e[0;32mOK\e[0m  ] Installicious successfully customized the bash customizations for the Raspberry Pi."
-  else
-    echo -e "[ \e[0;31mFAIL\e[0m ] Installicious could not customize the bash customizations for the Raspberry Pi. Error Code: $EXIT_CODE."
-  fi
-fi
-
-exit $EXIT_CODE
+exit $?

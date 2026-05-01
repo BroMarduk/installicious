@@ -88,6 +88,15 @@ config_hash() {
   sha256sum "$file" | awk '{print $1}'
 }
 
+# status_state <id> -> echo current FW state ("completed", "running", "failed",
+# "uninstalled", "reboot-pending"); empty if no status file or key.
+status_state() {
+  local id="$1"
+  local file
+  file=$(status_file_for "$id")
+  status_get "$file" "${id^^}_FW_STATE"
+}
+
 # status_should_skip <id> <expected_version> [config_file]
 # Returns 0 (skip) if the recorded state is "completed" AND the recorded version
 # matches expected_version AND (if config_file given) the recorded config hash
@@ -174,4 +183,18 @@ status_mark_reboot_pending() {
   prefix="${id^^}_FW_"
   status_set "$file" "${prefix}STATE" "reboot-pending"
   status_set "$file" "${prefix}LAST_ERROR" "$reason"
+}
+
+# status_mark_uninstalled <id>
+# Records that the installer has been reverted. The status file is preserved
+# as an audit trail (with state=uninstalled and a fresh FINISHED_AT).
+status_mark_uninstalled() {
+  local id="$1"
+  local file prefix ts
+  file=$(status_file_for "$id")
+  prefix="${id^^}_FW_"
+  ts=$(date '+%Y-%m-%d %T.%5N')
+  status_set "$file" "${prefix}STATE" "uninstalled"
+  status_set "$file" "${prefix}FINISHED_AT" "$ts"
+  status_set "$file" "${prefix}LAST_ERROR" ""
 }

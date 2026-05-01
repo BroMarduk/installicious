@@ -7,6 +7,10 @@
 #              in $PATH_STATUS/pkupd.status.time). A step that ran within
 #              ACCEPTABLE_TIME_DELTA_SEC is silently skipped by the lib.
 #
+#              --uninstall is a no-op with a notice — apt operations are not
+#              individually reversible. Use apt directly to downgrade specific
+#              packages if needed.
+#
 # Bumping II_VERSION updates the framework state record but does not bypass the
 # cache TTL. To force a re-run, delete $PATH_STATUS/pkupd.status.time.
 
@@ -19,12 +23,29 @@ source lib/log.sh
 source lib/status.sh
 source lib/apt.sh
 
+MODE="install"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --install)   MODE="install" ;;
+    --uninstall) MODE="uninstall" ;;
+    *) echo "Unknown argument: $1" >&2; exit 2 ;;
+  esac
+  shift
+done
+
 if [[ -z $FILE_LOG_INSTALLICIOUS ]]; then
   FILE_LOG_INSTALLER="$PATH_LOGS/installicious.log"
 else
   FILE_LOG_INSTALLER="$PATH_LOGS/$FILE_LOG_INSTALLICIOUS"
 fi
 log_init "$MODULE" "$FILE_LOG_INSTALLER"
+
+if [[ $MODE == "uninstall" ]]; then
+  log_info "pkupd is not reversible (apt update/upgrade/autoremove cannot be undone). Marking uninstalled."
+  status_mark_uninstalled "$INSTALLER_ID"
+  echo -e "[  \e[0;32mOK\e[0m  ] Installicious marked package updates as uninstalled."
+  exit 0
+fi
 
 status_mark_started "$INSTALLER_ID"
 STATUS_FILE=$(status_file_for "$INSTALLER_ID")
