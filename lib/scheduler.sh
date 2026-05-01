@@ -112,29 +112,58 @@ scheduler_topo_sort() {
 # scheduler_run_queue <id...>
 # Runs each installer with `--install`, halting on exit 255 (reboot signal).
 # Other failures are logged via log_warn and the queue continues.
+#
+# If lib/state.sh is loaded, also persists the queue state across the run so
+# scheduler_resume can pick up where we left off after a reboot. If state is
+# already present (we're resuming), starts from the recorded cursor.
+#
 # Caller should have called log_init beforehand.
 # Returns: 0 on full success, 255 on reboot, last non-zero rc otherwise.
 scheduler_run_queue() {
-  local id path rc
-  local overall_rc=0
-  for id in "$@"; do
+  local -a ids=("$@")
+  local total=${#ids[@]}
+  [[ $total -eq 0 ]] && return 0
+
+  local cursor=0
+  if declare -F state_load >/dev/null \
+     && declare -F state_exists >/dev/null \
+     && state_exists; then
+    state_load 2>/dev/null
+    cursor="${II_QUEUE_CURSOR:-0}"
+    [[ $cursor -gt 0 ]] && log_info "Resuming queue from cursor $cursor."
+  fi
+
+  if declare -F state_save >/dev/null; then
+    state_save "${ids[*]}" "$cursor" "" ""
+  fi
+
+  local i id path rc overall_rc=0
+  for ((i=cursor; i<total; i++)); do
+    id="${ids[i]}"
     path=$(manifest_path_for "$id")
     if [[ -z $path ]]; then
       log_warn "Skipping '$id': no installer registered."
+      declare -F state_save_cursor >/dev/null && state_save_cursor "$((i+1))"
       continue
     fi
+    declare -F state_save_cursor >/dev/null && state_save_cursor "$i"
     log_info "Running installer: $id."
     bash "$path" --install
     rc=$?
     if [[ $rc -eq $EXIT_REBOOT ]]; then
-      log_info "Installer $id requested reboot. Halting queue."
+      log_info "Installer $id requested reboot. Halting queue at cursor $i."
       return $EXIT_REBOOT
     fi
     if [[ $rc -ne 0 ]]; then
       log_warn "Installer $id exited non-zero ($rc); continuing queue." "$rc"
       overall_rc=$rc
     fi
+    declare -F state_save_cursor >/dev/null && state_save_cursor "$((i+1))"
   done
+
+  # Queue complete.
+  declare -F state_clear >/dev/null && state_clear
+  declare -F resume_service_disable >/dev/null && resume_service_disable
   return $overall_rc
 }
 
@@ -150,4 +179,25 @@ scheduler_run_resolved() {
   fi
   # shellcheck disable=SC2086
   scheduler_run_queue $sorted
+}
+
+# scheduler_resume - resume an in-flight queue from $PATH_STATE/queue.sh.
+# Returns 1 if no state file exists (nothing to resume).
+scheduler_resume() {
+  if ! declare -F state_load >/dev/null; then
+    log_fail "lib/state.sh not loaded; cannot resume."
+    return 1
+  fi
+  if ! state_load 2>/dev/null; then
+    log_info "No queue state; nothing to resume."
+    return 1
+  fi
+  if [[ -z ${II_QUEUE_IDS:-} ]]; then
+    log_warn "Queue state exists but is empty; clearing."
+    declare -F state_clear >/dev/null && state_clear
+    return 1
+  fi
+  log_info "Resuming queue '${II_QUEUE_IDS}' from cursor ${II_QUEUE_CURSOR:-0}."
+  # shellcheck disable=SC2086
+  scheduler_run_queue $II_QUEUE_IDS
 }

@@ -1,0 +1,17 @@
+[Unit]
+Description=Installicious resume after reboot
+Documentation=https://github.com/danbegallie/installicious
+After=multi-user.target network-online.target
+Wants=network-online.target
+ConditionPathExists=/etc/installicious/state/queue.sh
+
+[Service]
+Type=oneshot
+WorkingDirectory=/etc/installicious
+ExecStart=/bin/bash /etc/installicious/scripts/resume.sh
+User=root
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
