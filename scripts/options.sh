@@ -1,12 +1,16 @@
 #!/bin/bash
 
-# scripts/options.sh - Main menu + scheduler entry point for installicious.
+# scripts/options.sh - Main menu + scheduler entry point.
 #
-# Driven by the manifest registry (lib/manifest.sh): walks the user through
-# two whiptail menus (one per category — "option" then "software"), resolves
-# any cross-installer dependencies, topo-sorts the queue, and runs each
-# installer in order. Replaces the legacy four-script chain
-#   options.sh -> software.sh -> process-options.sh -> process-software.sh
+# Flow (Phase 1):
+#   1. Task picker         (single-select whiptail over $PATH_TASKS)
+#   2a. If task=custom:    fall through to today's per-installer category menus
+#   2b. Otherwise:         show required installers (msgbox) → optional picker
+#                          (default-off checklist)
+#   3. Confirmation        (yes/no msgbox)
+#   4. Run via scheduler   (existing scheduler_run_resolved)
+#
+# Phase 2 will add a config-edit screen between (3) and (4).
 #
 # Invoked from installicious.sh after hardware/OS detection and the initial
 # whiptail confirmation.
@@ -20,6 +24,7 @@ source lib/status.sh
 source lib/state.sh
 source lib/reboot.sh
 source lib/manifest.sh
+source lib/task.sh
 source lib/menu.sh
 source lib/scheduler.sh
 source lib/post_install.sh
@@ -38,32 +43,87 @@ post_install_clear
 
 CURRENTUSER=$(whoami)
 
-# Two-stage menu: options first (system tweaks), then software (packages).
-options_selected=$(menu_select_category "option" \
-  "Installicious Options" \
-  "Select system options to configure.")
-options_rc=$?
+# ---------------------------------------------------------------------------
+# Stage 1: Task picker
+# ---------------------------------------------------------------------------
+task_id=$(menu_select_task "Installicious" \
+  "Pick the role for this Pi. Choose Custom to pick installers individually.")
+task_rc=$?
+if [[ $task_rc -eq 2 ]]; then
+  log_warn "No tasks defined under \$PATH_TASKS; nothing to pick from."
+  exit 0
+fi
+if [[ $task_rc -ne 0 || -z $task_id ]]; then
+  log_info "User $CURRENTUSER cancelled the task picker."
+  exit 0
+fi
+log_info "User $CURRENTUSER picked task: $task_id"
 
-software_selected=$(menu_select_category "software" \
-  "Installicious Software" \
-  "Select software packages to install.")
-software_rc=$?
+# ---------------------------------------------------------------------------
+# Stage 2a: Custom — fall through to per-installer category menus
+# ---------------------------------------------------------------------------
+if [[ $task_id == "custom" ]]; then
+  options_selected=$(menu_select_category "option" \
+    "Installicious Options" \
+    "Select system options to configure.")
+  options_rc=$?
+  software_selected=$(menu_select_category "software" \
+    "Installicious Software" \
+    "Select software packages to install.")
+  software_rc=$?
+  [[ $options_rc -eq 2 ]] && options_selected=""
+  [[ $software_rc -eq 2 ]] && software_selected=""
+  selected="${options_selected//\"/} ${software_selected//\"/}"
+else
+  # -------------------------------------------------------------------------
+  # Stage 2b: Task — show required installers, then optional picker
+  # -------------------------------------------------------------------------
+  task_path=$(task_path_for "$task_id")
+  task_title=$(task_get_field "$task_path" "TASK_TITLE")
+  task_required=$(task_get_field "$task_path" "TASK_INSTALLERS_REQUIRED")
+  task_optional=$(task_get_field "$task_path" "TASK_INSTALLERS_OPTIONAL")
 
-# rc=2 means no installers in that category — that's fine, just empty selection.
-[[ $options_rc -eq 2 ]] && options_selected=""
-[[ $software_rc -eq 2 ]] && software_selected=""
+  if [[ -n $task_required ]]; then
+    # shellcheck disable=SC2086
+    menu_show_required "$task_title" $task_required
+  fi
 
-# Whiptail returns IDs space-separated, sometimes quoted. Strip quotes.
-selected="${options_selected//\"/} ${software_selected//\"/}"
+  optional_picked=""
+  if [[ -n $task_optional ]]; then
+    # shellcheck disable=SC2086
+    optional_picked=$(menu_pick_optionals "$task_title" $task_optional)
+    optional_rc=$?
+    if [[ $optional_rc -ne 0 ]]; then
+      log_info "User $CURRENTUSER cancelled at the optional picker."
+      exit 0
+    fi
+  fi
+
+  selected="$task_required ${optional_picked//\"/}"
+fi
+
+# Normalize whitespace.
 selected=$(echo "$selected" | tr -s ' ' | sed 's/^ //; s/ $//')
 
 if [[ -z $selected ]]; then
-  log_info "User $CURRENTUSER continued without selecting any items; nothing to do."
+  log_info "User $CURRENTUSER continued without selecting any installers; nothing to do."
   exit 0
 fi
 
 log_info "User $CURRENTUSER selected: $selected."
 
+# ---------------------------------------------------------------------------
+# Stage 3: Confirmation
+# ---------------------------------------------------------------------------
+confirm_msg="The following installers will run, in dependency order:\n\n  $selected\n\nProceed?"
+if ! menu_confirm "Confirm Install" "$confirm_msg"; then
+  log_info "User $CURRENTUSER cancelled at confirmation."
+  exit 0
+fi
+
+# ---------------------------------------------------------------------------
+# Stage 4: Run via scheduler
+# ---------------------------------------------------------------------------
 # shellcheck disable=SC2086
 scheduler_run_resolved $selected
 rc=$?
@@ -74,9 +134,8 @@ case $rc in
     exit 0
     ;;
   $EXIT_REBOOT)
-    # Don't apply yet — resume.sh will run any queued commands and emit any
-    # queued notes when the queue actually finishes after the reboot. Both
-    # files persist in $PATH_STATE across the reboot.
+    # Don't apply yet — resume.sh runs queued commands and emits notes after
+    # the queue actually finishes across the reboot.
     log_info "Queue halted for reboot."
     exit $EXIT_REBOOT
     ;;
