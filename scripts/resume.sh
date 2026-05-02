@@ -26,6 +26,7 @@ source lib/manifest.sh
 source lib/state.sh
 source lib/reboot.sh
 source lib/scheduler.sh
+source lib/post_install.sh
 
 if [[ -z $FILE_LOG_INSTALLICIOUS ]]; then
   FILE_LOG_INSTALLER="$PATH_LOGS/installicious.log"
@@ -52,12 +53,15 @@ echo "============================================================"
 if [[ $rc -eq 0 ]]; then
   echo "  Installicious: queue completed successfully."
   wall "[installicious] Queue completed; system ready." 2>/dev/null || true
+  post_install_apply
 elif [[ $rc -eq 255 ]]; then
   echo "  Installicious: another reboot was requested; rebooting again..."
   wall "[installicious] Another reboot requested; queue will continue after." 2>/dev/null || true
+  # Don't apply — queued commands and notes will run after the next resume.
 else
   echo "  Installicious: queue exited with errors (rc=$rc). See log: $FILE_LOG_INSTALLER"
   wall "[installicious] Queue exited with errors (rc=$rc); check $FILE_LOG_INSTALLER" 2>/dev/null || true
+  post_install_apply
 fi
 echo "============================================================"
 echo

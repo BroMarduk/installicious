@@ -22,6 +22,7 @@ source lib/reboot.sh
 source lib/manifest.sh
 source lib/menu.sh
 source lib/scheduler.sh
+source lib/post_install.sh
 
 if [[ -z $FILE_LOG_INSTALLICIOUS ]]; then
   FILE_LOG_INSTALLER="$PATH_LOGS/installicious.log"
@@ -29,6 +30,11 @@ else
   FILE_LOG_INSTALLER="$PATH_LOGS/$FILE_LOG_INSTALLICIOUS"
 fi
 log_init "$II_TITLE" "$FILE_LOG_INSTALLER"
+
+# Fresh run: clear any stale post-install actions left over from a prior
+# interrupted session. (Actions from a queue that included a reboot are still
+# preserved across the reboot itself; this only fires on a brand-new run.)
+post_install_clear
 
 CURRENTUSER=$(whoami)
 
@@ -62,7 +68,21 @@ log_info "User $CURRENTUSER selected: $selected."
 scheduler_run_resolved $selected
 rc=$?
 case $rc in
-  0)              log_ok "Queue completed.";          exit 0 ;;
-  $EXIT_REBOOT)   log_info "Queue halted for reboot."; exit $EXIT_REBOOT ;;
-  *)              log_warn "Queue completed with errors." "$rc"; exit "$rc" ;;
+  0)
+    log_ok "Queue completed."
+    post_install_apply
+    exit 0
+    ;;
+  $EXIT_REBOOT)
+    # Don't apply yet — resume.sh will run any queued commands and emit any
+    # queued notes when the queue actually finishes after the reboot. Both
+    # files persist in $PATH_STATE across the reboot.
+    log_info "Queue halted for reboot."
+    exit $EXIT_REBOOT
+    ;;
+  *)
+    log_warn "Queue completed with errors." "$rc"
+    post_install_apply
+    exit "$rc"
+    ;;
 esac

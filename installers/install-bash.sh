@@ -34,6 +34,7 @@ source lib/log.sh
 source lib/status.sh
 source lib/backup.sh
 source lib/block.sh
+source lib/post_install.sh
 
 # os.status carries II_INSTALLICIOUS_USER, set by installicious.sh from
 # $SUDO_USER. Survives nested sudo + post-reboot resume.
@@ -301,6 +302,15 @@ do_install() {
   fi
 
   status_mark_complete "$II_ID" "$II_VERSION"
+
+  # The new aliases + PS1 only show up in shells that re-source their bashrc.
+  # The framework can't reach the user's interactive shell, so register a
+  # note instead — displayed at the very end of the queue.
+  post_install_note "$II_ID" "Run 'exec bash' (or open a new terminal) to pick up the new prompt and aliases."
+  if [[ -n $USER_RC ]]; then
+    post_install_note "$II_ID" "For root's bash config: 'sudo -i' starts a fresh root login."
+  fi
+
   log_ok "Bash customizations applied for root${USER_RC:+ and $TARGET_USER}."
   echo -e "[  \e[0;32mOK\e[0m  ] Installicious successfully customized bash."
   return 0
