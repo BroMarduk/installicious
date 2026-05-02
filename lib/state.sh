@@ -147,3 +147,38 @@ state_clear() {
   [[ -f $file ]] || return 0
   rm -f "$file" 2>/dev/null || sudo rm -f "$file"
 }
+
+# ---------------------------------------------------------------------------
+# Menu config overrides
+#
+# When the user edits values in the menu_edit_config screen, we persist them
+# to $PATH_STATE/menu-config.sh as a sourceable file. Each installer that
+# advertises editable config (II_EDITABLE_CONFIG) sources this file AFTER its
+# baseline .config files so the user's edits win for the duration of the run.
+# Lifecycle mirrors the queue state: cleared on fresh-run start and on
+# successful queue completion; preserved across mid-queue reboots.
+# ---------------------------------------------------------------------------
+
+_menu_overrides_file() {
+  echo "${PATH_STATE:-state}/menu-config.sh"
+}
+
+# state_apply_menu_overrides - source $PATH_STATE/menu-config.sh if present.
+# Call from an installer after its baseline config sourcing so user-edited
+# values override defaults. No-op if the file doesn't exist.
+state_apply_menu_overrides() {
+  local file
+  file=$(_menu_overrides_file)
+  if [[ -f $file ]]; then
+    # shellcheck disable=SC1090
+    source "$file"
+  fi
+}
+
+# state_clear_menu_overrides - remove the override file.
+state_clear_menu_overrides() {
+  local file
+  file=$(_menu_overrides_file)
+  [[ -f $file ]] || return 0
+  rm -f "$file" 2>/dev/null || sudo rm -f "$file"
+}

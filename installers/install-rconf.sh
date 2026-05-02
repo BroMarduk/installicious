@@ -8,6 +8,7 @@ II_VERSION="1"
 II_DEPS=""
 II_REQUIRES_REBOOT="conditional"
 II_DEFAULT_SELECTED="on"
+II_EDITABLE_CONFIG="RCONF_LOCALE RCONF_TIME_ZONE RCONF_KEYBOARD_LANG RCONF_KEYBOARD_MODEL RCONF_WIFI_COUNTRY RCONF_BOOT_BEHAVIOUR"
 # === II_MANIFEST_END ===
 
 # Internal log tag (kept for back-compat with the existing echo + sudo tee
@@ -125,6 +126,10 @@ if [[ $RET_VAL -ne 0 ]]; then
   exit 1
 fi
 echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Loaded the configuration file $FILE_CONFIG_PKUPD."
+
+# Apply user edits from the menu_edit_config screen (Phase 2). Sourced after
+# baseline configs so the user's chosen values win for the duration of the run.
+declare -F state_apply_menu_overrides >/dev/null && state_apply_menu_overrides
 
 FILE_STATUS_OS="$PATH_STATUS/$FILE_STATUS_OS_NAME"
 FILE_STATUS_RCONF="$PATH_STATUS/$FILE_STATUS_RCONF_NAME"

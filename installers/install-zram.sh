@@ -34,11 +34,13 @@ II_CATEGORY="software"
 II_VERSION="1"
 II_DEPS=""
 II_REQUIRES_REBOOT="conditional"
+II_EDITABLE_CONFIG="ZRAM_PERCENT_OF_RAM ZRAM_COMPRESSION_ALGO ZRAM_SWAP_PRIORITY"
 # === II_MANIFEST_END ===
 
 source config/installicious.config || exit 1
 source lib/log.sh
 source lib/status.sh
+source lib/state.sh
 source lib/apt.sh
 source lib/backup.sh
 
@@ -55,6 +57,9 @@ done
 
 FILE_CONFIG_ZRAM="$PATH_CONFIG/zram.config"
 [[ -f $FILE_CONFIG_ZRAM ]] && source "$FILE_CONFIG_ZRAM"
+# Apply user edits from the menu_edit_config screen (Phase 2). Sourced after
+# the baseline config so menu edits win for this run.
+declare -F state_apply_menu_overrides >/dev/null && state_apply_menu_overrides
 ZRAM_PERCENT_OF_RAM="${ZRAM_PERCENT_OF_RAM:-50}"
 ZRAM_COMPRESSION_ALGO="${ZRAM_COMPRESSION_ALGO:-zstd}"
 ZRAM_SWAP_PRIORITY="${ZRAM_SWAP_PRIORITY:-100}"

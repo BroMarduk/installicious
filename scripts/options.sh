@@ -2,15 +2,14 @@
 
 # scripts/options.sh - Main menu + scheduler entry point.
 #
-# Flow (Phase 1):
+# Flow:
 #   1. Task picker         (single-select whiptail over $PATH_TASKS)
-#   2a. If task=custom:    fall through to today's per-installer category menus
+#   2a. If task=custom:    fall through to per-installer category menus
 #   2b. Otherwise:         show required installers (msgbox) → optional picker
 #                          (default-off checklist)
-#   3. Confirmation        (yes/no msgbox)
-#   4. Run via scheduler   (existing scheduler_run_resolved)
-#
-# Phase 2 will add a config-edit screen between (3) and (4).
+#   3. Config editor       (menu_edit_config — Phase 2; no-op if no editable keys)
+#   4. Confirmation        (yes/no msgbox)
+#   5. Run via scheduler   (scheduler_run_resolved)
 #
 # Invoked from installicious.sh after hardware/OS detection and the initial
 # whiptail confirmation.
@@ -40,6 +39,11 @@ log_init "$II_TITLE" "$FILE_LOG_INSTALLER"
 # interrupted session. (Actions from a queue that included a reboot are still
 # preserved across the reboot itself; this only fires on a brand-new run.)
 post_install_clear
+
+# Clear stale menu-config overrides from a prior interrupted session. The
+# overrides file is intentionally preserved across mid-queue reboots (so user
+# edits survive a resume) but should not leak into a brand-new run.
+state_clear_menu_overrides
 
 CURRENTUSER=$(whoami)
 
@@ -113,16 +117,27 @@ fi
 log_info "User $CURRENTUSER selected: $selected."
 
 # ---------------------------------------------------------------------------
-# Stage 3: Confirmation
+# Stage 3: Config editor (Phase 2)
+# ---------------------------------------------------------------------------
+# Surfaces editable keys advertised by the chosen task and selected installers.
+# Defaults are read from the corresponding .config files; user edits persist to
+# $PATH_STATE/menu-config.sh and are sourced by each installer at run time.
+# No-op if no editable keys are advertised.
+# shellcheck disable=SC2086
+menu_edit_config "$task_id" $selected
+
+# ---------------------------------------------------------------------------
+# Stage 4: Confirmation
 # ---------------------------------------------------------------------------
 confirm_msg="The following installers will run, in dependency order:\n\n  $selected\n\nProceed?"
 if ! menu_confirm "Confirm Install" "$confirm_msg"; then
   log_info "User $CURRENTUSER cancelled at confirmation."
+  state_clear_menu_overrides
   exit 0
 fi
 
 # ---------------------------------------------------------------------------
-# Stage 4: Run via scheduler
+# Stage 5: Run via scheduler
 # ---------------------------------------------------------------------------
 # shellcheck disable=SC2086
 scheduler_run_resolved $selected
@@ -131,17 +146,20 @@ case $rc in
   0)
     log_ok "Queue completed."
     post_install_apply
+    state_clear_menu_overrides
     exit 0
     ;;
   $EXIT_REBOOT)
     # Don't apply yet — resume.sh runs queued commands and emits notes after
-    # the queue actually finishes across the reboot.
+    # the queue actually finishes across the reboot. Keep menu-config.sh in
+    # place so the resumed installers see the same edits.
     log_info "Queue halted for reboot."
     exit $EXIT_REBOOT
     ;;
   *)
     log_warn "Queue completed with errors." "$rc"
     post_install_apply
+    state_clear_menu_overrides
     exit "$rc"
     ;;
 esac
