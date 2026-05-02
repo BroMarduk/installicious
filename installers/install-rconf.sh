@@ -193,7 +193,10 @@ else
   echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Unable to load Update Times due to missing file $FILE_STATUS_TIME_PKUPD so all updates will occur." | sudo tee --append $FILE_LOG_INSTALLER
 fi
 
-if [[ $II_CODENAME = "Bookworm" ]]; then
+# Boot config path: file-existence based, matching the canonical detection in
+# upstream raspi-config. Works for Bullseye (/boot/), Bookworm (/boot/firmware/)
+# and Trixie (/boot/firmware/) without needing a per-OS branch.
+if [[ -e /boot/firmware/config.txt ]]; then
   FILE_BOOT_CMDLINE="/boot/firmware/cmdline.txt"
   FILE_BOOT_CONFIG="/boot/firmware/config.txt"
 else
@@ -398,16 +401,24 @@ else
   fi
 fi
 
-# Configure the GPU memory split
-if [[ $II_OS_LEVEL = "Lite" ]]; then
-  GPU_MEM_SPLIT_VARNAME=RCONF_GPU_MEM_SPLIT_LITE_$II_MEMORY
-  GPU_MEM_SPLIT=${!GPU_MEM_SPLIT_VARNAME}
+# Configure the GPU memory split.
+# Pi 5 firmware does not allocate GPU memory on behalf of the OS, so the
+# gpu_mem= setting in config.txt is a no-op there (per the Pi legacy config.txt
+# docs). Skip entirely on Pi 5+; on Pi 1-4 the manual sed is still the
+# supported path since raspi-config dropped do_memory_split in Bookworm/Trixie.
+if [[ ${II_MODEL_NUM:-0} -ge 5 ]]; then
+  echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Skipping GPU memory split: Pi 5+ firmware does not honor gpu_mem." | sudo tee --append $FILE_LOG_INSTALLER
+  STATUS_GPU_MEM_SPLIT="Skipped"
 else
-  GPU_MEM_SPLIT_VARNAME=RCONF_GPU_MEM_SPLIT_$II_MEMORY
-  GPU_MEM_SPLIT=${!GPU_MEM_SPLIT_VARNAME}
-fi
+  if [[ $II_OS_LEVEL = "Lite" ]]; then
+    GPU_MEM_SPLIT_VARNAME=RCONF_GPU_MEM_SPLIT_LITE_$II_MEMORY
+    GPU_MEM_SPLIT=${!GPU_MEM_SPLIT_VARNAME}
+  else
+    GPU_MEM_SPLIT_VARNAME=RCONF_GPU_MEM_SPLIT_$II_MEMORY
+    GPU_MEM_SPLIT=${!GPU_MEM_SPLIT_VARNAME}
+  fi
 
-GPU_MEM_CURRENT=$(grep "^gpu_mem=" $FILE_BOOT_CONFIG | cut -d '=' -f 2 | cut -d 'M' -f 1)
+  GPU_MEM_CURRENT=$(grep "^gpu_mem=" $FILE_BOOT_CONFIG | cut -d '=' -f 2 | cut -d 'M' -f 1)
 
 if [[ $GPU_MEM_SPLIT -ne $GPU_MEM_CURRENT ]]; then
   if [[ -z $GPU_MEM_SPLIT ]]; then
@@ -454,6 +465,7 @@ else
   else
     echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] The GPU Memory split is already set to [$GPU_MEM_SPLIT]. Skipping configuration." | sudo tee --append $FILE_LOG_INSTALLER
     STATUS_GPU_MEM_SPLIT="Skipped"
+  fi
   fi
 fi
 
