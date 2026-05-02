@@ -55,4 +55,7 @@ sudo mkdir -p "$DEST/${PATH_BACKUP:-backup}"
 
 echo "[setup] Setup complete. Running $DEST/installicious.sh"
 cd "$DEST"
-sudo bash "$DEST/installicious.sh"
+# We're already root (setup.sh was invoked via sudo). Re-sudo would overwrite
+# $SUDO_USER to "root", which would lose track of the real user that
+# install-bash and friends need to configure dotfiles for.
+bash "$DEST/installicious.sh"

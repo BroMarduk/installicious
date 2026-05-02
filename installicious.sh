@@ -318,6 +318,14 @@ echo "II_REVISION=\"${REVISION}\"" >> $FILE_STATUS_OS
 echo "II_MEMORY=\"${MEMORY}\"" >> $FILE_STATUS_OS
 echo "II_FULL_NAME=\"${NAME} ${DEBIANVERSION}${OSLEVELNAME} (${CODENAME})\"" >> $FILE_STATUS_OS
 echo "II_INSTALLICIOUS_PATH=\"${0}\"" >> $FILE_STATUS_OS
+# Persist the "real" user — the one who actually invoked installicious — so
+# downstream installers (install-bash, etc.) and the post-reboot resume have
+# a reliable source. SUDO_USER is the user who sudo'd; falls back to
+# CURRENTUSER (whoami) when there's no sudo context (e.g. systemd resume,
+# but in that case it'd be "root", which the installer will recognize as
+# unconfigured).
+II_INSTALLICIOUS_USER="${SUDO_USER:-$CURRENTUSER}"
+echo "II_INSTALLICIOUS_USER=\"${II_INSTALLICIOUS_USER}\"" >> $FILE_STATUS_OS
 
 # Load Required Variables
 source $FILE_STATUS_OS

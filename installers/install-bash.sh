@@ -31,9 +31,16 @@ source lib/status.sh
 source lib/backup.sh
 source lib/block.sh
 
+# Source os.status for II_INSTALLICIOUS_USER — set by installicious.sh on
+# entry, persists across reboots and survives nested sudo (which clobbers
+# $SUDO_USER). Authoritative source for "who is the real user".
+[[ -f "$PATH_STATUS/os.status" ]] && source "$PATH_STATUS/os.status"
+
 MODE="install"
 RESTORE_BACKUP=0
-TARGET_USER="${SUDO_USER:-${USER:-}}"
+# Preference order: explicit --target-user= flag (parsed below) >
+# os.status II_INSTALLICIOUS_USER > $SUDO_USER > $USER.
+TARGET_USER="${II_INSTALLICIOUS_USER:-${SUDO_USER:-${USER:-}}}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -58,17 +65,28 @@ fi
 log_init "$II_TITLE" "$FILE_LOG_INSTALLER"
 
 if [[ -z $TARGET_USER ]]; then
-  log_fail "Could not determine target user; pass --target-user=NAME or set SUDO_USER/USER."
-  exit 2
-fi
-USER_HOME=$(getent passwd "$TARGET_USER" 2>/dev/null | cut -d: -f6)
-if [[ -z $USER_HOME || ! -d $USER_HOME ]]; then
-  log_fail "Could not resolve home directory for user '$TARGET_USER'."
+  log_fail "Could not determine target user; pass --target-user=NAME or set II_INSTALLICIOUS_USER in os.status."
   exit 2
 fi
 
 ROOT_RC="/root/.bashrc"
-USER_RC="$USER_HOME/.bashrc"
+USER_RC=""
+
+# Only configure a user .bashrc when we have a non-root target user with a
+# real home directory. If TARGET_USER resolves to root (e.g. installicious
+# was invoked from a true root shell, or in a systemd resume context with no
+# SUDO_USER), only $ROOT_RC gets configured — avoids writing the user-block
+# into /root/.bashrc on top of the root-block.
+if [[ $TARGET_USER != "root" ]]; then
+  USER_HOME=$(getent passwd "$TARGET_USER" 2>/dev/null | cut -d: -f6)
+  if [[ -z $USER_HOME || ! -d $USER_HOME ]]; then
+    log_warn "Could not resolve home directory for user '$TARGET_USER'; configuring only /root/.bashrc."
+  else
+    USER_RC="$USER_HOME/.bashrc"
+  fi
+else
+  log_info "Target user is root; configuring only /root/.bashrc."
+fi
 
 ROOT_PS1_START="# ----- Installicious ROOT PS1 (managed) -----"
 ROOT_PS1_END="# ----- END Installicious ROOT PS1 -----"
@@ -84,9 +102,13 @@ do_install() {
   fi
   status_mark_started "$II_ID"
 
-  log_info "Backing up .bashrc files for $TARGET_USER + root."
+  log_info "Backing up .bashrc files (root${USER_RC:+ + $TARGET_USER})."
   local snap
-  snap=$(backup_create "$II_ID" "$ROOT_RC" "$USER_RC")
+  if [[ -n $USER_RC ]]; then
+    snap=$(backup_create "$II_ID" "$ROOT_RC" "$USER_RC")
+  else
+    snap=$(backup_create "$II_ID" "$ROOT_RC")
+  fi
   if [[ -z $snap ]]; then
     log_fail "Failed to create backup snapshot."
     status_mark_failed "$II_ID" "backup_create returned empty path"
@@ -114,8 +136,9 @@ alias mv='mv -i'
 alias dir='ls $LS_OPTIONS -la'
 EOF
 
-  log_info "Configuring $USER_RC."
-  block_ensure "$USER_RC" "$USER_ALIAS_START" "$USER_ALIAS_END" <<'EOF'
+  if [[ -n $USER_RC ]]; then
+    log_info "Configuring $USER_RC."
+    block_ensure "$USER_RC" "$USER_ALIAS_START" "$USER_ALIAS_END" <<'EOF'
 force_color_prompt=yes
 alias ls='ls --color=auto'
 alias dir='ls -la --color=auto'
@@ -126,17 +149,20 @@ alias egrep='egrep --color=auto'
 # Trailing space lets aliases be expanded after sudo.
 alias sudo='sudo '
 EOF
+  fi
 
   status_mark_complete "$II_ID" "$II_VERSION"
-  log_ok "Bash customizations applied for root and $TARGET_USER."
+  log_ok "Bash customizations applied for root${USER_RC:+ and $TARGET_USER}."
   echo -e "[  \e[0;32mOK\e[0m  ] Installicious successfully customized bash."
   return 0
 }
 
 do_uninstall() {
+  local files=("$ROOT_RC")
+  [[ -n $USER_RC ]] && files+=("$USER_RC")
   if [[ $RESTORE_BACKUP -eq 1 ]]; then
     log_info "Restoring .bashrc files from latest backup snapshot."
-    if ! backup_restore_latest "$II_ID" "$ROOT_RC" "$USER_RC"; then
+    if ! backup_restore_latest "$II_ID" "${files[@]}"; then
       log_warn "No backup snapshot available; falling back to strip-block uninstall."
       RESTORE_BACKUP=0
     fi
@@ -145,7 +171,9 @@ do_uninstall() {
     log_info "Stripping managed blocks from .bashrc files."
     block_remove "$ROOT_RC" "$ROOT_PS1_START"   "$ROOT_PS1_END"
     block_remove "$ROOT_RC" "$ROOT_ALIAS_START" "$ROOT_ALIAS_END"
-    block_remove "$USER_RC" "$USER_ALIAS_START" "$USER_ALIAS_END"
+    if [[ -n $USER_RC ]]; then
+      block_remove "$USER_RC" "$USER_ALIAS_START" "$USER_ALIAS_END"
+    fi
   fi
   status_mark_uninstalled "$II_ID"
   log_ok "Bash customizations removed."
