@@ -169,18 +169,24 @@ menu_edit_config() {
   local -a installer_ids=("$@")
 
   # ---- discover editable keys + their owning labels ----
+  #
+  # Source order in config_files matters: later entries win in
+  # _menu_read_var_chain. To honor "task config overrides installer config",
+  # we append per-installer configs first, then the task config last (so
+  # task values shadow any colliding installer defaults). The user's
+  # menu-config.sh is layered on top of all of these by the chain helper.
   declare -A key_label key_seen
   local -a config_files=("config/installicious.config")
+  local key
+  local task_config_file=""
+  local task_editable=""
 
   if [[ -n $task_id && $task_id != "custom" ]]; then
     local task_path
     task_path=$(task_path_for "$task_id" 2>/dev/null)
     if [[ -n $task_path ]]; then
-      local task_config_file task_editable
       task_config_file=$(task_get_field "$task_path" "TASK_CONFIG")
       task_editable=$(task_get_field "$task_path" "TASK_EDITABLE_CONFIG")
-      [[ -n $task_config_file && -f $task_config_file ]] && config_files+=("$task_config_file")
-      local key
       for key in $task_editable; do
         [[ -z $key ]] && continue
         key_seen[$key]=1
@@ -204,6 +210,10 @@ menu_edit_config() {
       key_label[$key]="$id"
     done
   done
+
+  # Task config sources LAST so its values win over any colliding installer
+  # config defaults (per the "task overrides installer" rule).
+  [[ -n $task_config_file && -f $task_config_file ]] && config_files+=("$task_config_file")
 
   if [[ ${#key_seen[@]} -eq 0 ]]; then
     return 0  # nothing to edit

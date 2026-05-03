@@ -6,6 +6,7 @@
 cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 1
 
 source lib/state.sh
+source lib/menu.sh
 
 ok()    { echo "  OK $1"; }
 fail()  { echo "  FAIL $1"; }
@@ -85,7 +86,49 @@ state_clear_menu_overrides
 
 # ===========================================================================
 echo
-echo "=== Test 7: PATH_STATE fallback when not exported ==="
+echo "=== Test 7: chain precedence — task config overrides installer config ==="
+# Simulates the source order menu_edit_config builds:
+#   installicious.config  →  installer*.config  →  task*.config  →  menu-config.sh
+# A key present in both installer.config and task.config must resolve to the
+# task value (the rule is "task overrides installer").
+TMPCFG=$(mktemp -d)
+cat > "$TMPCFG/installicious.config" <<'EOF'
+SHARED_KEY="from_installicious"
+INSTALLER_ONLY="from_installicious"
+EOF
+cat > "$TMPCFG/installer.config" <<'EOF'
+SHARED_KEY="from_installer"
+INSTALLER_ONLY="from_installer"
+TASK_ONLY=""
+EOF
+cat > "$TMPCFG/task.config" <<'EOF'
+SHARED_KEY="from_task"
+TASK_ONLY="from_task"
+EOF
+
+chkeq "installer-only key resolves to installer value" \
+  "$(_menu_read_var_chain INSTALLER_ONLY "$TMPCFG/installicious.config" "$TMPCFG/installer.config" "$TMPCFG/task.config")" \
+  "from_installer"
+
+chkeq "task-only key resolves to task value" \
+  "$(_menu_read_var_chain TASK_ONLY "$TMPCFG/installicious.config" "$TMPCFG/installer.config" "$TMPCFG/task.config")" \
+  "from_task"
+
+chkeq "shared key resolves to TASK value (task wins)" \
+  "$(_menu_read_var_chain SHARED_KEY "$TMPCFG/installicious.config" "$TMPCFG/installer.config" "$TMPCFG/task.config")" \
+  "from_task"
+
+# menu-config.sh wins over everything when present.
+echo 'SHARED_KEY="from_user_edit"' > "$TMPSTATE/menu-config.sh"
+chkeq "menu-config.sh overrides task value" \
+  "$(_menu_read_var_chain SHARED_KEY "$TMPCFG/installicious.config" "$TMPCFG/installer.config" "$TMPCFG/task.config")" \
+  "from_user_edit"
+rm -rf "$TMPCFG"
+state_clear_menu_overrides
+
+# ===========================================================================
+echo
+echo "=== Test 8: PATH_STATE fallback when not exported ==="
 saved_path_state="$PATH_STATE"
 unset PATH_STATE
 mkdir -p state
