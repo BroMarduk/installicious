@@ -25,13 +25,26 @@
 
 EXIT_REBOOT=255
 
+# SCHEDULER_LAST_ERROR is set by helpers below when they fail. The wrapper
+# scheduler_run_resolved exposes it to the caller so options.sh can render the
+# message in a whiptail dialog.
+SCHEDULER_LAST_ERROR=""
+
 # scheduler_resolve_deps <id...> -> echo <id...> + transitive deps, one per line.
-# Uses the manifest registry. IDs without an installer are kept in the output
-# but a warning goes to stderr.
+# Uses the manifest registry. Returns rc=1 if any resolved ID has no
+# installer file (a missing dep is a hard error: pre-flight validation refuses
+# to start a queue with an unresolvable dep).
+#
+# On failure: populates SCHEDULER_LAST_ERROR with a human-readable message
+# naming the missing IDs, and emits the same message on stderr. The Pillar-6
+# dependency-validation guard. Callers should surface the error to the user
+# (via whiptail or similar) rather than proceed.
 scheduler_resolve_deps() {
+  SCHEDULER_LAST_ERROR=""
   local -A seen=()
   local -a queue=("$@")
   local -a output=()
+  local -a missing=()
   local id deps dep path
   while [[ ${#queue[@]} -gt 0 ]]; do
     id="${queue[0]}"
@@ -41,7 +54,7 @@ scheduler_resolve_deps() {
     output+=("$id")
     path=$(manifest_path_for "$id")
     if [[ -z $path ]]; then
-      echo "scheduler_resolve_deps: no installer found for ID '$id'" >&2
+      missing+=("$id")
       continue
     fi
     deps=$(manifest_get_field "$path" "II_DEPS")
@@ -51,6 +64,12 @@ scheduler_resolve_deps() {
     done
   done
   printf '%s\n' "${output[@]}"
+  if [[ ${#missing[@]} -gt 0 ]]; then
+    SCHEDULER_LAST_ERROR="Missing installer(s): ${missing[*]}"
+    echo "scheduler_resolve_deps: $SCHEDULER_LAST_ERROR" >&2
+    return 1
+  fi
+  return 0
 }
 
 # scheduler_topo_sort <id...> -> echo IDs in dependency order (deps before
@@ -168,13 +187,37 @@ scheduler_run_queue() {
 }
 
 # scheduler_run_resolved <id...> - convenience: resolve_deps + topo_sort + run_queue.
+# Returns rc=3 if any dep references an installer that doesn't exist; the
+# caller can read SCHEDULER_LAST_ERROR to surface the message (e.g. via
+# whiptail). Returns rc=2 on dependency-cycle detection.
 scheduler_run_resolved() {
-  local resolved sorted
-  resolved=$(scheduler_resolve_deps "$@")
+  local resolved sorted resolve_rc tmp
+  SCHEDULER_LAST_ERROR=""
+
+  # Use a tempfile rather than $(scheduler_resolve_deps ...) so that
+  # resolve_deps's global assignment to SCHEDULER_LAST_ERROR survives. A
+  # command substitution would run resolve_deps in a subshell and discard
+  # that global on exit.
+  tmp=$(mktemp) || {
+    SCHEDULER_LAST_ERROR="Could not create temp file for dependency resolution."
+    log_fail "$SCHEDULER_LAST_ERROR"
+    return 1
+  }
+  scheduler_resolve_deps "$@" > "$tmp"
+  resolve_rc=$?
+  resolved=$(cat "$tmp")
+  rm -f "$tmp"
+
+  if [[ $resolve_rc -ne 0 ]]; then
+    log_fail "$SCHEDULER_LAST_ERROR" "$resolve_rc"
+    return 3
+  fi
+
   sorted=$(scheduler_topo_sort $resolved)
   local sort_rc=$?
   if [[ $sort_rc -ne 0 ]]; then
-    log_fail "Dependency cycle detected; cannot build execution order." "$sort_rc"
+    SCHEDULER_LAST_ERROR="Dependency cycle detected; cannot build execution order."
+    log_fail "$SCHEDULER_LAST_ERROR" "$sort_rc"
     return $sort_rc
   fi
   # shellcheck disable=SC2086

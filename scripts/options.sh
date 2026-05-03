@@ -259,6 +259,14 @@ case $rc in
     state_clear_menu_overrides
     exit 0
     ;;
+  3)
+    # Pre-flight validation rejected the queue (missing dep installer or
+    # similar). No state was changed; surface to the user and exit cleanly.
+    msg="${SCHEDULER_LAST_ERROR:-Pre-flight validation failed.}\n\nNothing was installed. Aborting."
+    whiptail --title "Installicious — Cannot start queue" --msgbox "$msg" 14 78
+    state_clear_menu_overrides
+    exit 3
+    ;;
   $EXIT_REBOOT)
     # Don't apply yet — resume.sh runs queued commands and emits notes after
     # the queue actually finishes across the reboot. Keep menu-config.sh in

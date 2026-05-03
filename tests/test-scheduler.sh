@@ -165,5 +165,46 @@ chkrc "run_resolved exit 0" $rc 0
 order=$(cat "$TMPLOG" | tr "\n" " ")
 chkeq "transitive resolution + ordering" "$order" "rr1 rr2 rr3 "
 
+# ===========================================================================
+echo
+echo "=== Test 13: resolve_deps fails hard when an ID has no installer ==="
+err=$(scheduler_resolve_deps does-not-exist 2>&1 >/dev/null); rc=$?
+chkrc "missing top-level ID rc=1" $rc 1
+echo "$err" | grep -qi "missing installer" && ok "error mentions 'missing installer'" \
+  || fail "error message did not mention missing installer (got: $err)"
+
+# ===========================================================================
+echo
+echo "=== Test 14: resolve_deps fails hard when a transitive dep is missing ==="
+mk_installer parent "ghost-dep"
+# 'ghost-dep' has no installer file.
+err=$(scheduler_resolve_deps parent 2>&1 >/dev/null); rc=$?
+chkrc "missing transitive dep rc=1" $rc 1
+echo "$err" | grep -q "ghost-dep" && ok "error names the missing dep" \
+  || fail "error did not name 'ghost-dep' (got: $err)"
+
+# ===========================================================================
+echo
+echo "=== Test 15: run_resolved propagates rc=3 when deps don't resolve ==="
+reset_log
+scheduler_run_resolved parent >/dev/null 2>&1; rc=$?
+chkrc "rc=3 from missing dep" $rc 3
+chkeq "no installers ran when deps unresolvable" "$(cat "$TMPLOG")" ""
+[[ -n "$SCHEDULER_LAST_ERROR" ]] && ok "SCHEDULER_LAST_ERROR populated" \
+  || fail "SCHEDULER_LAST_ERROR was empty after rc=3"
+echo "$SCHEDULER_LAST_ERROR" | grep -q "ghost-dep" && ok "SCHEDULER_LAST_ERROR names missing dep" \
+  || fail "SCHEDULER_LAST_ERROR did not name 'ghost-dep'"
+
+# ===========================================================================
+echo
+echo "=== Test 16: skyfield → weewx dep resolves cleanly with both present ==="
+# Now that install-weewx.sh is real, picking skyfield should resolve to
+# {skyfield, weewx} without needing scheduler_run_queue at all (we just
+# verify the dep graph is well-formed).
+mk_installer weewx-fake ""
+mk_installer skyfield-fake "weewx-fake"
+got=$(scheduler_resolve_deps skyfield-fake | sort | tr "\n" ",")
+chkeq "skyfield-fake -> skyfield-fake,weewx-fake" "$got" "skyfield-fake,weewx-fake,"
+
 echo
 echo "=== Done ==="

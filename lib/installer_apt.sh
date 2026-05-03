@@ -101,6 +101,63 @@ _installer_apt_pre_var() {
   echo "${upper}_FW_PRE_INSTALLED"
 }
 
+# installer_apt_record_install <status_file> <pkg> [<pkg>...]
+# For each package: record pre-install state (true if already there, false if
+# we'll be the one to install it), then ensure-install via apt. Stops and
+# returns non-zero on the first install failure.
+#
+# Bespoke installers (with custom bodies, not using installer_apt_main) can
+# call this to get the same per-package symmetric tracking that the full
+# driver provides, then layer their own logic on top.
+installer_apt_record_install() {
+  local status_file="$1"
+  shift
+  local pkg pre_var rc
+  for pkg in "$@"; do
+    [[ -z $pkg ]] && continue
+    pre_var=$(_installer_apt_pre_var "$pkg")
+    if apt_is_installed "$pkg"; then
+      status_set "$status_file" "$pre_var" "true"
+    else
+      status_set "$status_file" "$pre_var" "false"
+    fi
+    apt_ensure_installed "$pkg"
+    rc=$?
+    if [[ $rc -ne 0 ]]; then
+      log_fail "Failed to install $pkg." "$rc"
+      return $rc
+    fi
+  done
+  return 0
+}
+
+# installer_apt_revert <status_file> <pkg> [<pkg>...]
+# For each package, remove it iff its recorded pre-state is "false" (meaning
+# we installed it). Packages that were already present are left in place;
+# packages already absent are skipped. Errors during apt remove are warned
+# but don't halt the loop — uninstall is best-effort.
+installer_apt_revert() {
+  local status_file="$1"
+  shift
+  local pkg pre_var pre_state
+  for pkg in "$@"; do
+    [[ -z $pkg ]] && continue
+    pre_var=$(_installer_apt_pre_var "$pkg")
+    pre_state=$(status_get "$status_file" "$pre_var")
+    if [[ $pre_state == "true" ]]; then
+      log_info "Leaving $pkg in place (was installed before)."
+      continue
+    fi
+    if ! apt_is_installed "$pkg"; then
+      log_info "$pkg already absent; nothing to remove."
+      continue
+    fi
+    log_info "Removing $pkg (we installed it)."
+    apt_remove "$pkg" || log_warn "apt remove $pkg returned non-zero (continuing)."
+  done
+  return 0
+}
+
 _installer_apt_do_install() {
   if status_should_skip "$II_ID" "$II_VERSION"; then
     log_info "$II_TITLE already installed at recorded version. Skipping."
@@ -110,31 +167,15 @@ _installer_apt_do_install() {
   local STATUS_FILE
   STATUS_FILE=$(status_file_for "$II_ID")
 
-  # Capture pre-install state per package so --uninstall can leave packages
-  # in place that were already there before we touched the system.
-  local pkg pre_var
-  for pkg in $II_APT_PACKAGES; do
-    [[ -z $pkg ]] && continue
-    pre_var=$(_installer_apt_pre_var "$pkg")
-    if apt_is_installed "$pkg"; then
-      status_set "$STATUS_FILE" "$pre_var" "true"
-    else
-      status_set "$STATUS_FILE" "$pre_var" "false"
-    fi
-  done
-
   log_info "Ensuring packages installed: $II_APT_PACKAGES"
-  for pkg in $II_APT_PACKAGES; do
-    [[ -z $pkg ]] && continue
-    apt_ensure_installed "$pkg"
-    local rc=$?
-    if [[ $rc -ne 0 ]]; then
-      log_fail "Failed to install $pkg." "$rc"
-      status_mark_failed "$II_ID" "apt-get install $pkg failed (code $rc)"
-      echo -e "[ \e[0;31mFAIL\e[0m ] Installicious could not install $pkg. Error Code: $rc."
-      return $rc
-    fi
-  done
+  # shellcheck disable=SC2086
+  installer_apt_record_install "$STATUS_FILE" $II_APT_PACKAGES
+  local rc=$?
+  if [[ $rc -ne 0 ]]; then
+    status_mark_failed "$II_ID" "apt-get install failed (code $rc)"
+    echo -e "[ \e[0;31mFAIL\e[0m ] Installicious could not install $II_TITLE. Error Code: $rc."
+    return $rc
+  fi
 
   status_mark_complete "$II_ID" "$II_VERSION"
   log_ok "$II_TITLE installed."
@@ -159,29 +200,8 @@ _installer_apt_do_uninstall() {
   local STATUS_FILE
   STATUS_FILE=$(status_file_for "$II_ID")
 
-  local pkg pre_var pre_state rc
-  for pkg in $II_APT_PACKAGES; do
-    [[ -z $pkg ]] && continue
-    pre_var=$(_installer_apt_pre_var "$pkg")
-    pre_state=$(status_get "$STATUS_FILE" "$pre_var")
-    if [[ $pre_state == "true" ]]; then
-      log_info "Leaving $pkg in place (was installed before $II_ID set up)."
-      continue
-    fi
-    if ! apt_is_installed "$pkg"; then
-      log_info "$pkg already absent; nothing to remove."
-      continue
-    fi
-    log_info "Removing $pkg (we installed it during $II_ID setup)."
-    apt_remove "$pkg"
-    rc=$?
-    if [[ $rc -ne 0 ]]; then
-      log_fail "Failed to remove $pkg." "$rc"
-      status_mark_failed "$II_ID" "apt remove $pkg failed (code $rc)"
-      echo -e "[ \e[0;31mFAIL\e[0m ] Installicious could not remove $pkg. Error Code: $rc."
-      return $rc
-    fi
-  done
+  # shellcheck disable=SC2086
+  installer_apt_revert "$STATUS_FILE" $II_APT_PACKAGES
 
   status_mark_uninstalled "$II_ID"
   log_ok "$II_TITLE uninstalled."
