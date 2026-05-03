@@ -23,7 +23,7 @@ II_DEPS="motd"
 II_REQUIRES_REBOOT="never"
 II_DEFAULT_SELECTED="off"
 II_APT_PACKAGES="jshon"
-II_EDITABLE_CONFIG="MOTD_WEATHER_LOC_CODE"
+II_EDITABLE_CONFIG="MOTD_WEATHER_LOC_CODE MOTD_WEATHER_API_KEY"
 # === II_MANIFEST_END ===
 
 source config/installicious.config || exit 1
@@ -38,6 +38,7 @@ FILE_CONFIG_MOTD="${PATH_CONFIG:-config}/motd.config"
 state_apply_menu_overrides
 MOTD_NAME="${MOTD_NAME:-dannet}"
 MOTD_WEATHER_LOC_CODE="${MOTD_WEATHER_LOC_CODE:-}"
+MOTD_WEATHER_API_KEY="${MOTD_WEATHER_API_KEY:-}"
 MOTD_IP_URL="${MOTD_IP_URL:-https://api.ipify.org}"
 MOTD_SMALL_SIZE="${MOTD_SMALL_SIZE:-79}"
 
@@ -69,9 +70,10 @@ render_resource() {
   sed -e "s|%%MOTD_NAME%%|${MOTD_NAME}|g" \
       -e "s|%%MOTD_IP_URL%%|${MOTD_IP_URL}|g" \
       -e "s|%%MOTD_WEATHER_LOC_CODE%%|${MOTD_WEATHER_LOC_CODE}|g" \
+      -e "s|%%MOTD_WEATHER_API_KEY%%|${MOTD_WEATHER_API_KEY}|g" \
       -e "s|%%MOTD_SMALL_SIZE%%|${MOTD_SMALL_SIZE}|g" \
       "$src" > "$tmp" || { rm -f "$tmp"; return 1; }
-  sudo install -m 0755 "$tmp" "$dest" || { rm -f "$tmp"; return 1; }
+  sudo install -m 0700 "$tmp" "$dest" || { rm -f "$tmp"; return 1; }
   rm -f "$tmp"
   return 0
 }
@@ -82,6 +84,26 @@ do_install() {
     return 0
   fi
   status_mark_started "$II_ID"
+
+  # ---- safety check: refuse to install without an AccuWeather API key ----
+  # The fetch script bakes the bearer token into the rendered cron file. An
+  # empty key means the cron will fail at every run; an unset key being baked
+  # into a file at /etc/cron.hourly/ also looks like a half-finished install.
+  # Hard-fail here so the user goes back and fills it in via the menu editor.
+  if [[ -z $MOTD_WEATHER_API_KEY ]]; then
+    log_fail "MOTD_WEATHER_API_KEY is empty — set it via the menu config editor before installing motd-weather."
+    status_mark_failed "$II_ID" "API key not set"
+    echo -e "[ \e[0;31mFAIL\e[0m ] Installicious cannot install motd-weather: AccuWeather API key is not set."
+    echo -e "         Re-run installicious and set MOTD_WEATHER_API_KEY in the configuration editor."
+    return 2
+  fi
+  if [[ -z $MOTD_WEATHER_LOC_CODE ]]; then
+    log_fail "MOTD_WEATHER_LOC_CODE is empty — set it via the menu config editor before installing motd-weather."
+    status_mark_failed "$II_ID" "Location code not set"
+    echo -e "[ \e[0;31mFAIL\e[0m ] Installicious cannot install motd-weather: AccuWeather location code is not set."
+    echo -e "         Re-run installicious and set MOTD_WEATHER_LOC_CODE in the configuration editor."
+    return 2
+  fi
 
   # ---- apt deps (with per-package pre-state) ----
   log_info "Ensuring apt deps: $II_APT_PACKAGES."
