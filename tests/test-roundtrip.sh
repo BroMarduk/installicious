@@ -162,7 +162,9 @@ echo
 echo "=== Test 3: install-pip round-trip ==="
 run installers/install-pip.sh
 chkf "python3-pip installed" "$STUB/.installed_python3-pip"
-chkgrep "PRE_INSTALLED=false" "^PIP_FW_PRE_INSTALLED=\"false\"" "$TMPSTATUS/pip.status"
+# Pre-state is keyed by package name (PYTHON3_PIP_…), not installer name —
+# installer_apt supports multi-package installers where this distinction matters.
+chkgrep "PRE_INSTALLED=false" "^PYTHON3_PIP_FW_PRE_INSTALLED=\"false\"" "$TMPSTATUS/pip.status"
 
 run installers/install-pip.sh --uninstall
 chknof "python3-pip removed" "$STUB/.installed_python3-pip"
