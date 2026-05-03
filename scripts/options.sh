@@ -86,7 +86,8 @@ while true; do
 
     pick_task)
       task_id=$(menu_select_task "Installicious" \
-        "Pick the role for this Pi. Choose Custom to pick installers individually.")
+        "Pick the role for this Pi. Choose Custom to pick installers individually." \
+        "$task_id")
       rc=$?
       case $rc in
         0) ;;
@@ -128,7 +129,8 @@ while true; do
     custom_options)
       options_selected=$(menu_select_category "option" \
         "Installicious Options" \
-        "Select system options to configure.")
+        "Select system options to configure." \
+        "${options_selected//\"/}")
       rc=$?
       case $rc in
         0)   stage="custom_software" ;;
@@ -141,7 +143,8 @@ while true; do
     custom_software)
       software_selected=$(menu_select_category "software" \
         "Installicious Software" \
-        "Select software packages to install.")
+        "Select software packages to install." \
+        "${software_selected//\"/}")
       rc=$?
       case $rc in
         0)   stage="merge_custom" ;;
@@ -180,7 +183,9 @@ while true; do
 
     pick_optional)
       # shellcheck disable=SC2086
-      optional_picked=$(menu_pick_optionals "$task_title" $task_optional)
+      optional_picked=$(menu_pick_optionals "$task_title" \
+        --previously "${optional_picked//\"/}" \
+        $task_optional)
       rc=$?
       case $rc in
         0)   stage="merge_task" ;;

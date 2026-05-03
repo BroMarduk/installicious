@@ -18,21 +18,41 @@
 #   source lib/menu.sh
 #   ids=$(menu_select_category option "Installicious Options" "Pick what you want.")
 
-# menu_select_category <category> [<title>] [<description>]
+# menu_select_category <category> [<title>] [<description>] [<previously_selected>]
 # Multi-select checklist for the given manifest category. Echoes the selected
 # IDs on stdout when the user picks NEXT.
+#
+# If <previously_selected> (space-separated IDs, no quotes) is provided, those
+# IDs are pre-checked and any others are unchecked — overriding the manifest's
+# II_DEFAULT_SELECTED. This is how options.sh preserves the user's prior
+# selections when they navigate BACK and then forward again.
 menu_select_category() {
   local category="$1"
   local title="${2:-Installicious}"
   local desc="${3:-Select items from the ${category} category.}"
+  local previously="${4:-}"
+
+  local use_previously=0
+  declare -A on_set=()
+  if [[ -n $previously ]]; then
+    use_previously=1
+    local sel
+    for sel in $previously; do
+      [[ -n $sel ]] && on_set[$sel]=1
+    done
+  fi
 
   local -a items=()
   local id path title_text default
   while IFS= read -r id; do
     path=$(manifest_path_for "$id")
     title_text=$(manifest_get_field "$path" "II_TITLE")
-    default=$(manifest_get_field "$path" "II_DEFAULT_SELECTED")
-    [[ -z $default ]] && default="off"
+    if [[ $use_previously -eq 1 ]]; then
+      [[ -n ${on_set[$id]:-} ]] && default="on" || default="off"
+    else
+      default=$(manifest_get_field "$path" "II_DEFAULT_SELECTED")
+      [[ -z $default ]] && default="off"
+    fi
     items+=("$id" "$title_text" "$default")
   done < <(manifest_filter_by_category "$category" | sort)
 
@@ -48,12 +68,15 @@ menu_select_category() {
     3>&1 1>&2 2>&3
 }
 
-# menu_select_task [<title>] [<description>]
+# menu_select_task [<title>] [<description>] [<default_item>]
 # First-stage single-select task picker. CANCEL means exit (no previous stage
-# to go back to); ESC also exits.
+# to go back to); ESC also exits. If <default_item> is provided and matches a
+# task ID, that row is highlighted by default — useful for preserving the
+# user's prior pick when they navigate BACK to this screen.
 menu_select_task() {
   local title="${1:-Installicious — Pick a Task}"
   local desc="${2:-Pick the role for this Pi. Choose Custom to pick installers individually.}"
+  local default_item="${3:-}"
 
   local -a items=()
   local id path title_text
@@ -67,12 +90,10 @@ menu_select_task() {
     return 2
   fi
 
-  whiptail --title "$title" \
-    --ok-button "SELECT" \
-    --cancel-button "EXIT" \
-    --menu "$desc" 20 80 12 \
-    "${items[@]}" \
-    3>&1 1>&2 2>&3
+  local -a wt_args=(--title "$title" --ok-button "SELECT" --cancel-button "EXIT")
+  [[ -n $default_item ]] && wt_args+=(--default-item "$default_item")
+  wt_args+=(--menu "$desc" 20 80 12 "${items[@]}")
+  whiptail "${wt_args[@]}" 3>&1 1>&2 2>&3
 }
 
 # menu_show_required <task_title> <required_id> [<required_id> ...]
@@ -99,18 +120,38 @@ menu_show_required() {
     --yesno "$message" 20 80
 }
 
-# menu_pick_optionals <task_title> <optional_id> [<optional_id> ...]
+# menu_pick_optionals <task_title> [--previously <selected>] <optional_id> [<optional_id> ...]
 # Multi-select checklist of optional installers, all default-off. Echoes the
 # selected IDs (space-separated, possibly quoted by whiptail).
+#
+# Pass --previously "<space-separated-ids>" before the optional ID list to
+# pre-check those rows (overriding the default-off baseline). Used by
+# options.sh to preserve the user's prior picks when they navigate BACK and
+# then forward again.
 menu_pick_optionals() {
   local task_title="$1"
   shift
+  local previously=""
+  if [[ "${1:-}" == "--previously" ]]; then
+    previously="$2"
+    shift 2
+  fi
   if [[ $# -eq 0 ]]; then
     return 2
   fi
 
+  local use_previously=0
+  declare -A on_set=()
+  if [[ -n $previously ]]; then
+    use_previously=1
+    local sel
+    for sel in $previously; do
+      [[ -n $sel ]] && on_set[$sel]=1
+    done
+  fi
+
   local -a items=()
-  local id path installer_title
+  local id path installer_title default
   for id in "$@"; do
     path=$(manifest_path_for "$id" 2>/dev/null)
     if [[ -n $path ]]; then
@@ -118,7 +159,12 @@ menu_pick_optionals() {
     else
       installer_title=""
     fi
-    items+=("$id" "${installer_title:-$id}" "off")
+    if [[ $use_previously -eq 1 ]]; then
+      [[ -n ${on_set[$id]:-} ]] && default="on" || default="off"
+    else
+      default="off"
+    fi
+    items+=("$id" "${installer_title:-$id}" "$default")
   done
 
   whiptail --title "$task_title — Optional Add-ons" \
@@ -243,9 +289,11 @@ menu_edit_config() {
 
   # ---- edit loop ----
   # Buttons: OK="EDIT" → edit highlighted row; CANCEL="DONE" → forward.
-  # "<-- Back" appears as the first menu entry; selecting it exits with rc=1.
-  # ESC → rc=255 (abort).
-  local choice new_val rc final_rc=0
+  # "<-- Back" appears as the first menu entry; selecting it sets result_rc=1
+  # and breaks. Both DONE and BACK fall through to the persist block — that
+  # way an in-progress edit is remembered if the user goes back and returns.
+  # ESC bypasses persistence and returns 255.
+  local choice new_val rc result_rc=0
   while true; do
     local -a items=()
     items+=("__BACK__" "<-- Back to previous screen")
@@ -262,14 +310,15 @@ menu_edit_config() {
       3>&1 1>&2 2>&3)
     rc=$?
     if [[ $rc -eq 255 ]]; then
-      return 255  # ESC
+      return 255  # ESC: do not persist
     fi
     if [[ $rc -ne 0 ]]; then
-      final_rc=0  # DONE pressed → forward
+      result_rc=0  # DONE → forward
       break
     fi
     if [[ $choice == "__BACK__" ]]; then
-      return 1
+      result_rc=1  # BACK → rewind, but still persist below
+      break
     fi
 
     new_val=$(whiptail --title "$choice [${key_label[$choice]}]" \
@@ -305,5 +354,5 @@ menu_edit_config() {
       done
     } | sudo tee "$override_file" >/dev/null
   }
-  return 0
+  return $result_rc
 }
