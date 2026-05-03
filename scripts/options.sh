@@ -2,14 +2,19 @@
 
 # scripts/options.sh - Main menu + scheduler entry point.
 #
-# Flow:
-#   1. Task picker         (single-select whiptail over $PATH_TASKS)
-#   2a. If task=custom:    fall through to per-installer category menus
-#   2b. Otherwise:         show required installers (msgbox) → optional picker
-#                          (default-off checklist)
-#   3. Config editor       (menu_edit_config — Phase 2; no-op if no editable keys)
-#   4. Confirmation        (yes/no msgbox)
-#   5. Run via scheduler   (scheduler_run_resolved)
+# Driven by a small stage state machine so the user can press BACK at any
+# screen to return to the previous one. ESC at any prompt aborts the whole
+# flow.
+#
+# Stages (see the dispatcher at the bottom of the file):
+#   pick_task       — single-select task picker (first stage)
+#   custom_options  — Custom: pick option-category installers
+#   custom_software — Custom: pick software-category installers
+#   show_required   — Task: confirm the required installers (info)
+#   pick_optional   — Task: pick optional add-ons
+#   edit_config     — surface II_EDITABLE_CONFIG / TASK_EDITABLE_CONFIG values
+#   confirm         — final yes/no
+#   run             — scheduler hand-off (terminal stage)
 #
 # Invoked from installicious.sh after hardware/OS detection and the initial
 # whiptail confirmation.
@@ -47,97 +52,197 @@ state_clear_menu_overrides
 
 CURRENTUSER=$(whoami)
 
-# ---------------------------------------------------------------------------
-# Stage 1: Task picker
-# ---------------------------------------------------------------------------
-task_id=$(menu_select_task "Installicious" \
-  "Pick the role for this Pi. Choose Custom to pick installers individually.")
-task_rc=$?
-if [[ $task_rc -eq 2 ]]; then
-  log_warn "No tasks defined under \$PATH_TASKS; nothing to pick from."
-  exit 0
-fi
-if [[ $task_rc -ne 0 || -z $task_id ]]; then
-  log_info "User $CURRENTUSER cancelled the task picker."
-  exit 0
-fi
-log_info "User $CURRENTUSER picked task: $task_id"
+# State carried across stages.
+task_id=""
+task_path=""
+task_title=""
+task_required=""
+task_optional=""
+options_selected=""
+software_selected=""
+optional_picked=""
+selected=""
 
 # ---------------------------------------------------------------------------
-# Stage 2a: Custom — fall through to per-installer category menus
+# Stage state machine
 # ---------------------------------------------------------------------------
-if [[ $task_id == "custom" ]]; then
-  options_selected=$(menu_select_category "option" \
-    "Installicious Options" \
-    "Select system options to configure.")
-  options_rc=$?
-  software_selected=$(menu_select_category "software" \
-    "Installicious Software" \
-    "Select software packages to install.")
-  software_rc=$?
-  [[ $options_rc -eq 2 ]] && options_selected=""
-  [[ $software_rc -eq 2 ]] && software_selected=""
-  selected="${options_selected//\"/} ${software_selected//\"/}"
-else
-  # -------------------------------------------------------------------------
-  # Stage 2b: Task — show required installers, then optional picker
-  # -------------------------------------------------------------------------
-  task_path=$(task_path_for "$task_id")
-  task_title=$(task_get_field "$task_path" "TASK_TITLE")
-  task_required=$(task_get_field "$task_path" "TASK_INSTALLERS_REQUIRED")
-  task_optional=$(task_get_field "$task_path" "TASK_INSTALLERS_OPTIONAL")
-
-  if [[ -n $task_required ]]; then
-    # shellcheck disable=SC2086
-    menu_show_required "$task_title" $task_required
+# Helper: figure out which stage precedes edit_config / confirm so BACK from
+# the editor or confirm rewinds to the right place.
+prev_selection_stage() {
+  if [[ $task_id == "custom" ]]; then
+    echo "custom_software"
+  elif [[ -n $task_optional ]]; then
+    echo "pick_optional"
+  elif [[ -n $task_required ]]; then
+    echo "show_required"
+  else
+    echo "pick_task"
   fi
+}
 
-  optional_picked=""
-  if [[ -n $task_optional ]]; then
-    # shellcheck disable=SC2086
-    optional_picked=$(menu_pick_optionals "$task_title" $task_optional)
-    optional_rc=$?
-    if [[ $optional_rc -ne 0 ]]; then
-      log_info "User $CURRENTUSER cancelled at the optional picker."
-      exit 0
-    fi
-  fi
+stage="pick_task"
+while true; do
+  case "$stage" in
 
-  selected="$task_required ${optional_picked//\"/}"
-fi
+    pick_task)
+      task_id=$(menu_select_task "Installicious" \
+        "Pick the role for this Pi. Choose Custom to pick installers individually.")
+      rc=$?
+      case $rc in
+        0) ;;
+        2)
+          log_warn "No tasks defined under \$PATH_TASKS; nothing to pick from."
+          exit 0
+          ;;
+        *)
+          log_info "User $CURRENTUSER exited at the task picker."
+          exit 0
+          ;;
+      esac
+      log_info "User $CURRENTUSER picked task: $task_id."
 
-# Normalize whitespace.
-selected=$(echo "$selected" | tr -s ' ' | sed 's/^ //; s/ $//')
+      if [[ $task_id == "custom" ]]; then
+        task_path=""
+        task_title="Custom"
+        task_required=""
+        task_optional=""
+        stage="custom_options"
+      else
+        task_path=$(task_path_for "$task_id")
+        task_title=$(task_get_field "$task_path" "TASK_TITLE")
+        task_required=$(task_get_field "$task_path" "TASK_INSTALLERS_REQUIRED")
+        task_optional=$(task_get_field "$task_path" "TASK_INSTALLERS_OPTIONAL")
+        if [[ -n $task_required ]]; then
+          stage="show_required"
+        elif [[ -n $task_optional ]]; then
+          stage="pick_optional"
+        else
+          # Task with neither required nor optional — degenerate but harmless;
+          # treat like custom-with-empty-selection.
+          selected=""
+          stage="merge_task"
+        fi
+      fi
+      ;;
 
-if [[ -z $selected ]]; then
-  log_info "User $CURRENTUSER continued without selecting any installers; nothing to do."
-  exit 0
-fi
+    custom_options)
+      options_selected=$(menu_select_category "option" \
+        "Installicious Options" \
+        "Select system options to configure.")
+      rc=$?
+      case $rc in
+        0)   stage="custom_software" ;;
+        1)   stage="pick_task" ;;
+        2)   options_selected=""; stage="custom_software" ;;
+        255) log_info "User $CURRENTUSER aborted (ESC) at the options picker."; exit 0 ;;
+      esac
+      ;;
 
-log_info "User $CURRENTUSER selected: $selected."
+    custom_software)
+      software_selected=$(menu_select_category "software" \
+        "Installicious Software" \
+        "Select software packages to install.")
+      rc=$?
+      case $rc in
+        0)   stage="merge_custom" ;;
+        1)   stage="custom_options" ;;
+        2)   software_selected=""; stage="merge_custom" ;;
+        255) log_info "User $CURRENTUSER aborted (ESC) at the software picker."; exit 0 ;;
+      esac
+      ;;
+
+    merge_custom)
+      selected="${options_selected//\"/} ${software_selected//\"/}"
+      selected=$(echo "$selected" | tr -s ' ' | sed 's/^ //; s/ $//')
+      if [[ -z $selected ]]; then
+        log_info "User $CURRENTUSER continued without selecting any installers; nothing to do."
+        exit 0
+      fi
+      stage="edit_config"
+      ;;
+
+    show_required)
+      # shellcheck disable=SC2086
+      menu_show_required "$task_title" $task_required
+      rc=$?
+      case $rc in
+        0)
+          if [[ -n $task_optional ]]; then
+            stage="pick_optional"
+          else
+            stage="merge_task"
+          fi
+          ;;
+        1)   stage="pick_task" ;;
+        255) log_info "User $CURRENTUSER aborted (ESC) at the required-installers screen."; exit 0 ;;
+      esac
+      ;;
+
+    pick_optional)
+      # shellcheck disable=SC2086
+      optional_picked=$(menu_pick_optionals "$task_title" $task_optional)
+      rc=$?
+      case $rc in
+        0)   stage="merge_task" ;;
+        1)
+          if [[ -n $task_required ]]; then
+            stage="show_required"
+          else
+            stage="pick_task"
+          fi
+          ;;
+        2)   optional_picked=""; stage="merge_task" ;;
+        255) log_info "User $CURRENTUSER aborted (ESC) at the optional picker."; exit 0 ;;
+      esac
+      ;;
+
+    merge_task)
+      selected="$task_required ${optional_picked//\"/}"
+      selected=$(echo "$selected" | tr -s ' ' | sed 's/^ //; s/ $//')
+      if [[ -z $selected ]]; then
+        log_info "User $CURRENTUSER continued without selecting any installers; nothing to do."
+        exit 0
+      fi
+      stage="edit_config"
+      ;;
+
+    edit_config)
+      log_info "User $CURRENTUSER selected: $selected."
+      # shellcheck disable=SC2086
+      menu_edit_config "$task_id" $selected
+      rc=$?
+      case $rc in
+        0)   stage="confirm" ;;
+        1)   stage=$(prev_selection_stage) ;;
+        2)   stage="confirm" ;;  # nothing to edit; auto-advance
+        255) log_info "User $CURRENTUSER aborted (ESC) at the config editor."; exit 0 ;;
+      esac
+      ;;
+
+    confirm)
+      confirm_msg="The following installers will run, in dependency order:\n\n  $selected\n\nProceed?"
+      menu_confirm "Confirm Install" "$confirm_msg"
+      rc=$?
+      case $rc in
+        0)   stage="run" ;;
+        1)   stage="edit_config" ;;
+        255) log_info "User $CURRENTUSER aborted (ESC) at the confirmation screen."; exit 0 ;;
+      esac
+      ;;
+
+    run)
+      break
+      ;;
+
+    *)
+      log_warn "Unknown stage: $stage; aborting."
+      exit 1
+      ;;
+  esac
+done
 
 # ---------------------------------------------------------------------------
-# Stage 3: Config editor (Phase 2)
-# ---------------------------------------------------------------------------
-# Surfaces editable keys advertised by the chosen task and selected installers.
-# Defaults are read from the corresponding .config files; user edits persist to
-# $PATH_STATE/menu-config.sh and are sourced by each installer at run time.
-# No-op if no editable keys are advertised.
-# shellcheck disable=SC2086
-menu_edit_config "$task_id" $selected
-
-# ---------------------------------------------------------------------------
-# Stage 4: Confirmation
-# ---------------------------------------------------------------------------
-confirm_msg="The following installers will run, in dependency order:\n\n  $selected\n\nProceed?"
-if ! menu_confirm "Confirm Install" "$confirm_msg"; then
-  log_info "User $CURRENTUSER cancelled at confirmation."
-  state_clear_menu_overrides
-  exit 0
-fi
-
-# ---------------------------------------------------------------------------
-# Stage 5: Run via scheduler
+# Run via scheduler
 # ---------------------------------------------------------------------------
 # shellcheck disable=SC2086
 scheduler_run_resolved $selected

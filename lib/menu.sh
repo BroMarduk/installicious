@@ -6,14 +6,21 @@
 # manifest in a category, presents a whiptail checklist, and echoes the user's
 # selection (whitespace-separated IDs) on stdout.
 #
+# Return-code convention used across all helpers (so scripts/options.sh can
+# drive a stage state machine):
+#   0   forward     — user pressed the OK / NEXT / RUN button
+#   1   back        — user pressed the BACK button (or CANCEL on first stage)
+#   2   no-data     — nothing to show (caller should auto-advance silently)
+#   255 abort       — user pressed ESC; abort the whole flow
+#
 # Usage:
 #   source lib/manifest.sh
 #   source lib/menu.sh
 #   ids=$(menu_select_category option "Installicious Options" "Pick what you want.")
 
 # menu_select_category <category> [<title>] [<description>]
-# Returns 0 on user accept (echoes IDs); rc=1 on user cancel (no output);
-# rc=2 if no installers exist for the category (no menu shown).
+# Multi-select checklist for the given manifest category. Echoes the selected
+# IDs on stdout when the user picks NEXT.
 menu_select_category() {
   local category="$1"
   local title="${2:-Installicious}"
@@ -34,16 +41,16 @@ menu_select_category() {
   fi
 
   whiptail --title "$title" \
-    --ok-button "SELECT" \
-    --cancel-button "NONE" \
+    --ok-button "NEXT" \
+    --cancel-button "BACK" \
     --checklist "$desc" 20 80 12 \
     "${items[@]}" \
     3>&1 1>&2 2>&3
 }
 
 # menu_select_task [<title>] [<description>]
-# Single-select whiptail of all task-*.sh manifests under $PATH_TASKS. Echoes
-# the selected TASK_ID. rc=1 on cancel; rc=2 if no tasks exist.
+# First-stage single-select task picker. CANCEL means exit (no previous stage
+# to go back to); ESC also exits.
 menu_select_task() {
   local title="${1:-Installicious — Pick a Task}"
   local desc="${2:-Pick the role for this Pi. Choose Custom to pick installers individually.}"
@@ -62,15 +69,15 @@ menu_select_task() {
 
   whiptail --title "$title" \
     --ok-button "SELECT" \
-    --cancel-button "CANCEL" \
+    --cancel-button "EXIT" \
     --menu "$desc" 20 80 12 \
     "${items[@]}" \
     3>&1 1>&2 2>&3
 }
 
 # menu_show_required <task_title> <required_id> [<required_id> ...]
-# Informational msgbox listing the required installers for a task, with each
-# installer's manifest title. No user input beyond OK; rc=0.
+# Informational confirmation listing the required installers for a task.
+# OK forwards (rc=0), BACK rewinds (rc=1), ESC aborts (rc=255).
 menu_show_required() {
   local task_title="$1"
   shift
@@ -86,18 +93,20 @@ menu_show_required() {
     fi
   done
   message+="\n\nThese are required and will run automatically. Optional add-ons come next."
-  whiptail --title "$task_title — Required Installers" --msgbox "$message" 20 80
+  whiptail --title "$task_title — Required Installers" \
+    --yes-button "OK" \
+    --no-button "BACK" \
+    --yesno "$message" 20 80
 }
 
 # menu_pick_optionals <task_title> <optional_id> [<optional_id> ...]
-# Multi-select whiptail of optional installers, all default-off. Echoes the
-# selected IDs (space-separated, possibly quoted by whiptail). rc=1 on cancel.
-# Skips the menu (rc=0, no output) if the optional list is empty.
+# Multi-select checklist of optional installers, all default-off. Echoes the
+# selected IDs (space-separated, possibly quoted by whiptail).
 menu_pick_optionals() {
   local task_title="$1"
   shift
   if [[ $# -eq 0 ]]; then
-    return 0
+    return 2
   fi
 
   local -a items=()
@@ -113,21 +122,21 @@ menu_pick_optionals() {
   done
 
   whiptail --title "$task_title — Optional Add-ons" \
-    --ok-button "SELECT" \
-    --cancel-button "NONE" \
+    --ok-button "NEXT" \
+    --cancel-button "BACK" \
     --checklist "Optional add-ons (default off; pick any you want)." 20 80 12 \
     "${items[@]}" \
     3>&1 1>&2 2>&3
 }
 
 # menu_confirm <title> <message>
-# Yes/no whiptail. rc=0 if user confirms.
+# Final yes/no. RUN forwards, BACK rewinds.
 menu_confirm() {
   local title="$1"
   local message="$2"
   whiptail --title "$title" \
     --yes-button "RUN" \
-    --no-button "CANCEL" \
+    --no-button "BACK" \
     --yesno "$message" 20 80
 }
 
@@ -157,12 +166,19 @@ _menu_read_var_chain() {
 # Discovers editable keys from the chosen task's TASK_EDITABLE_CONFIG and each
 # selected installer's II_EDITABLE_CONFIG manifest field. Reads default values
 # from the corresponding .config files (chained: installicious.config first,
-# then task config, then per-installer config, then any prior menu-config.sh).
-# Loops a whiptail menu+inputbox until the user picks DONE. Persists the final
-# values to $PATH_STATE/menu-config.sh. No-op if there are zero editable keys.
+# then per-installer configs, then task config, then any prior menu-config.sh).
+# Loops a whiptail menu+inputbox until the user picks DONE or BACK. Persists
+# the final values to $PATH_STATE/menu-config.sh on DONE.
 #
-# Pass task_id="" when running the Custom flow (no task config), and just the
-# selected installer IDs.
+# Return codes (matches the lib/menu.sh contract):
+#   0   forward — user pressed DONE; overrides persisted
+#   1   back    — user pressed BACK or selected the "<-- Back" entry; overrides
+#                 are NOT persisted (caller can re-enter the previous stage)
+#   2   no-data — no editable keys advertised; nothing to show, caller should
+#                 auto-advance
+#   255 abort   — user pressed ESC
+#
+# Pass task_id="" or "custom" when running the Custom flow (no task config).
 menu_edit_config() {
   local task_id="$1"
   shift
@@ -216,7 +232,7 @@ menu_edit_config() {
   [[ -n $task_config_file && -f $task_config_file ]] && config_files+=("$task_config_file")
 
   if [[ ${#key_seen[@]} -eq 0 ]]; then
-    return 0  # nothing to edit
+    return 2  # nothing to edit; caller auto-advances
   fi
 
   # ---- read current values via the chain ----
@@ -226,9 +242,13 @@ menu_edit_config() {
   done
 
   # ---- edit loop ----
-  local choice new_val rc
+  # Buttons: OK="EDIT" → edit highlighted row; CANCEL="DONE" → forward.
+  # "<-- Back" appears as the first menu entry; selecting it exits with rc=1.
+  # ESC → rc=255 (abort).
+  local choice new_val rc final_rc=0
   while true; do
     local -a items=()
+    items+=("__BACK__" "<-- Back to previous screen")
     local -a sorted_keys
     mapfile -t sorted_keys < <(printf '%s\n' "${!current[@]}" | sort)
     for key in "${sorted_keys[@]}"; do
@@ -237,18 +257,28 @@ menu_edit_config() {
 
     choice=$(whiptail --title "Edit Configuration" \
       --ok-button "EDIT" --cancel-button "DONE" \
-      --menu "Pick a value to edit, or DONE to continue:" 20 80 12 \
+      --menu "Pick a value to edit, DONE to continue, or <-- Back to rewind." 20 80 12 \
       "${items[@]}" \
       3>&1 1>&2 2>&3)
     rc=$?
-    [[ $rc -ne 0 ]] && break
+    if [[ $rc -eq 255 ]]; then
+      return 255  # ESC
+    fi
+    if [[ $rc -ne 0 ]]; then
+      final_rc=0  # DONE pressed → forward
+      break
+    fi
+    if [[ $choice == "__BACK__" ]]; then
+      return 1
+    fi
 
     new_val=$(whiptail --title "$choice [${key_label[$choice]}]" \
       --inputbox "Enter new value for $choice:" \
       10 70 "${current[$choice]}" \
       3>&1 1>&2 2>&3)
     rc=$?
-    [[ $rc -ne 0 ]] && continue
+    [[ $rc -eq 255 ]] && return 255
+    [[ $rc -ne 0 ]] && continue  # cancel on input box → discard edit, back to list
     current[$choice]="$new_val"
   done
 
@@ -275,4 +305,5 @@ menu_edit_config() {
       done
     } | sudo tee "$override_file" >/dev/null
   }
+  return 0
 }
