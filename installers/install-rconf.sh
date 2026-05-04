@@ -28,7 +28,7 @@ II_VERSION="2"
 II_DEPS=""
 II_REQUIRES_REBOOT="conditional"
 II_DEFAULT_SELECTED="on"
-II_EDITABLE_CONFIG="RCONF_LOCALE RCONF_KEYBOARD_LAYOUT RCONF_BOOT_TARGET RCONF_BOOT_AUTOLOGIN RCONF_OVERLAYFS RCONF_BOOT_ORDER RCONF_BOOTLOADER_VERSION RCONF_USB_CURRENT_UNLIMITED"
+II_EDITABLE_CONFIG="RCONF_LOCALE RCONF_KEYBOARD_MODEL RCONF_BOOT_TARGET RCONF_BOOT_AUTOLOGIN RCONF_OVERLAYFS RCONF_BOOT_ORDER RCONF_BOOTLOADER_VERSION RCONF_USB_CURRENT_UNLIMITED"
 # === II_MANIFEST_END ===
 
 source config/installicious.config || exit 1
@@ -58,7 +58,6 @@ state_apply_menu_overrides
 
 # Defaults guard against an empty config file.
 RCONF_LOCALE="${RCONF_LOCALE:-en_US.UTF-8}"
-RCONF_KEYBOARD_LAYOUT="${RCONF_KEYBOARD_LAYOUT:-us}"
 RCONF_KEYBOARD_MODEL="${RCONF_KEYBOARD_MODEL:-pc105}"
 RCONF_BOOT_TARGET="${RCONF_BOOT_TARGET:-console}"
 RCONF_BOOT_AUTOLOGIN="${RCONF_BOOT_AUTOLOGIN:-true}"
@@ -153,11 +152,26 @@ apply_locale() {
   _run_rc $RC do_change_locale "$RCONF_LOCALE"
 }
 
-apply_keyboard_layout() {
-  _skip_if_not_applicable RCONF_KEYBOARD_LAYOUT || return 0
-  [[ -n $RCONF_KEYBOARD_LAYOUT ]] || return 0
-  log_info "Setting keyboard layout to $RCONF_KEYBOARD_LAYOUT."
-  _run_rc $RC do_configure_keyboard "$RCONF_KEYBOARD_LAYOUT"
+apply_keyboard_model() {
+  _skip_if_not_applicable RCONF_KEYBOARD_MODEL || return 0
+  [[ -n $RCONF_KEYBOARD_MODEL ]] || return 0
+  local kbd="/etc/default/keyboard"
+  if [[ ! -f $kbd ]]; then
+    log_warn "$kbd not present — skipping keyboard model change."
+    return 0
+  fi
+  # raspi-config's nonint do_configure_keyboard sets XKBLAYOUT only (the
+  # country code). It has no nonint helper for XKBMODEL, so we edit the
+  # file directly and then dpkg-reconfigure to apply.
+  log_info "Setting XKBMODEL to $RCONF_KEYBOARD_MODEL in $kbd."
+  if grep -qE '^XKBMODEL=' "$kbd"; then
+    sudo sed -i -E "s|^XKBMODEL=.*|XKBMODEL=\"${RCONF_KEYBOARD_MODEL}\"|" "$kbd" \
+      || { log_warn "Failed to update XKBMODEL in $kbd."; return 1; }
+  else
+    echo "XKBMODEL=\"${RCONF_KEYBOARD_MODEL}\"" | sudo tee -a "$kbd" >/dev/null
+  fi
+  sudo DEBIAN_FRONTEND=noninteractive dpkg-reconfigure -f noninteractive keyboard-configuration \
+    || log_warn "dpkg-reconfigure keyboard-configuration returned non-zero."
 }
 
 apply_boot_target() {
@@ -265,7 +279,7 @@ do_install() {
   status_mark_started "$II_ID"
 
   apply_locale
-  apply_keyboard_layout
+  apply_keyboard_model
   apply_boot_target
   apply_boot_autologin
   apply_blanking

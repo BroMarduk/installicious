@@ -24,23 +24,23 @@
 #   II_OS_BITS     32 or 64
 
 # ---------------------------------------------------------------------------
-# Keyboard layout — common xkb codes. Always applicable; the Imager sets
-# this to the country default but the user's actual keyboard may differ.
+# Keyboard model — the physical keyboard hardware type (xkb's "model" field,
+# stored as XKBMODEL in /etc/default/keyboard). The Imager sets the country
+# *layout* (us/gb/de etc.) at flash time, but the actual keyboard plugged
+# into the Pi may be a different physical type — that's what this picks.
+#
+# Always applicable; common picks are pc104 (US) and pc105 (European).
 # ---------------------------------------------------------------------------
-_choices_RCONF_KEYBOARD_LAYOUT() {
+_choices_RCONF_KEYBOARD_MODEL() {
   cat <<EOF
-us	United States (default)
-gb	United Kingdom
-de	German
-fr	French
-es	Spanish
-it	Italian
-nl	Netherlands
-se	Swedish
-ch	Swiss
-br	Brazilian
-jp	Japanese
-ru	Russian
+pc105	pc105 - 105-key European (default; extra key + Windows keys)
+pc104	pc104 - 104-key US (Windows keys, no extra)
+pc101	pc101 - 101-key US (older, no Windows keys)
+pc102	pc102 - 102-key European (older)
+jp106	jp106 - 106-key Japanese
+chromebook	Chromebook keyboard
+thinkpad	IBM/Lenovo Thinkpad
+generic	Generic (universal fallback)
 EOF
 }
 
