@@ -177,9 +177,14 @@ _applies_RCONF_FAN_TEMP()  { [[ ${II_MODEL_NUM:-0} -eq 4 ]]; }
 # ---------------------------------------------------------------------------
 _choices_RCONF_POWEROFF_ON_HALT() {
   if [[ ${II_MODEL_NUM:-0} -ge 4 ]]; then
-    cat <<EOF
-true	Yes — full power-off on `halt` / shutdown
-false	No — halt only (keep the activity LED state)
+    # NOTE: heredoc delimiter is single-quoted ('EOF') so backticks/$()/$var
+    # in the labels are taken literally. An unquoted EOF would expand any
+    # backticks here, and `halt` in particular is a SYSTEM-HALTING command
+    # when installicious runs as root via sudo — i.e. invoking the function
+    # would actually power the Pi off mid-menu. Don't change this.
+    cat <<'EOF'
+true	Yes - full power-off on halt / shutdown
+false	No - halt only (keep the activity LED state)
 EOF
   fi
 }
