@@ -88,13 +88,24 @@ config_hash() {
   sha256sum "$file" | awk '{print $1}'
 }
 
+# _status_var_prefix <id> -> echo "<UPPER>_FW_" with dashes translated to
+# underscores. Bash variable names cannot contain `-`, so installer IDs like
+# "motd-weather" must become "MOTD_WEATHER_FW_" (NOT "MOTD-WEATHER_FW_") for
+# any subsequent ${!key} indirect read to work.
+_status_var_prefix() {
+  local id="$1"
+  local up="${id^^}"
+  echo "${up//-/_}_FW_"
+}
+
 # status_state <id> -> echo current FW state ("completed", "running", "failed",
 # "uninstalled", "reboot-pending"); empty if no status file or key.
 status_state() {
   local id="$1"
-  local file
+  local file prefix
   file=$(status_file_for "$id")
-  status_get "$file" "${id^^}_FW_STATE"
+  prefix=$(_status_var_prefix "$id")
+  status_get "$file" "${prefix}STATE"
 }
 
 # status_should_skip <id> <expected_version> [config_file]
@@ -110,7 +121,8 @@ status_should_skip() {
   if [[ ! -f $file ]]; then
     return 1
   fi
-  local prefix="${id^^}_FW_"
+  local prefix
+  prefix=$(_status_var_prefix "$id")
   local state version recorded_hash current_hash
   state=$(status_get "$file" "${prefix}STATE")
   if [[ $state != "completed" ]]; then
@@ -137,7 +149,7 @@ status_mark_started() {
   local id="$1"
   local file prefix ts
   file=$(status_file_for "$id")
-  prefix="${id^^}_FW_"
+  prefix=$(_status_var_prefix "$id")
   ts=$(date '+%Y-%m-%d %T.%5N')
   status_set "$file" "${prefix}STATE" "running"
   status_set "$file" "${prefix}STARTED_AT" "$ts"
@@ -152,7 +164,7 @@ status_mark_complete() {
   local config_file="$3"
   local file prefix ts hash
   file=$(status_file_for "$id")
-  prefix="${id^^}_FW_"
+  prefix=$(_status_var_prefix "$id")
   ts=$(date '+%Y-%m-%d %T.%5N')
   hash=$(config_hash "$config_file")
   status_set "$file" "${prefix}STATE" "completed"
@@ -167,7 +179,7 @@ status_mark_failed() {
   local err="$2"
   local file prefix ts
   file=$(status_file_for "$id")
-  prefix="${id^^}_FW_"
+  prefix=$(_status_var_prefix "$id")
   ts=$(date '+%Y-%m-%d %T.%5N')
   status_set "$file" "${prefix}STATE" "failed"
   status_set "$file" "${prefix}FINISHED_AT" "$ts"
@@ -180,7 +192,7 @@ status_mark_reboot_pending() {
   local reason="$2"
   local file prefix
   file=$(status_file_for "$id")
-  prefix="${id^^}_FW_"
+  prefix=$(_status_var_prefix "$id")
   status_set "$file" "${prefix}STATE" "reboot-pending"
   status_set "$file" "${prefix}LAST_ERROR" "$reason"
 }
@@ -192,7 +204,7 @@ status_mark_uninstalled() {
   local id="$1"
   local file prefix ts
   file=$(status_file_for "$id")
-  prefix="${id^^}_FW_"
+  prefix=$(_status_var_prefix "$id")
   ts=$(date '+%Y-%m-%d %T.%5N')
   status_set "$file" "${prefix}STATE" "uninstalled"
   status_set "$file" "${prefix}FINISHED_AT" "$ts"
