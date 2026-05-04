@@ -306,6 +306,16 @@ else
   PIMODELNUM=99 # Unknown
 fi
 
+# Detect Lite vs Full Pi OS. The desktop edition installs the
+# raspberrypi-ui-mods meta-package; Lite does not. Used by installer choices
+# functions (e.g. install-rconf.choices.sh) to filter desktop-only options
+# off the menu on Lite systems and skip applying them at install time.
+if dpkg-query -W -f='${Status}' raspberrypi-ui-mods 2>/dev/null | grep -q "ok installed"; then
+  IS_LITE="false"
+else
+  IS_LITE="true"
+fi
+
 # Writes out the version information to the os.conf file.
 echo "II_MODEL=\"${PIMODEL}\"" > $FILE_STATUS_OS
 echo "II_MODEL_NUM=\"${PIMODELNUM}\"" >> $FILE_STATUS_OS
@@ -314,6 +324,7 @@ echo "II_CODENAME=\"${CODENAME}\"" >> $FILE_STATUS_OS
 echo "II_VERSION_NAME=\"${NAME}\"" >> $FILE_STATUS_OS
 echo "II_OS_LEVEL=\"${OSLEVEL}\"" >> $FILE_STATUS_OS
 echo "II_OS_BITS=\"${BITS}\"" >> $FILE_STATUS_OS
+echo "II_IS_LITE=\"${IS_LITE}\"" >> $FILE_STATUS_OS
 echo "II_REVISION=\"${REVISION}\"" >> $FILE_STATUS_OS
 echo "II_MEMORY=\"${MEMORY}\"" >> $FILE_STATUS_OS
 echo "II_FULL_NAME=\"${NAME} ${DEBIANVERSION}${OSLEVELNAME} (${CODENAME})\"" >> $FILE_STATUS_OS

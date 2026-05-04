@@ -40,6 +40,11 @@ else
 fi
 log_init "$II_TITLE" "$FILE_LOG_INSTALLER"
 
+# Pull the OS / Pi-model detection results into scope so per-installer
+# choices files (sourced by menu_edit_config) can gate their offerings on
+# II_MODEL_NUM, II_CODENAME, II_IS_LITE, etc.
+[[ -f "$PATH_STATUS/os.status" ]] && source "$PATH_STATUS/os.status"
+
 # Fresh run: clear any stale post-install actions left over from a prior
 # interrupted session. (Actions from a queue that included a reboot are still
 # preserved across the reboot itself; this only fires on a brand-new run.)

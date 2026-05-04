@@ -208,6 +208,48 @@ _menu_read_var_chain() {
   )
 }
 
+# menu_key_applicable <key>
+# Returns 0 if the editable key applies on this system, 1 if not.
+#
+# Convention (used by both menu_edit_config and installer bodies):
+#   _applies_<KEY>()  - optional. Returns 0 if applicable, 1 if not. Used for
+#                       free-form keys with hardware/OS gating (e.g. RCONF_FAN_GPIO
+#                       which is text-input but only applicable on Pi 4).
+#   _choices_<KEY>()  - optional. Echoes "value<TAB>label" lines for an
+#                       enumerated key, or empty if not applicable. Defining
+#                       this makes the key render as a whiptail --menu instead
+#                       of an inputbox; empty output also gates applicability.
+#
+# When neither helper is defined, the key is always applicable (free-form).
+# Both menu_edit_config (filtering display) and the installer body (skipping
+# the apply call) share this so config values for an inapplicable key get
+# silently ignored, per the user's stated rule.
+menu_key_applicable() {
+  local key="$1"
+  if declare -F "_applies_$key" >/dev/null; then
+    "_applies_$key" && return 0 || return 1
+  fi
+  if declare -F "_choices_$key" >/dev/null; then
+    local out
+    out=$("_choices_$key")
+    [[ -n $out ]] && return 0 || return 1
+  fi
+  return 0
+}
+
+# _menu_source_choices_for <id>
+# Sources installers/install-<id>.choices.sh if present so its _choices_*/
+# _applies_* functions become available. Side-effect-free: choices files
+# define functions only.
+_menu_source_choices_for() {
+  local id="$1"
+  local path="${PATH_INSTALLERS:-installers}/install-${id}.choices.sh"
+  if [[ -f $path ]]; then
+    # shellcheck disable=SC1090
+    source "$path"
+  fi
+}
+
 # menu_edit_config <task_id> <installer_id...>
 # Discovers editable keys from the chosen task's TASK_EDITABLE_CONFIG and each
 # selected installer's II_EDITABLE_CONFIG manifest field. Reads default values
@@ -281,6 +323,35 @@ menu_edit_config() {
     return 2  # nothing to edit; caller auto-advances
   fi
 
+  # ---- source per-installer choices files for any installer contributing keys ----
+  # Each <id> contributing keys gets its install-<id>.choices.sh sourced once
+  # so menu_key_applicable + the editor's whiptail-menu rendering can see
+  # _choices_<KEY> / _applies_<KEY> functions.
+  declare -A sourced_choices
+  local owner_id
+  for key in "${!key_seen[@]}"; do
+    owner_id="${key_label[$key]}"
+    owner_id="${owner_id#task:}"  # strip task: prefix if present
+    [[ -z $owner_id || $owner_id == "task" ]] && continue
+    [[ -n ${sourced_choices[$owner_id]:-} ]] && continue
+    sourced_choices[$owner_id]=1
+    _menu_source_choices_for "$owner_id"
+  done
+
+  # ---- filter keys by applicability ----
+  # A key is hidden from the menu (and its config value will also be ignored
+  # by the installer body) if its _applies_/_choices_ helper says it doesn't
+  # apply on this system (Pi model, OS version, Lite vs Full).
+  for key in "${!key_seen[@]}"; do
+    if ! menu_key_applicable "$key"; then
+      unset 'key_seen[$key]'
+      unset 'key_label[$key]'
+    fi
+  done
+  if [[ ${#key_seen[@]} -eq 0 ]]; then
+    return 2  # nothing applies on this system
+  fi
+
   # ---- read current values via the chain ----
   declare -A current
   for key in "${!key_seen[@]}"; do
@@ -321,13 +392,40 @@ menu_edit_config() {
       break
     fi
 
-    new_val=$(whiptail --title "$choice [${key_label[$choice]}]" \
-      --inputbox "Enter new value for $choice:" \
-      10 70 "${current[$choice]}" \
-      3>&1 1>&2 2>&3)
+    # Enumerated keys (those with a _choices_<KEY> function) render as a
+    # whiptail --menu instead of a free-form input box. The function returns
+    # tab-separated "value<TAB>label" lines; we feed both into whiptail and
+    # capture the chosen value on stdout. Free-form keys keep the inputbox.
+    if declare -F "_choices_$choice" >/dev/null; then
+      local -a choice_lines=()
+      mapfile -t choice_lines < <("_choices_$choice")
+      local -a choice_items=()
+      local cline cval clabel
+      for cline in "${choice_lines[@]}"; do
+        [[ -z $cline ]] && continue
+        if [[ $cline == *$'\t'* ]]; then
+          cval="${cline%%$'\t'*}"
+          clabel="${cline#*$'\t'}"
+        else
+          cval="$cline"
+          clabel="$cline"
+        fi
+        choice_items+=("$cval" "$clabel")
+      done
+      new_val=$(whiptail --title "$choice [${key_label[$choice]}]" \
+        --default-item "${current[$choice]}" \
+        --menu "Select a value for $choice:" 20 80 12 \
+        "${choice_items[@]}" \
+        3>&1 1>&2 2>&3)
+    else
+      new_val=$(whiptail --title "$choice [${key_label[$choice]}]" \
+        --inputbox "Enter new value for $choice:" \
+        10 70 "${current[$choice]}" \
+        3>&1 1>&2 2>&3)
+    fi
     rc=$?
     [[ $rc -eq 255 ]] && return 255
-    [[ $rc -ne 0 ]] && continue  # cancel on input box → discard edit, back to list
+    [[ $rc -ne 0 ]] && continue  # cancel on input/menu → discard edit, back to list
     current[$choice]="$new_val"
   done
 
