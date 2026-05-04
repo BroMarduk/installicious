@@ -1,7 +1,8 @@
 #!/bin/bash
 # Tests for the per-installer choices file + menu_key_applicable mechanism
-# in lib/menu.sh, plus the install-rconf.choices.sh helper functions on
-# specific (Pi model, OS, Lite/Full) tuples.
+# in lib/menu.sh. Uses a synthetic installer (created in a tempdir) rather
+# than testing against any real installer's choices file — that keeps the
+# test independent of which installers happen to ship with installicious.
 #
 # Why this matters: an editable key whose _applies_/_choices_ helper rejects
 # the current system must be HIDDEN from the menu AND its config value must
@@ -15,6 +16,9 @@ ok()    { echo "  OK $1"; }
 fail()  { echo "  FAIL $1"; }
 chkeq() { [[ "$2" == "$3" ]] && ok "$1" || fail "$1 (got '$2', want '$3')"; }
 chkrc() { [[ $2 -eq $3 ]] && ok "$1" || fail "$1 (rc=$2, want $3)"; }
+
+TMPDIR=$(mktemp -d)
+trap "rm -rf $TMPDIR" EXIT
 
 # ===========================================================================
 echo "=== Test 1: menu_key_applicable with neither helper → applicable ==="
@@ -45,84 +49,135 @@ unset -f _choices_K3
 
 # ===========================================================================
 echo
-echo "=== Test 5: install-rconf.choices.sh — Pi-version gating ==="
-# Source the real choices file and exercise it under simulated detection.
-source installers/install-rconf.choices.sh
+echo "=== Test 5: synthetic installer choices file — Pi-version gating ==="
+# Drop a fake installer + choices file into a tempdir and source-load it
+# the same way menu_edit_config does in production. Validates that the
+# choices files can drive applicability via runtime detection variables
+# (II_MODEL_NUM, II_IS_LITE, II_CODENAME).
+mkdir -p "$TMPDIR/installers"
+cat > "$TMPDIR/installers/install-foo.choices.sh" <<'EOF'
+# Synthetic choices file — exercises common gating patterns.
+
+# Always-applicable enumerated key.
+_choices_FOO_BOOL() {
+  cat <<INNER
+true	Yes
+false	No
+INNER
+}
+
+# Pi 4/5-only enumerated key.
+_choices_FOO_PI4_PLUS() {
+  if [[ ${II_MODEL_NUM:-0} -ge 4 ]]; then
+    cat <<INNER
+on	Enable
+off	Disable
+INNER
+  fi
+}
+
+# Pi 5-only enumerated key.
+_choices_FOO_PI5_ONLY() {
+  if [[ ${II_MODEL_NUM:-0} -eq 5 ]]; then
+    cat <<INNER
+yes	Yes
+no	No
+INNER
+  fi
+}
+
+# Lite-vs-Full conditional choices — Lite restricts the available options.
+_choices_FOO_LITE_AWARE() {
+  if [[ ${II_IS_LITE:-true} == "true" ]]; then
+    echo -e "console\tConsole only (Lite)"
+  else
+    cat <<INNER
+console	Console
+desktop	Desktop
+INNER
+  fi
+}
+
+# Free-form key with a Pi-4-only applicability gate.
+_applies_FOO_FREE_PI4() {
+  [[ ${II_MODEL_NUM:-0} -eq 4 ]]
+}
+EOF
+
+# Use _menu_source_choices_for to load it, exactly as menu_edit_config does.
+PATH_INSTALLERS="$TMPDIR/installers" _menu_source_choices_for "foo"
+declare -F _choices_FOO_BOOL >/dev/null && ok "synthetic choices loaded (FOO_BOOL)" \
+  || fail "_menu_source_choices_for did not load synthetic file"
 
 # Pi 5 case
 II_MODEL_NUM=5 II_CODENAME="Trixie" II_IS_LITE="true"
-menu_key_applicable RCONF_USB_CURRENT_UNLIMITED; chkrc "Pi 5: USB current applicable" $? 0
-menu_key_applicable RCONF_BOOT_ORDER;             chkrc "Pi 5: boot order applicable" $? 0
-menu_key_applicable RCONF_BOOTLOADER_VERSION;     chkrc "Pi 5: bootloader version applicable" $? 0
-menu_key_applicable RCONF_FAN_ENABLE;             chkrc "Pi 5: fan enable NOT applicable (Pi 4 only)" $? 1
-menu_key_applicable RCONF_OVERCLOCK;              chkrc "Pi 5: overclock NOT applicable (Pi 1/2 only)" $? 1
+menu_key_applicable FOO_BOOL;       chkrc "Pi 5: always-applicable bool" $? 0
+menu_key_applicable FOO_PI4_PLUS;   chkrc "Pi 5: pi4+ key applicable"    $? 0
+menu_key_applicable FOO_PI5_ONLY;   chkrc "Pi 5: pi5-only applicable"    $? 0
+menu_key_applicable FOO_FREE_PI4;   chkrc "Pi 5: free pi4-only NOT applicable" $? 1
 
 # Pi 4 case
-II_MODEL_NUM=4 II_CODENAME="Bookworm" II_IS_LITE="true"
-menu_key_applicable RCONF_USB_CURRENT_UNLIMITED; chkrc "Pi 4: USB current NOT applicable (Pi 5 only)" $? 1
-menu_key_applicable RCONF_BOOT_ORDER;             chkrc "Pi 4: boot order applicable" $? 0
-menu_key_applicable RCONF_FAN_ENABLE;             chkrc "Pi 4: fan enable applicable" $? 0
-menu_key_applicable RCONF_FAN_GPIO;               chkrc "Pi 4: fan GPIO applicable (free-form, _applies_)" $? 0
+II_MODEL_NUM=4
+menu_key_applicable FOO_PI4_PLUS;   chkrc "Pi 4: pi4+ applicable"        $? 0
+menu_key_applicable FOO_PI5_ONLY;   chkrc "Pi 4: pi5-only NOT applicable" $? 1
+menu_key_applicable FOO_FREE_PI4;   chkrc "Pi 4: free pi4-only applicable" $? 0
 
 # Pi 3 case
-II_MODEL_NUM=3 II_CODENAME="Bookworm" II_IS_LITE="true"
-menu_key_applicable RCONF_BOOT_ORDER;             chkrc "Pi 3: boot order NOT applicable" $? 1
-menu_key_applicable RCONF_BOOTLOADER_VERSION;     chkrc "Pi 3: bootloader version NOT applicable" $? 1
-menu_key_applicable RCONF_USB_CURRENT_UNLIMITED; chkrc "Pi 3: USB current NOT applicable" $? 1
-menu_key_applicable RCONF_FAN_ENABLE;             chkrc "Pi 3: fan enable NOT applicable" $? 1
-menu_key_applicable RCONF_OVERCLOCK;              chkrc "Pi 3: overclock NOT applicable" $? 1
-menu_key_applicable RCONF_INTERFACE_I2C;          chkrc "Pi 3: I2C applicable (works on all Pis)" $? 0
+II_MODEL_NUM=3
+menu_key_applicable FOO_PI4_PLUS;   chkrc "Pi 3: pi4+ NOT applicable"    $? 1
+menu_key_applicable FOO_PI5_ONLY;   chkrc "Pi 3: pi5-only NOT applicable" $? 1
+menu_key_applicable FOO_FREE_PI4;   chkrc "Pi 3: free pi4-only NOT applicable" $? 1
+menu_key_applicable FOO_BOOL;       chkrc "Pi 3: always-applicable bool" $? 0
 
-# Pi 1
-II_MODEL_NUM=1 II_CODENAME="Bookworm" II_IS_LITE="true"
-menu_key_applicable RCONF_OVERCLOCK;              chkrc "Pi 1: overclock applicable" $? 0
-menu_key_applicable RCONF_BOOT_ORDER;             chkrc "Pi 1: boot order NOT applicable" $? 1
+# Pi Zero (model 0)
+II_MODEL_NUM=0
+menu_key_applicable FOO_PI4_PLUS;   chkrc "Pi Zero: pi4+ NOT applicable" $? 1
 
 # ===========================================================================
 echo
-echo "=== Test 6: install-rconf.choices.sh — Lite vs Full boot-target gating ==="
-# When Lite, only "console" is offered. When Full, both options are offered.
+echo "=== Test 6: Lite vs Full gating returns different choice sets ==="
 II_MODEL_NUM=4 II_CODENAME="Bookworm" II_IS_LITE="true"
-lite_choices=$(_choices_RCONF_BOOT_TARGET)
-chkeq "Lite: only 'console' offered (1 line)" \
+lite_choices=$(_choices_FOO_LITE_AWARE)
+chkeq "Lite: 1 line in choices" \
   "$(echo "$lite_choices" | wc -l | tr -d ' ')" "1"
-echo "$lite_choices" | grep -q "^console" && ok "Lite: 'console' is in the choices" \
-  || fail "Lite: 'console' missing from choices"
+echo "$lite_choices" | grep -q "^console" && ok "Lite: 'console' present" \
+  || fail "Lite: 'console' missing"
 
 II_IS_LITE="false"
-full_choices=$(_choices_RCONF_BOOT_TARGET)
-chkeq "Full: both options (2 lines)" \
+full_choices=$(_choices_FOO_LITE_AWARE)
+chkeq "Full: 2 lines in choices" \
   "$(echo "$full_choices" | wc -l | tr -d ' ')" "2"
-echo "$full_choices" | grep -q "^desktop" && ok "Full: 'desktop' is in the choices" \
-  || fail "Full: 'desktop' missing from choices"
+echo "$full_choices" | grep -q "^desktop" && ok "Full: 'desktop' present" \
+  || fail "Full: 'desktop' missing"
 
 # ===========================================================================
 echo
 echo "=== Test 7: choices output format — value<TAB>label ==="
-II_MODEL_NUM=5 II_CODENAME="Trixie" II_IS_LITE="true"
-first_line=$(_choices_RCONF_BOOT_ORDER | head -1)
-[[ $first_line == *$'\t'* ]] && ok "boot order: format includes tab separator" \
-  || fail "boot order: missing tab in '$first_line'"
+II_MODEL_NUM=4 II_IS_LITE="true"
+first_line=$(_choices_FOO_PI4_PLUS | head -1)
+[[ $first_line == *$'\t'* ]] && ok "format includes tab separator" \
+  || fail "missing tab in '$first_line'"
 val="${first_line%%$'\t'*}"
 label="${first_line#*$'\t'}"
-chkeq "boot order: first value is 0xf41" "$val" "0xf41"
-[[ -n $label && $label != "$val" ]] && ok "boot order: first label is non-empty and distinct" \
-  || fail "boot order: label not separable from value"
+chkeq "first value is 'on'"      "$val"   "on"
+chkeq "first label is 'Enable'"  "$label" "Enable"
 
 # ===========================================================================
 echo
-echo "=== Test 8: _menu_source_choices_for sources the right file ==="
-unset -f _choices_RCONF_BOOT_ORDER 2>/dev/null
-declare -F _choices_RCONF_BOOT_ORDER >/dev/null && fail "stale function not unset" \
+echo "=== Test 8: _menu_source_choices_for is a no-op for missing files ==="
+unset -f _choices_FOO_BOOL 2>/dev/null
+declare -F _choices_FOO_BOOL >/dev/null && fail "stale function not unset" \
   || ok "function unset (precondition)"
 
-_menu_source_choices_for "rconf"
-declare -F _choices_RCONF_BOOT_ORDER >/dev/null && ok "function loaded after _menu_source_choices_for" \
-  || fail "function not loaded after sourcing"
+# A path with no choices file shouldn't error or define functions.
+PATH_INSTALLERS="$TMPDIR/installers" _menu_source_choices_for "nonexistent-installer"
+declare -F _choices_NONEXISTENT >/dev/null && fail "function unexpectedly defined" \
+  || ok "no function defined when file is missing"
 
-# Sourcing for an installer with no choices file is a no-op.
-_menu_source_choices_for "nonexistent-installer"
-ok "_menu_source_choices_for no-op for missing file"
+# Re-loading the foo file restores its functions.
+PATH_INSTALLERS="$TMPDIR/installers" _menu_source_choices_for "foo"
+declare -F _choices_FOO_BOOL >/dev/null && ok "function reloaded after second source" \
+  || fail "function not reloaded"
 
 echo
 echo "=== Done ==="
