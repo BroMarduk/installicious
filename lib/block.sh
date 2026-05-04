@@ -23,12 +23,30 @@ _block_capture_owner() {
   stat -c '%u:%g' "$1" 2>/dev/null
 }
 
+# _block_capture_mode <file> -> echo octal mode (e.g. "644") or empty if absent.
+_block_capture_mode() {
+  [[ -f $1 ]] || return 0
+  stat -c '%a' "$1" 2>/dev/null
+}
+
 # _block_restore_owner <file> <uid:gid>
 _block_restore_owner() {
   local file="$1" owner="$2"
   [[ -z $owner ]] && return 0
   if ! chown "$owner" "$file" 2>/dev/null; then
     sudo chown "$owner" "$file" 2>/dev/null || true
+  fi
+}
+
+# _block_restore_mode <file> <octal-mode>
+# Restores the file's mode bits. Critical: mktemp creates files at 0600, so
+# without this restore /etc/profile (and friends) end up unreadable to anyone
+# but root after a block_ensure — which breaks login (bash can't source it).
+_block_restore_mode() {
+  local file="$1" mode="$2"
+  [[ -z $mode ]] && return 0
+  if ! chmod "$mode" "$file" 2>/dev/null; then
+    sudo chmod "$mode" "$file" 2>/dev/null || true
   fi
 }
 
@@ -55,13 +73,16 @@ _block_strip() {
 # block_ensure <file> <start_marker> <end_marker>
 # Reads block content from stdin. Strips any existing block, then appends a
 # fresh one. Idempotent: running again with identical content yields the same
-# file. Preserves file ownership.
+# file. Preserves file ownership AND mode (mktemp's default 0600 would
+# otherwise lock everyone but root out of files like /etc/profile).
+# When the target file does not exist, the new file is created with mode 0644.
 block_ensure() {
   local file="$1" start="$2" end="$3"
-  local dir tmp owner
+  local dir tmp owner mode
   dir=$(dirname "$file")
   sudo mkdir -p "$dir" 2>/dev/null || mkdir -p "$dir" || return 1
   owner=$(_block_capture_owner "$file")
+  mode=$(_block_capture_mode "$file")
   tmp=$(mktemp "${file}.XXXXXX") || return 1
   _block_strip "$file" "$start" "$end" "$tmp"
   {
@@ -73,21 +94,24 @@ block_ensure() {
     sudo mv -f "$tmp" "$file" || { rm -f "$tmp"; return 1; }
   fi
   _block_restore_owner "$file" "$owner"
+  _block_restore_mode "$file" "${mode:-644}"
 }
 
 # block_remove <file> <start_marker> <end_marker>
 # Strips the managed block from the file. No-op if the file or block is absent.
-# Preserves file ownership.
+# Preserves file ownership AND mode.
 block_remove() {
   local file="$1" start="$2" end="$3"
   [[ -f $file ]] || return 0
   grep -qxF "$start" "$file" 2>/dev/null || return 0
-  local tmp owner
+  local tmp owner mode
   owner=$(_block_capture_owner "$file")
+  mode=$(_block_capture_mode "$file")
   tmp=$(mktemp "${file}.XXXXXX") || return 1
   _block_strip "$file" "$start" "$end" "$tmp"
   if ! mv -f "$tmp" "$file" 2>/dev/null; then
     sudo mv -f "$tmp" "$file" || { rm -f "$tmp"; return 1; }
   fi
   _block_restore_owner "$file" "$owner"
+  _block_restore_mode "$file" "${mode:-644}"
 }
