@@ -11,7 +11,10 @@
 #   0   forward     — user pressed the OK / NEXT / RUN button
 #   1   back        — user pressed the BACK button (or CANCEL on first stage)
 #   2   no-data     — nothing to show (caller should auto-advance silently)
-#   255 abort       — user pressed ESC; abort the whole flow
+#   255 abort/ESC   — user pressed ESC. options.sh maps this to BACK on
+#                     every stage EXCEPT the first (the splash whiptail in
+#                     installicious.sh and menu_select_task here), where
+#                     ESC means exit the installer.
 #
 # Usage:
 #   source lib/manifest.sh
@@ -380,15 +383,21 @@ menu_edit_config() {
       "${items[@]}" \
       3>&1 1>&2 2>&3)
     rc=$?
+    # ESC and BACK both rewind to the previous stage with the user's edits
+    # persisted. Only DONE (the cancel-button label, rc!=0 with no choice)
+    # forwards; only the explicit "<-- Back" entry (rc=0 with that value)
+    # rewinds with persistence. ESC behaves like BACK rather than abort,
+    # per the back-button-everywhere policy (splash + task picker excepted).
     if [[ $rc -eq 255 ]]; then
-      return 255  # ESC: do not persist
+      result_rc=1  # ESC → treat like BACK (persist + rewind)
+      break
     fi
     if [[ $rc -ne 0 ]]; then
       result_rc=0  # DONE → forward
       break
     fi
     if [[ $choice == "__BACK__" ]]; then
-      result_rc=1  # BACK → rewind, but still persist below
+      result_rc=1  # BACK entry → rewind, with persist below
       break
     fi
 
@@ -424,8 +433,9 @@ menu_edit_config() {
         3>&1 1>&2 2>&3)
     fi
     rc=$?
-    [[ $rc -eq 255 ]] && return 255
-    [[ $rc -ne 0 ]] && continue  # cancel on input/menu → discard edit, back to list
+    # cancel OR ESC on a value-input screen → discard the in-progress edit,
+    # return to the editor list (treat ESC like Cancel here, not abort).
+    [[ $rc -ne 0 ]] && continue
     current[$choice]="$new_val"
   done
 

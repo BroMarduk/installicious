@@ -3,8 +3,9 @@
 # scripts/options.sh - Main menu + scheduler entry point.
 #
 # Driven by a small stage state machine so the user can press BACK at any
-# screen to return to the previous one. ESC at any prompt aborts the whole
-# flow.
+# screen to return to the previous one. ESC behaves like BACK on every
+# screen EXCEPT the splash (in installicious.sh) and the task picker
+# below — at those two, ESC exits the installer.
 #
 # Stages (see the dispatcher at the bottom of the file):
 #   pick_task       — single-select task picker (first stage)
@@ -138,10 +139,9 @@ while true; do
         "${options_selected//\"/}")
       rc=$?
       case $rc in
-        0)   stage="custom_software" ;;
-        1)   stage="pick_task" ;;
-        2)   options_selected=""; stage="custom_software" ;;
-        255) log_info "User $CURRENTUSER aborted (ESC) at the options picker."; exit 0 ;;
+        0)     stage="custom_software" ;;
+        1|255) stage="pick_task" ;;          # BACK or ESC → previous stage
+        2)     options_selected=""; stage="custom_software" ;;
       esac
       ;;
 
@@ -152,10 +152,9 @@ while true; do
         "${software_selected//\"/}")
       rc=$?
       case $rc in
-        0)   stage="merge_custom" ;;
-        1)   stage="custom_options" ;;
-        2)   software_selected=""; stage="merge_custom" ;;
-        255) log_info "User $CURRENTUSER aborted (ESC) at the software picker."; exit 0 ;;
+        0)     stage="merge_custom" ;;
+        1|255) stage="custom_options" ;;     # BACK or ESC → previous stage
+        2)     software_selected=""; stage="merge_custom" ;;
       esac
       ;;
 
@@ -181,8 +180,7 @@ while true; do
             stage="merge_task"
           fi
           ;;
-        1)   stage="pick_task" ;;
-        255) log_info "User $CURRENTUSER aborted (ESC) at the required-installers screen."; exit 0 ;;
+        1|255) stage="pick_task" ;;          # BACK or ESC → task picker
       esac
       ;;
 
@@ -193,16 +191,15 @@ while true; do
         $task_optional)
       rc=$?
       case $rc in
-        0)   stage="merge_task" ;;
-        1)
+        0)     stage="merge_task" ;;
+        1|255)
           if [[ -n $task_required ]]; then
             stage="show_required"
           else
             stage="pick_task"
           fi
           ;;
-        2)   optional_picked=""; stage="merge_task" ;;
-        255) log_info "User $CURRENTUSER aborted (ESC) at the optional picker."; exit 0 ;;
+        2)     optional_picked=""; stage="merge_task" ;;
       esac
       ;;
 
@@ -221,11 +218,14 @@ while true; do
       # shellcheck disable=SC2086
       menu_edit_config "$task_id" $selected
       rc=$?
+      # menu_edit_config now translates ESC to rc=1 internally (with edits
+      # persisted, same as the BACK button), so the explicit 255 case is
+      # only there as belt-and-suspenders if a future helper change leaks
+      # 255 through.
       case $rc in
-        0)   stage="confirm" ;;
-        1)   stage=$(prev_selection_stage) ;;
-        2)   stage="confirm" ;;  # nothing to edit; auto-advance
-        255) log_info "User $CURRENTUSER aborted (ESC) at the config editor."; exit 0 ;;
+        0)     stage="confirm" ;;
+        1|255) stage=$(prev_selection_stage) ;;
+        2)     stage="confirm" ;;  # nothing to edit; auto-advance
       esac
       ;;
 
@@ -234,9 +234,8 @@ while true; do
       menu_confirm "Confirm Install" "$confirm_msg"
       rc=$?
       case $rc in
-        0)   stage="run" ;;
-        1)   stage="edit_config" ;;
-        255) log_info "User $CURRENTUSER aborted (ESC) at the confirmation screen."; exit 0 ;;
+        0)     stage="run" ;;
+        1|255) stage="edit_config" ;;        # BACK or ESC → editor
       esac
       ;;
 
