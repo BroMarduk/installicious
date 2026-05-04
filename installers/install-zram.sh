@@ -4,7 +4,7 @@
 # Description: Sets up compressed RAM swap (zram) using whichever manager fits
 #              the OS:
 #                - rpi-swap (preinstalled on Pi OS Trixie)
-#                - zram-tools (Bullseye, Bookworm)
+#                - zram-tools (Bookworm)
 #              Disables dphys-swapfile (older SD-card swap) if present.
 #              Configurable via config/zram.config.
 #

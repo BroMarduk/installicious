@@ -18,54 +18,36 @@ numversion=${version%%.*}
 
 # Determine Raspbian version name
 case $numversion in
+  15) raspbian="Duke" ;;
   14) raspbian="Forky" ;;
   13) raspbian="Trixie" ;;
   12) raspbian="Bookworm" ;;
-  11) raspbian="Bullseye" ;;
-  10) raspbian="Buster" ;;
-  9) raspbian="Stretch" ;;
-  8) raspbian="Jessie" ;;
-  7) raspbian="Wheezy" ;;
   *) raspbian="Unknown" ;;
 esac
 
-# Set login information
-if [[ $numversion -ge 9 ]]; then
-  # Read login details for newer versions
-  read loginFrom loginIP loginDate loginStatus <<< $(last $user --time-format iso -2 | awk 'NR==2 { print $1,$3,$4,$5 }')
+# Set login information (Bookworm+ — `last --time-format iso` is supported)
+read loginFrom loginIP loginDate loginStatus <<< $(last $user --time-format iso -2 | awk 'NR==2 { print $1,$3,$4,$5 }')
 
-  # TTY login adjustments
-  if [[ $loginDate == "-" ]]; then
-    loginDate=$loginIP
-    loginIP=$loginFrom
-  fi
+# TTY login adjustments
+if [[ $loginDate == "-" ]]; then
+  loginDate=$loginIP
+  loginIP=$loginFrom
+fi
 
-  # Local login check
-  if [[ $loginIP == ":0" ]]; then
-    loginIP="Local"
-  fi
+# Local login check
+if [[ $loginIP == ":0" ]]; then
+  loginIP="Local"
+fi
 
-  # Format login date and check online status
-  if [[ $loginDate == *T* ]]; then
-    login=$(date -d "$loginDate" +"%-d %b %Y, %-I:%M %p")" ($loginIP)"
-    if [[ $loginStatus == still ]]; then
-      login="$login [ON]"
-    fi
-  else
-    # Not enough logins
-    login="None"
+# Format login date and check online status
+if [[ $loginDate == *T* ]]; then
+  login=$(date -d "$loginDate" +"%-d %b %Y, %-I:%M %p")" ($loginIP)"
+  if [[ $loginStatus == still ]]; then
+    login="$login [ON]"
   fi
 else
-  # Read login details for older versions
-  read loginFrom loginIP loginDate <<< $(last $user -2 | awk 'NR==2 { print $1,$3,$4 ", "  $5 " " $6 " " $7 }')
-
-  # Local login check
-  if [[ $loginIP == ":0" ]]; then
-    loginIP="Local"
-  fi
-
-  # Format login information
-  login="User '$loginFrom' on $loginDate ($loginIP)"
+  # Not enough logins
+  login="None"
 fi
 
 # Get OS Bits

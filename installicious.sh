@@ -180,22 +180,22 @@ if [[ -z $CODENAME ]]; then
   read DEBIAN_VERSION < /etc/debian_version
   NUM_VERSION=${DEBIAN_VERSION%%.*}
   case $NUM_VERSION in
-    14)        CODENAME="Forky"    ;;  # next major (placeholder; not yet supported)
+    15)        CODENAME="Duke"     ;;  # future major (forward-compat allowance)
+    14)        CODENAME="Forky"    ;;  # next major (forward-compat allowance)
     13)        CODENAME="Trixie"   ;;
     12)        CODENAME="Bookworm" ;;
-    11)        CODENAME="Bullseye" ;;
     *)
-      echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unsupported Debian version $NUM_VERSION (installicious supports Bullseye/Bookworm/Trixie only)." | sudo tee --append $FILE_LOG_INSTALLER
+      echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unsupported Debian version $NUM_VERSION (installicious supports Bookworm/Trixie and forward-compat with Forky/Duke)." | sudo tee --append $FILE_LOG_INSTALLER
       exit 1
       ;;
   esac
 fi
 
-# Reject pre-Bullseye even if VERSION_CODENAME was set in /etc/os-release.
+# Reject pre-Bookworm even if VERSION_CODENAME was set in /etc/os-release.
 case "${CODENAME,,}" in
-  bullseye|bookworm|trixie|forky) ;;
+  bookworm|trixie|forky|duke) ;;
   *)
-    echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unsupported OS codename '${CODENAME}' (installicious supports Bullseye/Bookworm/Trixie only)." | sudo tee --append $FILE_LOG_INSTALLER
+    echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unsupported OS codename '${CODENAME}' (installicious supports Bookworm/Trixie and forward-compat with Forky/Duke)." | sudo tee --append $FILE_LOG_INSTALLER
     exit 1
     ;;
 esac

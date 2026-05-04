@@ -44,7 +44,7 @@ request_reboot() {
   state_save_reboot "$cursor" "$reason" "$trigger"
 
   # Best-effort enable the resume service. systemctl exists on all our target
-  # OSes (Trixie/Bookworm/Bullseye) but be defensive.
+  # OSes (Bookworm/Trixie and forward) but be defensive.
   if command -v systemctl >/dev/null 2>&1; then
     if ! sudo systemctl enable "$RESUME_SERVICE_NAME" 2>/dev/null; then
       echo "request_reboot: failed to enable $RESUME_SERVICE_NAME (continuing)" >&2

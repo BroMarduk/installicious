@@ -144,7 +144,7 @@ do_install() {
   render_resource "${PATH_RESOURCES:-resources}/motd-current-ip.sh" "$CRON_DAILY_IP" \
     || { log_fail "Failed to install daily IP cron."; status_mark_failed "$II_ID" "ip cron install failed"; return 1; }
 
-  # ---- replace dynamic motd (Stretch+) ----
+  # ---- replace dynamic motd ----
   if [[ -e $DYNAMIC_MOTD ]]; then
     log_info "Removing dynamic motd $DYNAMIC_MOTD."
     sudo rm -f "$DYNAMIC_MOTD"

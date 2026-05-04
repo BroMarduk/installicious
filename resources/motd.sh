@@ -25,12 +25,6 @@ case "$numversion" in
   14) raspbian="Forky" ;;
   13) raspbian="Trixie" ;;
   12) raspbian="Bookworm" ;;
-  11) raspbian="Bullseye" ;;
-  
-  10) raspbian="Buster" ;;
-   9) raspbian="Stretch" ;;
-   8) raspbian="Jessie" ;;
-   7) raspbian="Wheezy" ;;
    *) raspbian="Unknown" ;;
 esac
 
@@ -61,7 +55,9 @@ if (( numversion >= 13 )); then
       fi
     fi
   fi
-elif (( numversion >= 9 )); then
+else
+  # Bookworm (12): loginctl path above only fires on Trixie+ (>=13); fall back
+  # to `last --time-format iso` here.
   read -r loginFrom loginIP loginDate loginStatus \
     <<< "$(last "$user" --time-format iso -2 | awk 'NR==2 { print $1,$3,$4,$5 }')"
 
@@ -78,12 +74,6 @@ elif (( numversion >= 9 )); then
   else
     login="None"
   fi
-else
-  read -r loginFrom loginIP loginDate \
-    <<< "$(last "$user" -2 | awk 'NR==2 { print $1,$3,$4 ", " $5 " " $6 " " $7 }')"
-
-  [[ "$loginIP" == ":0" ]] && loginIP="Local"
-  login="User '$loginFrom' on $loginDate ($loginIP)"
 fi
 
 ###############################################################################
@@ -94,13 +84,8 @@ bits="$(getconf LONG_BIT)"
 ###############################################################################
 # SSH Statistics
 ###############################################################################
-if (( numversion >= 8 )); then
-  ssh_failures="$(journalctl -u ssh.service | grep sshd | awk '/failure/' | wc -l)"
-  ssh_week="$(journalctl -u ssh.service | grep 'Accepted password' | awk "/$user/" | wc -l)"
-else
-  ssh_failures="$(grep sshd /var/log/auth.log | awk '/failure/' | wc -l)"
-  ssh_week="$(grep 'Accepted password' /var/log/auth.log | awk "/$user/" | wc -l)"
-fi
+ssh_failures="$(journalctl -u ssh.service | grep sshd | awk '/failure/' | wc -l)"
+ssh_week="$(journalctl -u ssh.service | grep 'Accepted password' | awk "/$user/" | wc -l)"
 
 ###############################################################################
 # Login Count

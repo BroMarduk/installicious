@@ -199,8 +199,8 @@ else
 fi
 
 # Boot config path: file-existence based, matching the canonical detection in
-# upstream raspi-config. Works for Bullseye (/boot/), Bookworm (/boot/firmware/)
-# and Trixie (/boot/firmware/) without needing a per-OS branch.
+# upstream raspi-config. /boot/firmware/ is the modern path on
+# Bookworm/Trixie+; the /boot/ fallback is legacy-image insurance.
 if [[ -e /boot/firmware/config.txt ]]; then
   FILE_BOOT_CMDLINE="/boot/firmware/cmdline.txt"
   FILE_BOOT_CONFIG="/boot/firmware/config.txt"
@@ -295,8 +295,8 @@ else
   STATUS_RC_UPGRADE="Completed"
 fi
 
-# Bullseye/Bookworm/Trixie all support the modern non-interactive raspi-config
-# CLI directly; the legacy support-tier gating is gone.
+# Bookworm and newer all support the modern non-interactive raspi-config CLI
+# directly (Bullseye and earlier are no longer supported by installicious).
 
 # Change 'Localisation' to 'Localization' in raspi-config file.
 if sudo grep -q "Localisation " "$FILE_RASPI_CONFIG"; then
