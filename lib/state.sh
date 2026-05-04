@@ -154,9 +154,18 @@ state_clear() {
 # When the user edits values in the menu_edit_config screen, we persist them
 # to $PATH_STATE/menu-config.sh as a sourceable file. Each installer that
 # advertises editable config (II_EDITABLE_CONFIG) sources this file AFTER its
-# baseline .config files so the user's edits win for the duration of the run.
-# Lifecycle mirrors the queue state: cleared on fresh-run start and on
-# successful queue completion; preserved across mid-queue reboots.
+# baseline .config files so the user's edits win — both at install time AND
+# in future installicious sessions.
+#
+# Lifecycle: the file is intentionally NOT cleared automatically.
+#   - Created/updated by menu_edit_config when the user clicks DONE or BACK.
+#   - Persists across queue completion, queue failure, mid-queue reboots,
+#     and brand-new sessions, so values like an AccuWeather API key only
+#     have to be entered once.
+#   - state_clear_menu_overrides() remains available for callers (or a
+#     future --reset-config flag) that want to wipe the overrides; nothing
+#     in the framework calls it on its own. Manual reset:
+#       sudo rm $PATH_STATE/menu-config.sh
 # ---------------------------------------------------------------------------
 
 _menu_overrides_file() {

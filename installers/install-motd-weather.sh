@@ -121,6 +121,17 @@ do_install() {
   render_resource "${PATH_RESOURCES:-resources}/motd-current-weather.sh" "$CRON_HOURLY_WEATHER" \
     || { log_fail "Failed to install hourly weather cron."; status_mark_failed "$II_ID" "weather cron install failed"; return 1; }
 
+  # ---- seed the weather-results file by running the cron once now ----
+  # Without this, the first login until the hourly cron fires would show no
+  # weather. Failures (API down, bad key, network) are warned but don't fail
+  # the install — the cron will retry next hour.
+  if [[ -x $CRON_HOURLY_WEATHER ]]; then
+    log_info "Running $CRON_HOURLY_WEATHER once to capture initial weather."
+    if ! sudo "$CRON_HOURLY_WEATHER"; then
+      log_warn "Initial weather fetch failed; cron will retry next hour."
+    fi
+  fi
+
   status_mark_complete "$II_ID" "$II_VERSION" "$FILE_CONFIG_MOTD"
   log_ok "MOTD weather installed."
   echo -e "[  \e[0;32mOK\e[0m  ] Installicious successfully installed the MOTD weather add-on."

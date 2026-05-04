@@ -45,10 +45,10 @@ log_init "$II_TITLE" "$FILE_LOG_INSTALLER"
 # preserved across the reboot itself; this only fires on a brand-new run.)
 post_install_clear
 
-# Clear stale menu-config overrides from a prior interrupted session. The
-# overrides file is intentionally preserved across mid-queue reboots (so user
-# edits survive a resume) but should not leak into a brand-new run.
-state_clear_menu_overrides
+# Note: $PATH_STATE/menu-config.sh is intentionally NOT cleared here.
+# It persists across runs so user edits (e.g. AccuWeather API key) survive
+# without re-typing on every install. To force a reset, the user can:
+#   sudo rm $PATH_STATE/menu-config.sh
 
 CURRENTUSER=$(whoami)
 
@@ -252,11 +252,13 @@ done
 # shellcheck disable=SC2086
 scheduler_run_resolved $selected
 rc=$?
+# menu-config.sh is intentionally preserved across runs so the user's edits
+# (API keys, hostnames, etc.) don't have to be re-typed every install. Reset
+# manually with `sudo rm $PATH_STATE/menu-config.sh` if desired.
 case $rc in
   0)
     log_ok "Queue completed."
     post_install_apply
-    state_clear_menu_overrides
     exit 0
     ;;
   3)
@@ -264,20 +266,18 @@ case $rc in
     # similar). No state was changed; surface to the user and exit cleanly.
     msg="${SCHEDULER_LAST_ERROR:-Pre-flight validation failed.}\n\nNothing was installed. Aborting."
     whiptail --title "Installicious — Cannot start queue" --msgbox "$msg" 14 78
-    state_clear_menu_overrides
     exit 3
     ;;
   $EXIT_REBOOT)
     # Don't apply yet — resume.sh runs queued commands and emits notes after
-    # the queue actually finishes across the reboot. Keep menu-config.sh in
-    # place so the resumed installers see the same edits.
+    # the queue actually finishes across the reboot. menu-config.sh is kept
+    # in place so the resumed installers see the same edits.
     log_info "Queue halted for reboot."
     exit $EXIT_REBOOT
     ;;
   *)
     log_warn "Queue completed with errors." "$rc"
     post_install_apply
-    state_clear_menu_overrides
     exit "$rc"
     ;;
 esac

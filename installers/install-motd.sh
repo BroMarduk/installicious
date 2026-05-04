@@ -175,6 +175,17 @@ EOF
   post_install_run "sudo systemctl restart ssh" \
     "Restart sshd so MOTD changes take effect on next login."
 
+  # ---- seed the IP-results file by running the cron once now ----
+  # Without this, the first login until the daily cron fires would show "None"
+  # for the external IP. Failures (no network, wget timeout) are warned but
+  # don't fail the install — the cron will retry tomorrow.
+  if [[ -x $CRON_DAILY_IP ]]; then
+    log_info "Running $CRON_DAILY_IP once to capture initial IP."
+    if ! sudo "$CRON_DAILY_IP"; then
+      log_warn "Initial IP fetch failed; cron will retry tomorrow."
+    fi
+  fi
+
   status_mark_complete "$II_ID" "$II_VERSION" "$FILE_CONFIG_MOTD"
   log_ok "MOTD installed."
   echo -e "[  \e[0;32mOK\e[0m  ] Installicious successfully installed the MOTD."

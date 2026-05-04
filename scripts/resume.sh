@@ -50,21 +50,22 @@ rc=$?
 
 echo
 echo "============================================================"
+# menu-config.sh is intentionally preserved across runs so the user's edits
+# (API keys, hostnames, etc.) survive into future installicious sessions
+# without having to be re-entered. Reset manually with
+# `sudo rm $PATH_STATE/menu-config.sh` if desired.
 if [[ $rc -eq 0 ]]; then
   echo "  Installicious: queue completed successfully."
   wall "[installicious] Queue completed; system ready." 2>/dev/null || true
   post_install_apply
-  state_clear_menu_overrides
 elif [[ $rc -eq 255 ]]; then
   echo "  Installicious: another reboot was requested; rebooting again..."
   wall "[installicious] Another reboot requested; queue will continue after." 2>/dev/null || true
   # Don't apply — queued commands and notes will run after the next resume.
-  # Keep menu-config.sh in place so the next leg sees the same edits.
 else
   echo "  Installicious: queue exited with errors (rc=$rc). See log: $FILE_LOG_INSTALLER"
   wall "[installicious] Queue exited with errors (rc=$rc); check $FILE_LOG_INSTALLER" 2>/dev/null || true
   post_install_apply
-  state_clear_menu_overrides
 fi
 echo "============================================================"
 echo
