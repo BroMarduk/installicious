@@ -287,23 +287,17 @@ case $REVISION in
     MEMORY="Unknown";;
 esac
 
-# Reads the Pi Model Number from revision.
-if grep -q "^Revision\s*:\s*[ 123][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]0[9cC][0-9a-fA-F]$" /proc/cpuinfo; then
-  PIMODELNUM=0
-elif grep -q "^Revision\s*:\s*00[0-9a-fA-F][0-9a-fA-F]$" /proc/cpuinfo; then
-  PIMODELNUM=1
-elif grep -q "^Revision\s*:\s*[ 123][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]0[0-36][0-9a-fA-F]$" /proc/cpuinfo ; then
-  PIMODELNUM=1
-elif grep -q "^Revision\s*:\s*[ 123][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]04[0-9a-fA-F]$" /proc/cpuinfo; then
-  PIMODELNUM=2
-elif grep -q "^Revision\s*:\s*[ 123][0-9a-fA-F][0-9a-fA-F]2[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]$" /proc/cpuinfo; then
-  PIMODELNUM=3
-elif grep -q "^Revision\s*:\s*[ 123][0-9a-fA-F][0-9a-fA-F]3[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]$" /proc/cpuinfo; then
-  PIMODELNUM=4
-elif grep -q "^Revision\s*:\s*[ 123][0-9a-fA-F][0-9a-fA-F]4[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]$" /proc/cpuinfo; then
-  PIMODELNUM=5
+# Pi-model + Pi-Zero detection via the canonical `Model:` line in
+# /proc/cpuinfo (matches upstream raspi-config). lib/detect.sh maps
+# Pi Zero / Zero W to model 0 and Pi Zero 2 W to model 3 so the per-Pi
+# gating in install-rconf.choices.sh works for the Zero family without
+# special-casing.
+source lib/detect.sh
+PIMODELNUM=$(detect_pi_model)
+if detect_pi_is_zero; then
+  IS_PIZERO="true"
 else
-  PIMODELNUM=99 # Unknown
+  IS_PIZERO="false"
 fi
 
 # Detect Lite vs Full Pi OS. The desktop edition installs the
@@ -325,6 +319,7 @@ echo "II_VERSION_NAME=\"${NAME}\"" >> $FILE_STATUS_OS
 echo "II_OS_LEVEL=\"${OSLEVEL}\"" >> $FILE_STATUS_OS
 echo "II_OS_BITS=\"${BITS}\"" >> $FILE_STATUS_OS
 echo "II_IS_LITE=\"${IS_LITE}\"" >> $FILE_STATUS_OS
+echo "II_IS_PIZERO=\"${IS_PIZERO}\"" >> $FILE_STATUS_OS
 echo "II_REVISION=\"${REVISION}\"" >> $FILE_STATUS_OS
 echo "II_MEMORY=\"${MEMORY}\"" >> $FILE_STATUS_OS
 echo "II_FULL_NAME=\"${NAME} ${DEBIANVERSION}${OSLEVELNAME} (${CODENAME})\"" >> $FILE_STATUS_OS
