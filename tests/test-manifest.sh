@@ -106,7 +106,7 @@ chkeq "empty filter" "$(manifest_filter_by_category nothing "$TMPDIR")" ""
 echo
 echo "=== Test 7: real installers/ directory has the expected manifest roster ==="
 real_ids=$(manifest_list_ids installers | sort | tr "\n" ",")
-chkeq "real installers" "$real_ids" "bash,git,motd,motd-weather,pip,pkupd,rconf,skyfield,weewx,zram,"
+chkeq "real installers" "$real_ids" "bash,git,motd,motd-updates,motd-weather,pip,pkupd,rconf,skyfield,weewx,zram,"
 
 # Each registered ID must point to its own install-<id>.sh file.
 mismatched=""
@@ -181,9 +181,10 @@ echo "=== Test 9: real installers — motd-weather is a hidden child of motd ===
 # should hide motd-weather from regular category filters and recognize the
 # parent relationship.
 real_children=$(manifest_optional_children_of motd installers)
-chkeq "motd's optional children" "$real_children" "motd-weather"
+chkeq "motd's optional children" "$real_children" "motd-weather motd-updates"
 
 manifest_is_hidden_child motd-weather installers; chkrc "motd-weather is hidden" $? 0
+manifest_is_hidden_child motd-updates installers; chkrc "motd-updates is hidden" $? 0
 manifest_is_hidden_child motd         installers; chkrc "motd is NOT hidden"      $? 1
 manifest_is_hidden_child skyfield     installers; chkrc "skyfield is NOT hidden"  $? 1
 

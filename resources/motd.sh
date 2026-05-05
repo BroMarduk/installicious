@@ -107,6 +107,15 @@ uptime="$(printf '%d days, %02d hours %02d minutes %02d seconds' \
   "$days" "$hours" "$mins" "$secs")"
 
 ###############################################################################
+# Updates
+###############################################################################
+updates=""
+
+if [[ -f /etc/motd.d/%%MOTD_NAME%%/results-updates ]]; then
+  read -r updates < /etc/motd.d/%%MOTD_NAME%%/results-updates
+fi
+
+###############################################################################
 # Load Average
 ###############################################################################
 read -r one five fifteen _ < /proc/loadavg
@@ -205,7 +214,7 @@ fi
 clear
 
 echo "$(tput setaf 2)
-   .~~.   .~~.       $(date '+%A, %-e %B %Y, %r')
+   .~~.   .~~.       $(date '+%A, %-e %B %Y, %r') $updates
   '. \ ' ' / .'      $raspbian $bits-bit - RPi OS $version ($(uname -r | cut -d- -f1) Kernel $(uname -m))$(tput setaf 1)
    .~ .~~~..~.
   : .~.'~'.~. :      _/_/_/                        _/      _/              _/
