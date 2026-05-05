@@ -39,24 +39,18 @@ if [[ -r "$(dirname "$0")/VERSION" ]]; then
 fi
 INSTALLICIOUS_VERSION="${INSTALLICIOUS_VERSION:-unknown}"
 
-# Whiptail color theme. The default Debian/Pi OS theme paints active list
-# rows as white-on-light-blue, which the user found hard to read.
+# Whiptail color theme: leave the system default in place. We tried a
+# custom NEWT_COLORS theme to fix readability of the active listbox row,
+# but it broke focused-button highlighting in --menu/--yesno dialogs in
+# a way the default theme (which raspi-config also uses) doesn't. The
+# tradeoff wasn't worth it — defaults give working button focus
+# indication, which is more important for navigation than slightly more
+# readable listbox highlights.
 #
-# IMPORTANT: NEWT_COLORS must be a single-line, colon-separated value.
-# Multi-line / newline-separated forms are silently ignored on Pi OS's
-# whiptail and the default theme is used instead.
-#
-# This theme uses black-on-white for the bulk of the dialog (the "normal
-# box" look) and visible highlights for the two cursor-following states:
-#   actlistbox / actcheckbox / actsellistbox / acttextbox = black,cyan
-#     (cursor-row highlight in listboxes/checklists/inputboxes)
-#   actbutton = white,blue
-#     (focused button — distinct from the listbox highlight so the
-#     action-target is unambiguous)
-#
-# Exported so child shells (options.sh, the per-installer whiptail
-# invocations like menu_show_required) inherit it.
-export NEWT_COLORS="root=lightgray,blue:window=black,white:border=black,white:shadow=black,gray:title=black,white:button=black,white:actbutton=black,cyan:compactbutton=black,white:checkbox=black,white:actcheckbox=black,cyan:entry=black,white:label=black,white:listbox=black,white:actlistbox=black,cyan:sellistbox=black,cyan:actsellistbox=black,cyan:textbox=black,white:acttextbox=black,cyan:helpline=white,blue:roottext=white,blue:emptyscale=,black:fullscale=,white:disentry=gray,white"
+# If the listbox active-row contrast becomes a problem again, the right
+# next step is probably to set ONLY actlistbox/actcheckbox via
+# NEWT_COLORS and leave button-related slots untouched, rather than
+# replacing the whole theme.
 
 # Look for installicious.config file in the same directory.
 if [[ ! -f $FILE_CONFIG_INSTALLICIOUS ]]; then
