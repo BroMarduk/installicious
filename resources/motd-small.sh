@@ -1,6 +1,9 @@
 #!/bin/bash
 
-# Get User
+###############################################################################
+# User
+###############################################################################
+
 if [ -n "$SUDO_USER" ]; then
     # If run with sudo, use the original user's name
     user="$SUDO_USER"
@@ -9,23 +12,33 @@ else
     user="$(whoami)"
 fi
 
-# Get Device
+###############################################################################
+# Device
+###############################################################################
 machine=$(tr -d '\0' < /proc/device-tree/model)
 
-# Get Version and Login Information - This method works for all verions of Raspian/Raspberry Pi OS
+###############################################################################
+# OS Version
+###############################################################################
 read version < /etc/debian_version
 numversion=${version%%.*}
 
-# Determine Raspbian version name
-case $numversion in
+case "$numversion" in
   15) raspbian="Duke" ;;
   14) raspbian="Forky" ;;
   13) raspbian="Trixie" ;;
   12) raspbian="Bookworm" ;;
-  *) raspbian="Unknown" ;;
+  11) raspbian="Bullseye" ;;
+  10) raspbian="Buster" ;;
+   9) raspbian="Stretch" ;;
+   8) raspbian="Jessie" ;;
+   7) raspbian="Wheezy" ;;
+   *) raspbian="Unknown" ;;
 esac
 
-# Set login information (Bookworm+ — `last --time-format iso` is supported)
+###############################################################################
+# Last Login
+###############################################################################
 read loginFrom loginIP loginDate loginStatus <<< $(last $user --time-format iso -2 | awk 'NR==2 { print $1,$3,$4,$5 }')
 
 # TTY login adjustments
@@ -50,10 +63,14 @@ else
   login="None"
 fi
 
-# Get OS Bits
+###############################################################################
+# System Info
+###############################################################################
 bits=$(getconf LONG_BIT)
 
-# Get Uptime Information
+###############################################################################
+# Uptime
+###############################################################################
 upSeconds=$(/usr/bin/cut -d. -f1 /proc/uptime)
 secs=$(($upSeconds%60))
 mins=$(($upSeconds/60%60))
@@ -62,14 +79,30 @@ days=$(($upSeconds/86400))
 
 uptime=$(printf "%d days, %02d hours %02d minutes %02d seconds" $days $hours $mins $secs)
 
-# Get Internal IP Information
+###############################################################################
+# Updates
+###############################################################################
+# results-updates is written by /etc/cron.hourly/motd-current-updates as
+# either empty (when zero / error) or "- N Update(s)". The small banner is
+# tight on horizontal space so we extract just the number and render "- (N)".
+updates=""
+
+if [[ -f /etc/motd.d/%%MOTD_NAME%%/results-updates ]]; then
+  read -r updates_raw < /etc/motd.d/%%MOTD_NAME%%/results-updates
+  if [[ $updates_raw =~ ([0-9]+) ]]; then
+    updates="- (${BASH_REMATCH[1]})"
+  fi
+fi
+
+###############################################################################
+# IP Addresses
+###############################################################################
 ipInternal=$(hostname -I)
 
 if [[ -z $ipInternal ]]; then
   ipInternal="None"
 fi
 
-# Get External IP Information
 if [[ -f /etc/motd.d/%%MOTD_NAME%%/results-ip ]]; then
   read ipExternal < /etc/motd.d/%%MOTD_NAME%%/results-ip
   if [[ -z $ipExternal ]]; then
@@ -79,7 +112,10 @@ else
   ipExternal="None"
 fi
 
-# Get Weather Information
+###############################################################################
+# Weather
+###############################################################################
+
 if [[ -f /etc/motd.d/%%MOTD_NAME%%/results-weather ]]; then
   read weather < /etc/motd.d/%%MOTD_NAME%%/results-weather
   if [[ -z "$weather" ]]; then
@@ -102,7 +138,9 @@ else
   weatherDisplay="None"
 fi
 
-# Get Temperature
+###############################################################################
+# Temperature
+###############################################################################
 cpuTemp0=$(cat /sys/class/thermal/thermal_zone0/temp)
 cpuTemp1=$(($cpuTemp0/1000))
 cpuTemp2=$(($cpuTemp0/100))
@@ -127,6 +165,9 @@ else
   fi
 fi
 
+###############################################################################
+# Display
+###############################################################################
 clear
 
 echo "$(tput setaf 1)______            _   _      _
@@ -136,7 +177,7 @@ echo "$(tput setaf 1)______            _   _      _
 | |/ / (_| | | | | |\  |  __/ |_
 |___/ \__,_|_| |_\_| \_/\___|\__|
 $(tput setaf 2)
-$(date +"%A, %-e %B %Y, %r")
+$(date +"%A, %-e %B %Y, %r")$(tput setaf 1)${updates:+ $updates}$(tput setaf 2)
 $(tput setaf 1)$raspbian $bits - Raspbian $version ($(uname -r | cut -d'-' -f1) Kernel)
 $machine [$(hostname)]
 
