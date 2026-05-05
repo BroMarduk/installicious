@@ -28,6 +28,39 @@ if [[ $EUID -ne 0 ]]; then
   exit 1
 fi
 
+# Whiptail color theme. The default Debian/Pi OS theme paints active list
+# rows and selected items as white-on-light-blue, which is hard to read
+# against the rest of the box. This theme switches the entire dialog to
+# black-on-white (matches the "normal boxes" look the user wanted) while
+# keeping the active button highlighted in white-on-blue so the action
+# target stays visually distinct from the listbox content. Exported so
+# options.sh and any whiptail invocation in installers inherits it.
+export NEWT_COLORS="
+root=lightgray,blue
+window=black,white
+border=black,white
+shadow=black,gray
+title=black,white
+button=black,white
+actbutton=white,blue
+compactbutton=black,white
+checkbox=black,white
+actcheckbox=black,white
+entry=black,white
+label=black,white
+listbox=black,white
+actlistbox=black,white
+sellistbox=black,white
+actsellistbox=black,white
+textbox=black,white
+acttextbox=black,white
+helpline=white,blue
+roottext=white,blue
+emptyscale=,black
+fullscale=,white
+disentry=gray,white
+"
+
 # Look for installicious.config file in the same directory.
 if [[ ! -f $FILE_CONFIG_INSTALLICIOUS ]]; then
   echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to find the configuration file $FILE_CONFIG_INSTALLICIOUS."
