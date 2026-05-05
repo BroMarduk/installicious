@@ -56,7 +56,7 @@ INSTALLICIOUS_VERSION="${INSTALLICIOUS_VERSION:-unknown}"
 #
 # Exported so child shells (options.sh, the per-installer whiptail
 # invocations like menu_show_required) inherit it.
-export NEWT_COLORS="root=lightgray,blue:window=black,white:border=black,white:shadow=black,gray:title=black,white:button=black,white:actbutton=white,blue:compactbutton=black,white:checkbox=black,white:actcheckbox=black,cyan:entry=black,white:label=black,white:listbox=black,white:actlistbox=black,cyan:sellistbox=black,cyan:actsellistbox=black,cyan:textbox=black,white:acttextbox=black,cyan:helpline=white,blue:roottext=white,blue:emptyscale=,black:fullscale=,white:disentry=gray,white"
+export NEWT_COLORS="root=lightgray,blue:window=black,white:border=black,white:shadow=black,gray:title=black,white:button=black,white:actbutton=white,red:compactbutton=black,white:checkbox=black,white:actcheckbox=black,cyan:entry=black,white:label=black,white:listbox=black,white:actlistbox=black,cyan:sellistbox=black,cyan:actsellistbox=black,cyan:textbox=black,white:acttextbox=black,cyan:helpline=white,blue:roottext=white,blue:emptyscale=,black:fullscale=,white:disentry=gray,white"
 
 # Look for installicious.config file in the same directory.
 if [[ ! -f $FILE_CONFIG_INSTALLICIOUS ]]; then
