@@ -29,12 +29,20 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 # Whiptail color theme. The default Debian/Pi OS theme paints active list
-# rows and selected items as white-on-light-blue, which is hard to read
-# against the rest of the box. This theme switches the entire dialog to
-# black-on-white (matches the "normal boxes" look the user wanted) while
-# keeping the active button highlighted in white-on-blue so the action
-# target stays visually distinct from the listbox content. Exported so
-# options.sh and any whiptail invocation in installers inherits it.
+# rows as white-on-light-blue, which the user found hard to read. This
+# theme uses black-on-white for the bulk of the dialog (the "normal box"
+# look) but restores VISIBLE highlights for the two cursor-following
+# states so you can see what you're about to act on:
+#
+#   active list row / active checkbox   → black-on-cyan (readable, clearly
+#                                          stands out against the white
+#                                          listbox without glare)
+#   active button (RUN/CANCEL/etc.)     → white-on-blue (distinct from
+#                                          listbox highlight so the
+#                                          action-target is unambiguous)
+#
+# Exported so options.sh and any whiptail invocation in installers
+# inherits it.
 export NEWT_COLORS="
 root=lightgray,blue
 window=black,white
@@ -45,15 +53,15 @@ button=black,white
 actbutton=white,blue
 compactbutton=black,white
 checkbox=black,white
-actcheckbox=black,white
+actcheckbox=black,cyan
 entry=black,white
 label=black,white
 listbox=black,white
-actlistbox=black,white
-sellistbox=black,white
-actsellistbox=black,white
+actlistbox=black,cyan
+sellistbox=black,cyan
+actsellistbox=black,cyan
 textbox=black,white
-acttextbox=black,white
+acttextbox=black,cyan
 helpline=white,blue
 roottext=white,blue
 emptyscale=,black
