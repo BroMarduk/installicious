@@ -81,11 +81,31 @@ status_write_atomic() {
 # config_hash <config_file> -> sha256 of a config file (empty if missing).
 config_hash() {
   local file="$1"
-  if [[ ! -f $file ]]; then
+  local overrides="${PATH_STATE:-state}/menu-config.sh"
+
+  # Combine the on-disk config file with the runtime menu overrides so a
+  # change to either invalidates skip-if-current. Without this, editing a
+  # value in the menu editor would persist to menu-config.sh but the
+  # installer's status would still show "completed at this config_hash" —
+  # the rendered output (cron file, /etc edits, etc.) would keep the
+  # stale value.
+  #
+  # Slightly over-eager (touching any key in menu-config.sh re-runs every
+  # installer that hashes a config), but the re-runs are idempotent and
+  # the alternative (per-installer "which keys do I care about" tracking)
+  # adds substantial complexity for marginal precision gain.
+  local input=""
+  [[ -f $file ]] && input="$(cat "$file")"
+  if [[ -f $overrides ]]; then
+    input+=$'\n--- menu-config.sh ---\n'
+    input+="$(cat "$overrides")"
+  fi
+
+  if [[ -z $input ]]; then
     echo ""
     return 0
   fi
-  sha256sum "$file" | awk '{print $1}'
+  printf '%s' "$input" | sha256sum | awk '{print $1}'
 }
 
 # _status_var_prefix <id> -> echo "<UPPER>_FW_" with dashes translated to
