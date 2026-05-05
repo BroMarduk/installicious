@@ -8,6 +8,26 @@ EXIT_REBOOT=255
 RESUME_UNIT_SRC="resources/installicious-resume.service"
 RESUME_UNIT_DEST="/etc/systemd/system/installicious-resume.service"
 
+# Privilege check. Installicious edits /etc, /boot, /var, manages systemd
+# units, runs raspi-config, etc. — all of which require root. Fail fast with
+# a clear message rather than letting the user discover the missing
+# permissions one obscure error at a time.
+#
+# The systemd resume service invokes us as root directly (no SUDO_USER); a
+# normal first-run should be `sudo bash installicious.sh`, which gives us
+# both root privileges AND a SUDO_USER value for downstream installers
+# (install-bash etc.) that need to know the original user's home.
+if [[ $EUID -ne 0 ]]; then
+  echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Installicious must run as root."
+  echo
+  echo "  Re-run with sudo:"
+  echo "      sudo bash $0 $*"
+  echo
+  echo "  Reason: installicious manages /etc/* config files, /boot/firmware,"
+  echo "  systemd units, and apt — all of which require root privileges."
+  exit 1
+fi
+
 # Look for installicious.config file in the same directory.
 if [[ ! -f $FILE_CONFIG_INSTALLICIOUS ]]; then
   echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to find the configuration file $FILE_CONFIG_INSTALLICIOUS."
