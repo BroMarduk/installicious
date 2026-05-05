@@ -29,45 +29,23 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 # Whiptail color theme. The default Debian/Pi OS theme paints active list
-# rows as white-on-light-blue, which the user found hard to read. This
-# theme uses black-on-white for the bulk of the dialog (the "normal box"
-# look) but restores VISIBLE highlights for the two cursor-following
-# states so you can see what you're about to act on:
+# rows as white-on-light-blue, which the user found hard to read.
 #
-#   active list row / active checkbox   → black-on-cyan (readable, clearly
-#                                          stands out against the white
-#                                          listbox without glare)
-#   active button (RUN/CANCEL/etc.)     → white-on-blue (distinct from
-#                                          listbox highlight so the
-#                                          action-target is unambiguous)
+# IMPORTANT: NEWT_COLORS must be a single-line, colon-separated value.
+# Multi-line / newline-separated forms are silently ignored on Pi OS's
+# whiptail and the default theme is used instead.
 #
-# Exported so options.sh and any whiptail invocation in installers
-# inherits it.
-export NEWT_COLORS="
-root=lightgray,blue
-window=black,white
-border=black,white
-shadow=black,gray
-title=black,white
-button=black,white
-actbutton=white,blue
-compactbutton=black,white
-checkbox=black,white
-actcheckbox=black,cyan
-entry=black,white
-label=black,white
-listbox=black,white
-actlistbox=black,cyan
-sellistbox=black,cyan
-actsellistbox=black,cyan
-textbox=black,white
-acttextbox=black,cyan
-helpline=white,blue
-roottext=white,blue
-emptyscale=,black
-fullscale=,white
-disentry=gray,white
-"
+# This theme uses black-on-white for the bulk of the dialog (the "normal
+# box" look) and visible highlights for the two cursor-following states:
+#   actlistbox / actcheckbox / actsellistbox / acttextbox = black,cyan
+#     (cursor-row highlight in listboxes/checklists/inputboxes)
+#   actbutton = white,blue
+#     (focused button — distinct from the listbox highlight so the
+#     action-target is unambiguous)
+#
+# Exported so child shells (options.sh, the per-installer whiptail
+# invocations like menu_show_required) inherit it.
+export NEWT_COLORS="root=lightgray,blue:window=black,white:border=black,white:shadow=black,gray:title=black,white:button=black,white:actbutton=white,blue:compactbutton=black,white:checkbox=black,white:actcheckbox=black,cyan:entry=black,white:label=black,white:listbox=black,white:actlistbox=black,cyan:sellistbox=black,cyan:actsellistbox=black,cyan:textbox=black,white:acttextbox=black,cyan:helpline=white,blue:roottext=white,blue:emptyscale=,black:fullscale=,white:disentry=gray,white"
 
 # Look for installicious.config file in the same directory.
 if [[ ! -f $FILE_CONFIG_INSTALLICIOUS ]]; then
