@@ -95,6 +95,42 @@ manifest_path_for() {
   return 1
 }
 
+# manifest_optional_children_of <id> [<dir>] -> echo the value of <id>'s
+# II_OPTIONAL_GROUP field (space-separated child IDs), or empty if it has no
+# such field. The "child" installers are add-ons grouped under <id>: they
+# get hidden from the top-level Custom checklists and only surface when
+# <id> is selected (a sub-menu fires).
+manifest_optional_children_of() {
+  local id="$1"
+  local dir="${2:-$(_manifest_default_dir)}"
+  local path
+  path=$(manifest_path_for "$id" "$dir")
+  [[ -z $path ]] && return 0
+  manifest_get_field "$path" "II_OPTIONAL_GROUP"
+}
+
+# manifest_is_hidden_child <id> [<dir>] -> rc=0 if <id> appears in any other
+# manifest's II_OPTIONAL_GROUP, rc=1 otherwise.
+#
+# Used by category filters to hide add-on installers from the top-level
+# Custom > Options/Software menus — they're meant to be selected via their
+# parent's add-on sub-menu, not as standalone picks. Also used by Task-flow
+# optional pickers to skip rendering an add-on as a standalone optional
+# (the parent's sub-menu fires instead).
+manifest_is_hidden_child() {
+  local id="$1"
+  local dir="${2:-$(_manifest_default_dir)}"
+  local parent_id children child
+  while IFS= read -r parent_id; do
+    [[ -z $parent_id || $parent_id == "$id" ]] && continue
+    children=$(manifest_optional_children_of "$parent_id" "$dir")
+    for child in $children; do
+      [[ "$child" == "$id" ]] && return 0
+    done
+  done < <(manifest_list_ids "$dir")
+  return 1
+}
+
 # manifest_filter_by_category <category> [<dir>] -> list IDs matching category.
 manifest_filter_by_category() {
   local category="$1"

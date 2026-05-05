@@ -13,6 +13,8 @@
 #   custom_software — Custom: pick software-category installers
 #   show_required   — Task: confirm the required installers (info)
 #   pick_optional   — Task: pick optional add-ons
+#   pick_addons     — sub-menu(s) for installers that declare II_OPTIONAL_GROUP
+#                     (skipped automatically when no selected parent has add-ons)
 #   edit_config     — surface II_EDITABLE_CONFIG / TASK_EDITABLE_CONFIG values
 #   confirm         — final yes/no
 #   run             — scheduler hand-off (terminal stage)
@@ -67,14 +69,42 @@ task_optional=""
 options_selected=""
 software_selected=""
 optional_picked=""
-selected=""
+selected=""           # final list (parents + their picked add-ons)
+selected_parents=""   # the user's category/task picks BEFORE add-ons get merged
+declare -A addons_picked   # parent_id → space-separated add-on IDs the user picked
 
 # ---------------------------------------------------------------------------
 # Stage state machine
 # ---------------------------------------------------------------------------
 # Helper: figure out which stage precedes edit_config / confirm so BACK from
-# the editor or confirm rewinds to the right place.
+# the editor or confirm rewinds to the right place. If any selected parent
+# has an II_OPTIONAL_GROUP, the most recent selection stage is pick_addons.
+_any_parent_has_addons() {
+  local id ppath addons
+  for id in $selected_parents; do
+    ppath=$(manifest_path_for "$id" 2>/dev/null)
+    [[ -z $ppath ]] && continue
+    addons=$(manifest_get_field "$ppath" "II_OPTIONAL_GROUP")
+    [[ -n $addons ]] && return 0
+  done
+  return 1
+}
 prev_selection_stage() {
+  if _any_parent_has_addons; then
+    echo "pick_addons"
+  elif [[ $task_id == "custom" ]]; then
+    echo "custom_software"
+  elif [[ -n $task_optional ]]; then
+    echo "pick_optional"
+  elif [[ -n $task_required ]]; then
+    echo "show_required"
+  else
+    echo "pick_task"
+  fi
+}
+# What pick_addons rewinds to (the same logic as prev_selection_stage but
+# without considering pick_addons itself).
+_pre_addons_stage() {
   if [[ $task_id == "custom" ]]; then
     echo "custom_software"
   elif [[ -n $task_optional ]]; then
@@ -165,7 +195,12 @@ while true; do
         log_info "User $CURRENTUSER continued without selecting any installers; nothing to do."
         exit 0
       fi
-      stage="edit_config"
+      selected_parents="$selected"
+      if _any_parent_has_addons; then
+        stage="pick_addons"
+      else
+        stage="edit_config"
+      fi
       ;;
 
     show_required)
@@ -210,6 +245,54 @@ while true; do
         log_info "User $CURRENTUSER continued without selecting any installers; nothing to do."
         exit 0
       fi
+      selected_parents="$selected"
+      if _any_parent_has_addons; then
+        stage="pick_addons"
+      else
+        stage="edit_config"
+      fi
+      ;;
+
+    pick_addons)
+      # Walk each currently-selected installer; if it declares
+      # II_OPTIONAL_GROUP, surface its add-ons as a checklist sub-menu.
+      # User's picks for each parent are remembered in addons_picked so
+      # back-nav re-presents them pre-checked.
+      _rewind=0
+      for parent_id in $selected_parents; do
+        ppath=$(manifest_path_for "$parent_id" 2>/dev/null)
+        [[ -z $ppath ]] && continue
+        pchildren=$(manifest_get_field "$ppath" "II_OPTIONAL_GROUP")
+        [[ -z $pchildren ]] && continue
+        ptitle=$(manifest_get_field "$ppath" "II_TITLE")
+
+        # shellcheck disable=SC2086
+        picked=$(menu_pick_optionals "$ptitle" \
+          --previously "${addons_picked[$parent_id]:-}" \
+          $pchildren)
+        rc=$?
+        case $rc in
+          0)     addons_picked[$parent_id]="${picked//\"/}" ;;
+          1|255) _rewind=1; break ;;
+          2)     ;;
+        esac
+      done
+
+      if [[ $_rewind -eq 1 ]]; then
+        stage=$(_pre_addons_stage)
+        continue
+      fi
+
+      # Rebuild `selected` from `selected_parents` + currently-picked add-ons
+      # for each. Always start from selected_parents so a back-and-forward
+      # trip never duplicates or carries over add-ons of a since-deselected
+      # parent.
+      _merged="$selected_parents"
+      for parent_id in $selected_parents; do
+        _merged="$_merged ${addons_picked[$parent_id]:-}"
+      done
+      selected=$(echo "$_merged" | tr -s ' ' | sed 's/^ //; s/ $//')
+      log_info "User $CURRENTUSER add-ons merged: $selected."
       stage="edit_config"
       ;;
 

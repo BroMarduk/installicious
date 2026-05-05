@@ -124,5 +124,68 @@ opt_count=$(manifest_filter_by_category option installers | wc -l)
 sw_count=$(manifest_filter_by_category software installers | wc -l)
 chkeq "categories partition" "$((opt_count + sw_count))" "$all_count"
 
+# ===========================================================================
+echo
+echo "=== Test 8: II_OPTIONAL_GROUP — children, hidden detection ==="
+# Drop a synthetic parent + child pair to exercise the helpers in isolation.
+cat > "$TMPDIR/install-parent.sh" <<EOF
+#!/bin/bash
+# === II_MANIFEST_BEGIN ===
+II_ID="parent"
+II_TITLE="Parent"
+II_CATEGORY="option"
+II_VERSION="1"
+II_DEPS=""
+II_REQUIRES_REBOOT="never"
+II_OPTIONAL_GROUP="child-a child-b"
+# === II_MANIFEST_END ===
+EOF
+cat > "$TMPDIR/install-child-a.sh" <<EOF
+#!/bin/bash
+# === II_MANIFEST_BEGIN ===
+II_ID="child-a"
+II_TITLE="Child A"
+II_CATEGORY="option"
+II_VERSION="1"
+II_DEPS=""
+II_REQUIRES_REBOOT="never"
+# === II_MANIFEST_END ===
+EOF
+cat > "$TMPDIR/install-child-b.sh" <<EOF
+#!/bin/bash
+# === II_MANIFEST_BEGIN ===
+II_ID="child-b"
+II_TITLE="Child B"
+II_CATEGORY="software"
+II_VERSION="1"
+II_DEPS=""
+II_REQUIRES_REBOOT="never"
+# === II_MANIFEST_END ===
+EOF
+
+children=$(manifest_optional_children_of parent "$TMPDIR")
+chkeq "parent's optional children" "$children" "child-a child-b"
+
+children=$(manifest_optional_children_of foo "$TMPDIR")
+chkeq "non-parent has no children" "$children" ""
+
+manifest_is_hidden_child child-a "$TMPDIR"; chkrc "child-a is hidden" $? 0
+manifest_is_hidden_child child-b "$TMPDIR"; chkrc "child-b is hidden" $? 0
+manifest_is_hidden_child parent  "$TMPDIR"; chkrc "parent is NOT hidden" $? 1
+manifest_is_hidden_child foo     "$TMPDIR"; chkrc "unrelated installer NOT hidden" $? 1
+
+# ===========================================================================
+echo
+echo "=== Test 9: real installers — motd-weather is a hidden child of motd ==="
+# install-motd.sh ships with II_OPTIONAL_GROUP="motd-weather". The framework
+# should hide motd-weather from regular category filters and recognize the
+# parent relationship.
+real_children=$(manifest_optional_children_of motd installers)
+chkeq "motd's optional children" "$real_children" "motd-weather"
+
+manifest_is_hidden_child motd-weather installers; chkrc "motd-weather is hidden" $? 0
+manifest_is_hidden_child motd         installers; chkrc "motd is NOT hidden"      $? 1
+manifest_is_hidden_child skyfield     installers; chkrc "skyfield is NOT hidden"  $? 1
+
 echo
 echo "=== Done ==="

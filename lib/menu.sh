@@ -48,6 +48,9 @@ menu_select_category() {
   local -a items=()
   local id path title_text default
   while IFS= read -r id; do
+    # Skip add-on installers — they belong under their parent's sub-menu
+    # (see manifest_is_hidden_child / II_OPTIONAL_GROUP).
+    manifest_is_hidden_child "$id" && continue
     path=$(manifest_path_for "$id")
     title_text=$(manifest_get_field "$path" "II_TITLE")
     if [[ $use_previously -eq 1 ]]; then
