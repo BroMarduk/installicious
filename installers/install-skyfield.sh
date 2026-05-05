@@ -122,12 +122,17 @@ do_install() {
     return 1
   fi
 
+  # wee_extension --install behavior on an already-registered extension
+  # varies by weewx version (some overwrite silently, some prompt, some
+  # error). Soft-fail rather than hard-fail: a non-zero exit when the
+  # extension is already registered shouldn't tank the rest of the queue.
+  # If the user really wants a clean re-register, the manual recipe is:
+  #   sudo wee_extension --uninstall SkyfieldAlmanac
+  #   sudo bash installicious.sh   # re-runs through skyfield cleanly
   log_info "Registering extension with weewx: $WEE_EXTENSION_BIN --install $SKYFIELD_SRC_DIR"
   if ! sudo "$WEE_EXTENSION_BIN" --install "$SKYFIELD_SRC_DIR"; then
-    log_fail "wee_extension --install failed."
-    status_mark_failed "$II_ID" "wee_extension --install failed"
-    echo -e "[ \e[0;31mFAIL\e[0m ] Installicious could not register SkyfieldAlmanac with WeeWX."
-    return 1
+    log_warn "wee_extension --install returned non-zero. The extension may already be registered, or there may be a real error. Verify with: sudo $WEE_EXTENSION_BIN --list"
+    echo -e "[ \e[0;33mWARN\e[0m ] wee_extension --install returned non-zero — check 'wee_extension --list' to confirm SkyfieldAlmanac is registered."
   fi
 
   status_mark_complete "$II_ID" "$II_VERSION"
