@@ -1,5 +1,7 @@
 #!/bin/sh
 
+OUTPUT_FILE="/etc/motd.d/%%MOTD_NAME%%/results-ip"
+
 # Get all IP Addresses
 IP_INT=$(echo $(hostname -I))
 
@@ -9,4 +11,4 @@ else
   IP_EXT=$(wget -q -O - %%MOTD_IP_URL%% | tail)
 fi
 
-echo $IP_EXT > /etc/motd.d/%%MOTD_NAME%%/results-ip
+echo $IP_EXT > "$OUTPUT_FILE"

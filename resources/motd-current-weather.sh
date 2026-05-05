@@ -81,4 +81,3 @@ echo "${WEATHER_TEXT}, ${TEMP_F}°F (${REALFEEL_F}°F)" > "${OUT_WEATHER}"
 echo "${FORMATTED_DATE}" > "${OUT_DATE}"
 
 chmod 644 "${OUT_WEATHER}" "${OUT_DATE}"
-

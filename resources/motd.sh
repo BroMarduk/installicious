@@ -25,6 +25,11 @@ case "$numversion" in
   14) raspbian="Forky" ;;
   13) raspbian="Trixie" ;;
   12) raspbian="Bookworm" ;;
+  11) raspbian="Bullseye" ;;
+  10) raspbian="Buster" ;;
+   9) raspbian="Stretch" ;;
+   8) raspbian="Jessie" ;;
+   7) raspbian="Wheezy" ;;
    *) raspbian="Unknown" ;;
 esac
 
@@ -214,7 +219,7 @@ fi
 clear
 
 echo "$(tput setaf 2)
-   .~~.   .~~.       $(date '+%A, %-e %B %Y, %r') $updates
+   .~~.   .~~.       $(date '+%A, %-e %B %Y, %r')$(tput setaf 1) $updates$(tput setaf 2)
   '. \ ' ' / .'      $raspbian $bits-bit - RPi OS $version ($(uname -r | cut -d- -f1) Kernel $(uname -m))$(tput setaf 1)
    .~ .~~~..~.
   : .~.'~'.~. :      _/_/_/                        _/      _/              _/
