@@ -39,10 +39,6 @@ FILE_CONFIG_MOTD="${PATH_CONFIG:-config}/motd.config"
 [[ -f $FILE_CONFIG_MOTD ]] && source "$FILE_CONFIG_MOTD"
 state_apply_menu_overrides
 MOTD_NAME="${MOTD_NAME:-dannet}"
-MOTD_IP_URL="${MOTD_IP_URL:-https://api.ipify.org}"
-MOTD_WEATHER_LOC_CODE="${MOTD_WEATHER_LOC_CODE:-}"
-MOTD_WEATHER_API_KEY="${MOTD_WEATHER_API_KEY:-}"
-MOTD_SMALL_SIZE="${MOTD_SMALL_SIZE:-79}"
 
 CRON_HOURLY_UPDATES="/etc/cron.hourly/motd-current-updates"
 APT_HOOK="/etc/apt/apt.conf.d/80updaterefresh"
@@ -74,11 +70,9 @@ render_resource() {
   local src="$1" dest="$2" mode="${3:-0755}"
   local tmp
   tmp=$(mktemp) || return 1
+  # Only %%MOTD_NAME%% appears in motd-current-updates.sh; the apt.conf.d
+  # drop-in has no tokens to substitute.
   sed -e "s|%%MOTD_NAME%%|${MOTD_NAME}|g" \
-      -e "s|%%MOTD_IP_URL%%|${MOTD_IP_URL}|g" \
-      -e "s|%%MOTD_WEATHER_LOC_CODE%%|${MOTD_WEATHER_LOC_CODE}|g" \
-      -e "s|%%MOTD_WEATHER_API_KEY%%|${MOTD_WEATHER_API_KEY}|g" \
-      -e "s|%%MOTD_SMALL_SIZE%%|${MOTD_SMALL_SIZE}|g" \
       "$src" > "$tmp" || { rm -f "$tmp"; return 1; }
   sudo install -m "$mode" "$tmp" "$dest" || { rm -f "$tmp"; return 1; }
   rm -f "$tmp"

@@ -39,8 +39,6 @@ state_apply_menu_overrides
 MOTD_NAME="${MOTD_NAME:-dannet}"
 MOTD_WEATHER_LOC_CODE="${MOTD_WEATHER_LOC_CODE:-}"
 MOTD_WEATHER_API_KEY="${MOTD_WEATHER_API_KEY:-}"
-MOTD_IP_URL="${MOTD_IP_URL:-https://api.ipify.org}"
-MOTD_SMALL_SIZE="${MOTD_SMALL_SIZE:-79}"
 
 CRON_HOURLY_WEATHER="/etc/cron.hourly/motd-current-weather"
 
@@ -67,11 +65,10 @@ render_resource() {
   local src="$1" dest="$2"
   local tmp
   tmp=$(mktemp) || return 1
+  # Only substitute tokens that actually appear in motd-current-weather.sh.
   sed -e "s|%%MOTD_NAME%%|${MOTD_NAME}|g" \
-      -e "s|%%MOTD_IP_URL%%|${MOTD_IP_URL}|g" \
       -e "s|%%MOTD_WEATHER_LOC_CODE%%|${MOTD_WEATHER_LOC_CODE}|g" \
       -e "s|%%MOTD_WEATHER_API_KEY%%|${MOTD_WEATHER_API_KEY}|g" \
-      -e "s|%%MOTD_SMALL_SIZE%%|${MOTD_SMALL_SIZE}|g" \
       "$src" > "$tmp" || { rm -f "$tmp"; return 1; }
   sudo install -m 0700 "$tmp" "$dest" || { rm -f "$tmp"; return 1; }
   rm -f "$tmp"

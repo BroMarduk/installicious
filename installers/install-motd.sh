@@ -46,7 +46,6 @@ FILE_CONFIG_MOTD="${PATH_CONFIG:-config}/motd.config"
 state_apply_menu_overrides
 MOTD_NAME="${MOTD_NAME:-dannet}"
 MOTD_IP_URL="${MOTD_IP_URL:-https://api.ipify.org}"
-MOTD_WEATHER_LOC_CODE="${MOTD_WEATHER_LOC_CODE:-}"
 MOTD_SMALL_SIZE="${MOTD_SMALL_SIZE:-79}"
 
 MOTD_DIR="/etc/motd.d/$MOTD_NAME"
@@ -85,10 +84,12 @@ render_resource() {
   local src="$1" dest="$2"
   local tmp
   tmp=$(mktemp) || return 1
+  # Only substitute tokens that actually appear in the resources this
+  # installer renders (motd.sh, motd-small.sh, motd-current-ip.sh).
+  # MOTD_SMALL_SIZE is used in the /etc/profile launcher heredoc below,
+  # not as a sed token in any rendered file.
   sed -e "s|%%MOTD_NAME%%|${MOTD_NAME}|g" \
       -e "s|%%MOTD_IP_URL%%|${MOTD_IP_URL}|g" \
-      -e "s|%%MOTD_WEATHER_LOC_CODE%%|${MOTD_WEATHER_LOC_CODE}|g" \
-      -e "s|%%MOTD_SMALL_SIZE%%|${MOTD_SMALL_SIZE}|g" \
       "$src" > "$tmp" || { rm -f "$tmp"; return 1; }
   sudo install -m 0755 "$tmp" "$dest" || { rm -f "$tmp"; return 1; }
   rm -f "$tmp"
