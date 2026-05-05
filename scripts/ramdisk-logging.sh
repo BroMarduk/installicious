@@ -12,7 +12,7 @@
 #   4. Configures log2ram to use zram as its backing store (ZL2R=true),
 #      so /var/log is in compressed RAM. Syncs to SD once per hour.
 #   5. Tunes logrotate: daily + maxsize 5M, xz-compressed, hourly cron.
-#   6. Sets journald to volatile storage (journal lives only in /run).
+#   6. Sets journald to persistent storage under /var/log/journal so log2ram can buffer it.
 #   7. Adds 'noatime' to the root mount to eliminate atime writes.
 #
 # All modified config files are backed up with a .bak suffix.
@@ -429,19 +429,29 @@ if [[ -f /etc/cron.daily/logrotate && ! -f /etc/cron.hourly/logrotate ]]; then
 fi
 
 # ---------------------------------------------------------------------------
-# 6. journald — keep journal in /run (tmpfs), never the SD card
+# 6. journald — persistent journal under /var/log so log2ram can zram-buffer it
 # ---------------------------------------------------------------------------
-echo "==> Tuning systemd-journald"
-[[ ! -f /etc/systemd/journald.conf.bak ]] && \
-  cp /etc/systemd/journald.conf /etc/systemd/journald.conf.bak
+echo "==> Tuning systemd-journald for persistent journal via log2ram"
 
-cat > /etc/systemd/journald.conf <<'EOF'
+# Raspberry Pi OS Bookworm/Trixie may ship vendor drop-ins under
+# /usr/lib/systemd/journald.conf.d/, including:
+#   40-rpi-volatile-storage.conf -> Storage=volatile
+#   syslog.conf                  -> ForwardToSyslog=yes
+#
+# Do not edit vendor files. Override them from /etc with a later-numbered
+# drop-in so package updates do not undo our change.
+mkdir -p /etc/systemd/journald.conf.d/
+
+cat > /etc/systemd/journald.conf.d/50-log2ram-zram-persistent-override.conf <<'EOF'
 [Journal]
-Storage=volatile
-RuntimeMaxUse=30M
+Storage=persistent
 SystemMaxUse=50M
-ForwardToSyslog=no
 EOF
+
+# Required for Storage=persistent. With log2ram active after reboot, this path
+# should live under the RAM/zram-backed /var/log mount and get synced to disk
+# by log2ram's timer.
+mkdir -p /var/log/journal
 
 systemctl restart systemd-journald || true
 
@@ -489,6 +499,9 @@ After reboot, verify with:
     df -h /var/log /tmp             # both should be tmpfs / zram-backed
     systemctl status log2ram
     systemctl list-timers | grep log2ram
+    systemd-analyze cat-config systemd/journald.conf
+    sudo find /run/log/journal /var/log/journal -type f -name "*.journal*" -printf '%p\n' 2>/dev/null
+    journalctl --list-boots
     journalctl -u log2ram --no-pager --since today
     free -h
     mount | grep -E '/(tmp|var/log|)\s'
@@ -500,7 +513,7 @@ Backups / new files (delete or restore to revert):
     /etc/rpi/swap.conf.d/99-pi-sd-saver.conf     (rpi-swap path — delete to revert)
     /etc/log2ram.conf.bak
     /etc/logrotate.conf.bak
-    /etc/systemd/journald.conf.bak
+    /etc/systemd/journald.conf.d/50-log2ram-zram-persistent-override.conf
     /etc/fstab.bak
     /etc/sysctl.d/99-pi-sd-saver.conf            (delete to revert sysctl tuning)
 
