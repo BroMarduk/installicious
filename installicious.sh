@@ -28,6 +28,17 @@ if [[ $EUID -ne 0 ]]; then
   exit 1
 fi
 
+# Load the installicious version string from the repo-root VERSION file.
+# Bumped on every commit (last digit is a per-check-in counter — see the
+# "version bump" memory note). Falls back to "unknown" if the file is
+# missing (shouldn't happen in a clean checkout but keeps the splash from
+# crashing on a partial extract).
+INSTALLICIOUS_VERSION=""
+if [[ -r "$(dirname "$0")/VERSION" ]]; then
+  read -r INSTALLICIOUS_VERSION < "$(dirname "$0")/VERSION"
+fi
+INSTALLICIOUS_VERSION="${INSTALLICIOUS_VERSION:-unknown}"
+
 # Whiptail color theme. The default Debian/Pi OS theme paints active list
 # rows as white-on-light-blue, which the user found hard to read.
 #
@@ -375,8 +386,8 @@ echo "II_INSTALLICIOUS_USER=\"${II_INSTALLICIOUS_USER}\"" >> $FILE_STATUS_OS
 # Load Required Variables
 source $FILE_STATUS_OS
 
-if (whiptail --title "$MODULE" --defaultno --no-button "Cancel" --yes-button "OK" --yesno "Do you want to setup $MODULE? $DESCRIPTION\n\n$II_MODEL with $II_FULL_NAME" 12 80) then
-  echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Installicious started by user $CURRENTUSER" | sudo tee --append $FILE_LOG_INSTALLER
+if (whiptail --title "$MODULE" --defaultno --no-button "Cancel" --yes-button "OK" --yesno "Do you want to setup $MODULE? $DESCRIPTION\n\n$II_MODEL with $II_FULL_NAME\n\nInstallicious $INSTALLICIOUS_VERSION" 14 80) then
+  echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Installicious $INSTALLICIOUS_VERSION started by user $CURRENTUSER" | sudo tee --append $FILE_LOG_INSTALLER
   bash "$PATH_SCRIPTS/options.sh"
 else
   echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Installicious canceled by user $CURRENTUSER" | sudo tee --append $FILE_LOG_INSTALLER
