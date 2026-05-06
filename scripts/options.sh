@@ -4,18 +4,18 @@
 #
 # Driven by a small stage state machine so the user can press BACK at any
 # screen to return to the previous one. ESC behaves like BACK on every
-# screen EXCEPT the splash (in installicious.sh) and the task picker
+# screen EXCEPT the splash (in installicious.sh) and the role picker
 # below — at those two, ESC exits the installer.
 #
 # Stages (see the dispatcher at the bottom of the file):
-#   pick_task       — single-select task picker (first stage)
-#   custom_options  — Custom: pick option-category installers
-#   custom_software — Custom: pick software-category installers
-#   show_required   — Task: confirm the required installers (info)
-#   pick_optional   — Task: pick optional add-ons
-#   pick_addons     — sub-menu(s) for installers that declare II_OPTIONAL_GROUP
+#   pick_role       — single-select role picker (first stage)
+#   custom_options  — Custom: pick option-category features
+#   custom_software — Custom: pick software-category features
+#   show_required   — Role: confirm the required features (info)
+#   pick_optional   — Role: pick optional add-on features
+#   pick_addons     — sub-menu(s) for features that declare II_OPTIONAL_GROUP
 #                     (skipped automatically when no selected parent has add-ons)
-#   edit_config     — surface II_EDITABLE_CONFIG / TASK_EDITABLE_CONFIG values
+#   edit_config     — surface II_EDITABLE_CONFIG / ROLE_EDITABLE_CONFIG values
 #   confirm         — final yes/no
 #   run             — scheduler hand-off (terminal stage)
 #
@@ -31,7 +31,7 @@ source lib/status.sh
 source lib/state.sh
 source lib/reboot.sh
 source lib/manifest.sh
-source lib/task.sh
+source lib/role.sh
 source lib/menu.sh
 source lib/scheduler.sh
 source lib/post_install.sh
@@ -61,16 +61,16 @@ post_install_clear
 CURRENTUSER=$(whoami)
 
 # State carried across stages.
-task_id=""
-task_path=""
-task_title=""
-task_required=""
-task_optional=""
+role_id=""
+role_path=""
+role_title=""
+role_required=""
+role_optional=""
 options_selected=""
 software_selected=""
 optional_picked=""
 selected=""           # final list (parents + their picked add-ons)
-selected_parents=""   # the user's category/task picks BEFORE add-ons get merged
+selected_parents=""   # the user's category/role picks BEFORE add-ons get merged
 declare -A addons_picked   # parent_id → space-separated add-on IDs the user picked
 
 # ---------------------------------------------------------------------------
@@ -92,72 +92,73 @@ _any_parent_has_addons() {
 prev_selection_stage() {
   if _any_parent_has_addons; then
     echo "pick_addons"
-  elif [[ $task_id == "custom" ]]; then
+  elif [[ $role_id == "custom" ]]; then
     echo "custom_software"
-  elif [[ -n $task_optional ]]; then
+  elif [[ -n $role_optional ]]; then
     echo "pick_optional"
-  elif [[ -n $task_required ]]; then
+  elif [[ -n $role_required ]]; then
     echo "show_required"
   else
-    echo "pick_task"
+    echo "pick_role"
   fi
 }
 # What pick_addons rewinds to (the same logic as prev_selection_stage but
 # without considering pick_addons itself).
 _pre_addons_stage() {
-  if [[ $task_id == "custom" ]]; then
+  if [[ $role_id == "custom" ]]; then
     echo "custom_software"
-  elif [[ -n $task_optional ]]; then
+  elif [[ -n $role_optional ]]; then
     echo "pick_optional"
-  elif [[ -n $task_required ]]; then
+  elif [[ -n $role_required ]]; then
     echo "show_required"
   else
-    echo "pick_task"
+    echo "pick_role"
   fi
 }
 
-stage="pick_task"
+stage="pick_role"
 while true; do
   case "$stage" in
 
-    pick_task)
-      task_id=$(menu_select_task "Installicious" \
-        "Pick the role for this Pi. Choose Custom to pick installers individually." \
-        "$task_id")
+    pick_role)
+      role_id=$(menu_select_role "Installicious" \
+        "Pick the role for this Pi. Choose Custom to pick features individually." \
+        "$role_id")
       rc=$?
       case $rc in
         0) ;;
         2)
-          log_warn "No tasks defined under \$PATH_TASKS; nothing to pick from."
+          log_warn "No roles defined under \$PATH_ROLES; nothing to pick from."
           exit 0
           ;;
         *)
-          log_info "User $CURRENTUSER exited at the task picker."
+          log_info "User $CURRENTUSER exited at the role picker."
           exit 0
           ;;
       esac
-      log_info "User $CURRENTUSER picked task: $task_id."
+      log_info "User $CURRENTUSER picked role: $role_id."
 
-      if [[ $task_id == "custom" ]]; then
-        task_path=""
-        task_title="Custom"
-        task_required=""
-        task_optional=""
+      if [[ $role_id == "custom" ]]; then
+        role_path=""
+        role_title="Custom"
+        role_required=""
+        role_optional=""
         stage="custom_options"
       else
-        task_path=$(task_path_for "$task_id")
-        task_title=$(task_get_field "$task_path" "TASK_TITLE")
-        task_required=$(task_get_field "$task_path" "TASK_INSTALLERS_REQUIRED")
-        task_optional=$(task_get_field "$task_path" "TASK_INSTALLERS_OPTIONAL")
-        if [[ -n $task_required ]]; then
+        role_path=$(role_path_for "$role_id")
+        role_title=$(role_get_field "$role_path" "ROLE_TITLE")
+        role_required=$(role_get_field "$role_path" "ROLE_FEATURES_REQUIRED")
+        role_optional=$(role_get_field "$role_path" "ROLE_FEATURES_OPTIONAL")
+        if [[ -n $role_required ]]; then
           stage="show_required"
-        elif [[ -n $task_optional ]]; then
+        elif [[ -n $role_optional ]]; then
           stage="pick_optional"
         else
-          # Task with neither required nor optional — degenerate but harmless;
-          # treat like custom-with-empty-selection.
+          # Role with neither required nor optional — degenerate but harmless;
+          # treat like custom-with-empty-selection. (Stubbed roles take this
+          # branch today; once they declare their features they won't.)
           selected=""
-          stage="merge_task"
+          stage="merge_role"
         fi
       fi
       ;;
@@ -170,7 +171,7 @@ while true; do
       rc=$?
       case $rc in
         0)     stage="custom_software" ;;
-        1|255) stage="pick_task" ;;          # BACK or ESC → previous stage
+        1|255) stage="pick_role" ;;          # BACK or ESC → previous stage
         2)     options_selected=""; stage="custom_software" ;;
       esac
       ;;
@@ -192,7 +193,7 @@ while true; do
       selected="${options_selected//\"/} ${software_selected//\"/}"
       selected=$(echo "$selected" | tr -s ' ' | sed 's/^ //; s/ $//')
       if [[ -z $selected ]]; then
-        log_info "User $CURRENTUSER continued without selecting any installers; nothing to do."
+        log_info "User $CURRENTUSER continued without selecting any features; nothing to do."
         exit 0
       fi
       selected_parents="$selected"
@@ -205,44 +206,44 @@ while true; do
 
     show_required)
       # shellcheck disable=SC2086
-      menu_show_required "$task_title" $task_required
+      menu_show_required "$role_title" $role_required
       rc=$?
       case $rc in
         0)
-          if [[ -n $task_optional ]]; then
+          if [[ -n $role_optional ]]; then
             stage="pick_optional"
           else
-            stage="merge_task"
+            stage="merge_role"
           fi
           ;;
-        1|255) stage="pick_task" ;;          # BACK or ESC → task picker
+        1|255) stage="pick_role" ;;          # BACK or ESC → role picker
       esac
       ;;
 
     pick_optional)
       # shellcheck disable=SC2086
-      optional_picked=$(menu_pick_optionals "$task_title" \
+      optional_picked=$(menu_pick_optionals "$role_title" \
         --previously "${optional_picked//\"/}" \
-        $task_optional)
+        $role_optional)
       rc=$?
       case $rc in
-        0)     stage="merge_task" ;;
+        0)     stage="merge_role" ;;
         1|255)
-          if [[ -n $task_required ]]; then
+          if [[ -n $role_required ]]; then
             stage="show_required"
           else
-            stage="pick_task"
+            stage="pick_role"
           fi
           ;;
-        2)     optional_picked=""; stage="merge_task" ;;
+        2)     optional_picked=""; stage="merge_role" ;;
       esac
       ;;
 
-    merge_task)
-      selected="$task_required ${optional_picked//\"/}"
+    merge_role)
+      selected="$role_required ${optional_picked//\"/}"
       selected=$(echo "$selected" | tr -s ' ' | sed 's/^ //; s/ $//')
       if [[ -z $selected ]]; then
-        log_info "User $CURRENTUSER continued without selecting any installers; nothing to do."
+        log_info "User $CURRENTUSER continued without selecting any features; nothing to do."
         exit 0
       fi
       selected_parents="$selected"
@@ -299,7 +300,7 @@ while true; do
     edit_config)
       log_info "User $CURRENTUSER selected: $selected."
       # shellcheck disable=SC2086
-      menu_edit_config "$task_id" $selected
+      menu_edit_config "$role_id" $selected
       rc=$?
       # menu_edit_config now translates ESC to rc=1 internally (with edits
       # persisted, same as the BACK button), so the explicit 255 case is
@@ -313,7 +314,7 @@ while true; do
       ;;
 
     confirm)
-      confirm_msg="The following installers will run, in dependency order:\n\n  $selected\n\nProceed?"
+      confirm_msg="The following features will run, in dependency order:\n\n  $selected\n\nProceed?"
       menu_confirm "Confirm Install" "$confirm_msg"
       rc=$?
       case $rc in

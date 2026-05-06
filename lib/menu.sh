@@ -13,7 +13,7 @@
 #   2   no-data     — nothing to show (caller should auto-advance silently)
 #   255 abort/ESC   — user pressed ESC. options.sh maps this to BACK on
 #                     every stage EXCEPT the first (the splash whiptail in
-#                     installicious.sh and menu_select_task here), where
+#                     installicious.sh and menu_select_role here), where
 #                     ESC means exit the installer.
 #
 # Usage:
@@ -74,23 +74,23 @@ menu_select_category() {
     3>&1 1>&2 2>&3
 }
 
-# menu_select_task [<title>] [<description>] [<default_item>]
-# First-stage single-select task picker. CANCEL means exit (no previous stage
+# menu_select_role [<title>] [<description>] [<default_item>]
+# First-stage single-select role picker. CANCEL means exit (no previous stage
 # to go back to); ESC also exits. If <default_item> is provided and matches a
-# task ID, that row is highlighted by default — useful for preserving the
+# role ID, that row is highlighted by default — useful for preserving the
 # user's prior pick when they navigate BACK to this screen.
-menu_select_task() {
-  local title="${1:-Installicious — Pick a Task}"
-  local desc="${2:-Pick the role for this Pi. Choose Custom to pick installers individually.}"
+menu_select_role() {
+  local title="${1:-Installicious — Pick a Role}"
+  local desc="${2:-Pick the role for this Pi. Choose Custom to pick features individually.}"
   local default_item="${3:-}"
 
   local -a items=()
   local id path title_text
   while IFS= read -r id; do
-    path=$(task_path_for "$id")
-    title_text=$(task_get_field "$path" "TASK_TITLE")
+    path=$(role_path_for "$id")
+    title_text=$(role_get_field "$path" "ROLE_TITLE")
     items+=("$id" "${title_text:-$id}")
-  done < <(task_list_ids | sort)
+  done < <(role_list_ids | sort)
 
   if [[ ${#items[@]} -eq 0 ]]; then
     return 2
@@ -102,32 +102,32 @@ menu_select_task() {
   whiptail "${wt_args[@]}" 3>&1 1>&2 2>&3
 }
 
-# menu_show_required <task_title> <required_id> [<required_id> ...]
-# Informational confirmation listing the required installers for a task.
+# menu_show_required <role_title> <required_id> [<required_id> ...]
+# Informational confirmation listing the required features for a role.
 # OK forwards (rc=0), BACK rewinds (rc=1), ESC aborts (rc=255).
 menu_show_required() {
-  local task_title="$1"
+  local role_title="$1"
   shift
-  local message="$task_title will install:"
-  local id installer_path installer_title
+  local message="$role_title will install:"
+  local id feature_path feature_title
   for id in "$@"; do
-    installer_path=$(manifest_path_for "$id" 2>/dev/null)
-    if [[ -n $installer_path ]]; then
-      installer_title=$(manifest_get_field "$installer_path" "II_TITLE")
-      message+="\n  - $id  ($installer_title)"
+    feature_path=$(manifest_path_for "$id" 2>/dev/null)
+    if [[ -n $feature_path ]]; then
+      feature_title=$(manifest_get_field "$feature_path" "II_TITLE")
+      message+="\n  - $id  ($feature_title)"
     else
-      message+="\n  - $id  (no installer manifest found)"
+      message+="\n  - $id  (no feature manifest found)"
     fi
   done
   message+="\n\nThese are required and will run automatically. Optional add-ons come next."
-  whiptail --title "$task_title — Required Installers" \
+  whiptail --title "$role_title — Required Features" \
     --yes-button "OK" \
     --no-button "BACK" \
     --yesno "$message" 20 80
 }
 
-# menu_pick_optionals <task_title> [--previously <selected>] <optional_id> [<optional_id> ...]
-# Multi-select checklist of optional installers, all default-off. Echoes the
+# menu_pick_optionals <role_title> [--previously <selected>] <optional_id> [<optional_id> ...]
+# Multi-select checklist of optional features, all default-off. Echoes the
 # selected IDs (space-separated, possibly quoted by whiptail).
 #
 # Pass --previously "<space-separated-ids>" before the optional ID list to
@@ -135,7 +135,7 @@ menu_show_required() {
 # options.sh to preserve the user's prior picks when they navigate BACK and
 # then forward again.
 menu_pick_optionals() {
-  local task_title="$1"
+  local role_title="$1"
   shift
   local previously=""
   if [[ "${1:-}" == "--previously" ]]; then
@@ -157,23 +157,23 @@ menu_pick_optionals() {
   fi
 
   local -a items=()
-  local id path installer_title default
+  local id path feature_title default
   for id in "$@"; do
     path=$(manifest_path_for "$id" 2>/dev/null)
     if [[ -n $path ]]; then
-      installer_title=$(manifest_get_field "$path" "II_TITLE")
+      feature_title=$(manifest_get_field "$path" "II_TITLE")
     else
-      installer_title=""
+      feature_title=""
     fi
     if [[ $use_previously -eq 1 ]]; then
       [[ -n ${on_set[$id]:-} ]] && default="on" || default="off"
     else
       default="off"
     fi
-    items+=("$id" "${installer_title:-$id}" "$default")
+    items+=("$id" "${feature_title:-$id}" "$default")
   done
 
-  whiptail --title "$task_title — Optional Add-ons" \
+  whiptail --title "$role_title — Optional Add-ons" \
     --ok-button "NEXT" \
     --cancel-button "BACK" \
     --checklist "Optional add-ons (default off; pick any you want)." 20 80 12 \
@@ -256,11 +256,11 @@ _menu_source_choices_for() {
   fi
 }
 
-# menu_edit_config <task_id> <installer_id...>
-# Discovers editable keys from the chosen task's TASK_EDITABLE_CONFIG and each
-# selected installer's II_EDITABLE_CONFIG manifest field. Reads default values
+# menu_edit_config <role_id> <feature_id...>
+# Discovers editable keys from the chosen role's ROLE_EDITABLE_CONFIG and each
+# selected feature's II_EDITABLE_CONFIG manifest field. Reads default values
 # from the corresponding .config files (chained: installicious.config first,
-# then per-installer configs, then task config, then any prior menu-config.sh).
+# then per-feature configs, then role config, then any prior menu-config.sh).
 # Loops a whiptail menu+inputbox until the user picks DONE or BACK. Persists
 # the final values to $PATH_STATE/menu-config.sh on DONE.
 #
@@ -272,41 +272,41 @@ _menu_source_choices_for() {
 #                 auto-advance
 #   255 abort   — user pressed ESC
 #
-# Pass task_id="" or "custom" when running the Custom flow (no task config).
+# Pass role_id="" or "custom" when running the Custom flow (no role config).
 menu_edit_config() {
-  local task_id="$1"
+  local role_id="$1"
   shift
-  local -a installer_ids=("$@")
+  local -a feature_ids=("$@")
 
   # ---- discover editable keys + their owning labels ----
   #
   # Source order in config_files matters: later entries win in
-  # _menu_read_var_chain. To honor "task config overrides installer config",
-  # we append per-installer configs first, then the task config last (so
-  # task values shadow any colliding installer defaults). The user's
+  # _menu_read_var_chain. To honor "role config overrides feature config",
+  # we append per-feature configs first, then the role config last (so
+  # role values shadow any colliding feature defaults). The user's
   # menu-config.sh is layered on top of all of these by the chain helper.
   declare -A key_label key_seen
   local -a config_files=("config/installicious.config")
   local key
-  local task_config_file=""
-  local task_editable=""
+  local role_config_file=""
+  local role_editable=""
 
-  if [[ -n $task_id && $task_id != "custom" ]]; then
-    local task_path
-    task_path=$(task_path_for "$task_id" 2>/dev/null)
-    if [[ -n $task_path ]]; then
-      task_config_file=$(task_get_field "$task_path" "TASK_CONFIG")
-      task_editable=$(task_get_field "$task_path" "TASK_EDITABLE_CONFIG")
-      for key in $task_editable; do
+  if [[ -n $role_id && $role_id != "custom" ]]; then
+    local role_path
+    role_path=$(role_path_for "$role_id" 2>/dev/null)
+    if [[ -n $role_path ]]; then
+      role_config_file=$(role_get_field "$role_path" "ROLE_CONFIG")
+      role_editable=$(role_get_field "$role_path" "ROLE_EDITABLE_CONFIG")
+      for key in $role_editable; do
         [[ -z $key ]] && continue
         key_seen[$key]=1
-        key_label[$key]="task:$task_id"
+        key_label[$key]="role:$role_id"
       done
     fi
   fi
 
   local id path config_file editable
-  for id in "${installer_ids[@]}"; do
+  for id in "${feature_ids[@]}"; do
     [[ -z $id ]] && continue
     path=$(manifest_path_for "$id" 2>/dev/null)
     [[ -z $path ]] && continue
@@ -321,15 +321,15 @@ menu_edit_config() {
     done
   done
 
-  # Task config sources LAST so its values win over any colliding installer
-  # config defaults (per the "task overrides installer" rule).
-  [[ -n $task_config_file && -f $task_config_file ]] && config_files+=("$task_config_file")
+  # Role config sources LAST so its values win over any colliding feature
+  # config defaults (per the "role overrides feature" rule).
+  [[ -n $role_config_file && -f $role_config_file ]] && config_files+=("$role_config_file")
 
   if [[ ${#key_seen[@]} -eq 0 ]]; then
     return 2  # nothing to edit; caller auto-advances
   fi
 
-  # ---- source per-installer choices files for any installer contributing keys ----
+  # ---- source per-feature choices files for any feature contributing keys ----
   # Each <id> contributing keys gets its install-<id>.choices.sh sourced once
   # so menu_key_applicable + the editor's whiptail-menu rendering can see
   # _choices_<KEY> / _applies_<KEY> functions.
@@ -337,8 +337,8 @@ menu_edit_config() {
   local owner_id
   for key in "${!key_seen[@]}"; do
     owner_id="${key_label[$key]}"
-    owner_id="${owner_id#task:}"  # strip task: prefix if present
-    [[ -z $owner_id || $owner_id == "task" ]] && continue
+    owner_id="${owner_id#role:}"  # strip role: prefix if present
+    [[ -z $owner_id || $owner_id == "role" ]] && continue
     [[ -n ${sourced_choices[$owner_id]:-} ]] && continue
     sourced_choices[$owner_id]=1
     _menu_source_choices_for "$owner_id"
@@ -390,7 +390,7 @@ menu_edit_config() {
     # persisted. Only DONE (the cancel-button label, rc!=0 with no choice)
     # forwards; only the explicit "<-- Back" entry (rc=0 with that value)
     # rewinds with persistence. ESC behaves like BACK rather than abort,
-    # per the back-button-everywhere policy (splash + task picker excepted).
+    # per the back-button-everywhere policy (splash + role picker excepted).
     if [[ $rc -eq 255 ]]; then
       result_rc=1  # ESC → treat like BACK (persist + rewind)
       break

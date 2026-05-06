@@ -86,42 +86,42 @@ state_clear_menu_overrides
 
 # ===========================================================================
 echo
-echo "=== Test 7: chain precedence — task config overrides installer config ==="
+echo "=== Test 7: chain precedence — role config overrides feature config ==="
 # Simulates the source order menu_edit_config builds:
-#   installicious.config  →  installer*.config  →  task*.config  →  menu-config.sh
-# A key present in both installer.config and task.config must resolve to the
-# task value (the rule is "task overrides installer").
+#   installicious.config  →  feature*.config  →  role*.config  →  menu-config.sh
+# A key present in both feature.config and role.config must resolve to the
+# role value (the rule is "role overrides feature").
 TMPCFG=$(mktemp -d)
 cat > "$TMPCFG/installicious.config" <<'EOF'
 SHARED_KEY="from_installicious"
-INSTALLER_ONLY="from_installicious"
+FEATURE_ONLY="from_installicious"
 EOF
-cat > "$TMPCFG/installer.config" <<'EOF'
-SHARED_KEY="from_installer"
-INSTALLER_ONLY="from_installer"
-TASK_ONLY=""
+cat > "$TMPCFG/feature.config" <<'EOF'
+SHARED_KEY="from_feature"
+FEATURE_ONLY="from_feature"
+ROLE_ONLY=""
 EOF
-cat > "$TMPCFG/task.config" <<'EOF'
-SHARED_KEY="from_task"
-TASK_ONLY="from_task"
+cat > "$TMPCFG/role.config" <<'EOF'
+SHARED_KEY="from_role"
+ROLE_ONLY="from_role"
 EOF
 
-chkeq "installer-only key resolves to installer value" \
-  "$(_menu_read_var_chain INSTALLER_ONLY "$TMPCFG/installicious.config" "$TMPCFG/installer.config" "$TMPCFG/task.config")" \
-  "from_installer"
+chkeq "feature-only key resolves to feature value" \
+  "$(_menu_read_var_chain FEATURE_ONLY "$TMPCFG/installicious.config" "$TMPCFG/feature.config" "$TMPCFG/role.config")" \
+  "from_feature"
 
-chkeq "task-only key resolves to task value" \
-  "$(_menu_read_var_chain TASK_ONLY "$TMPCFG/installicious.config" "$TMPCFG/installer.config" "$TMPCFG/task.config")" \
-  "from_task"
+chkeq "role-only key resolves to role value" \
+  "$(_menu_read_var_chain ROLE_ONLY "$TMPCFG/installicious.config" "$TMPCFG/feature.config" "$TMPCFG/role.config")" \
+  "from_role"
 
-chkeq "shared key resolves to TASK value (task wins)" \
-  "$(_menu_read_var_chain SHARED_KEY "$TMPCFG/installicious.config" "$TMPCFG/installer.config" "$TMPCFG/task.config")" \
-  "from_task"
+chkeq "shared key resolves to ROLE value (role wins)" \
+  "$(_menu_read_var_chain SHARED_KEY "$TMPCFG/installicious.config" "$TMPCFG/feature.config" "$TMPCFG/role.config")" \
+  "from_role"
 
 # menu-config.sh wins over everything when present.
 echo 'SHARED_KEY="from_user_edit"' > "$TMPSTATE/menu-config.sh"
-chkeq "menu-config.sh overrides task value" \
-  "$(_menu_read_var_chain SHARED_KEY "$TMPCFG/installicious.config" "$TMPCFG/installer.config" "$TMPCFG/task.config")" \
+chkeq "menu-config.sh overrides role value" \
+  "$(_menu_read_var_chain SHARED_KEY "$TMPCFG/installicious.config" "$TMPCFG/feature.config" "$TMPCFG/role.config")" \
   "from_user_edit"
 rm -rf "$TMPCFG"
 state_clear_menu_overrides
