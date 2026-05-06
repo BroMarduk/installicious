@@ -34,8 +34,9 @@
 # Configuration consumed:
 #   PATH_STATE  - directory for state files
 
-_post_install_run_file()  { echo "${PATH_STATE:-state}/post-install-run.sh"; }
-_post_install_note_file() { echo "${PATH_STATE:-state}/post-install-notes.txt"; }
+_post_install_run_file()        { echo "${PATH_STATE:-state}/post-install-run.sh"; }
+_post_install_note_file()       { echo "${PATH_STATE:-state}/post-install-notes.txt"; }
+_post_install_reload_flag()     { echo "${PATH_STATE:-state}/reload-shell"; }
 
 _post_install_ensure_dir() {
   local dir="${PATH_STATE:-state}"
@@ -59,6 +60,23 @@ post_install_run() {
   echo "$cmd" | sudo tee -a "$file" >/dev/null 2>&1 \
     || echo "$cmd" >> "$file" 2>/dev/null \
     || return 1
+}
+
+# post_install_request_shell_reload
+# Set the flag that the /etc/profile.d/installicious.sh wrapper function
+# checks at the end of an installicious run. When the wrapper sees this
+# flag (and the run didn't end with a reboot), it `exec bash -l` so the
+# user's interactive shell picks up new aliases / prompt / etc. without
+# them having to do it manually.
+#
+# A no-op when the user invokes installicious directly without the
+# wrapper — in that case the existing post_install_note explaining
+# `exec bash` is the user-visible fallback.
+post_install_request_shell_reload() {
+  _post_install_ensure_dir
+  local file
+  file=$(_post_install_reload_flag)
+  sudo touch "$file" 2>/dev/null || touch "$file" 2>/dev/null
 }
 
 # post_install_note <id> <message>
@@ -118,13 +136,16 @@ post_install_apply() {
   return $rc
 }
 
-# post_install_clear - drop both queues. Called at start of a fresh run so
-# stale entries from a prior interrupted session don't carry over.
+# post_install_clear - drop both queues + the shell-reload flag. Called at
+# start of a fresh run so stale entries from a prior interrupted session
+# don't carry over.
 post_install_clear() {
-  local cmd_file note_file
+  local cmd_file note_file reload_flag
   cmd_file=$(_post_install_run_file)
   note_file=$(_post_install_note_file)
-  [[ -f $cmd_file  ]] && (sudo rm -f "$cmd_file"  2>/dev/null || rm -f "$cmd_file"  2>/dev/null)
-  [[ -f $note_file ]] && (sudo rm -f "$note_file" 2>/dev/null || rm -f "$note_file" 2>/dev/null)
+  reload_flag=$(_post_install_reload_flag)
+  [[ -f $cmd_file    ]] && (sudo rm -f "$cmd_file"    2>/dev/null || rm -f "$cmd_file"    2>/dev/null)
+  [[ -f $note_file   ]] && (sudo rm -f "$note_file"   2>/dev/null || rm -f "$note_file"   2>/dev/null)
+  [[ -f $reload_flag ]] && (sudo rm -f "$reload_flag" 2>/dev/null || rm -f "$reload_flag" 2>/dev/null)
   return 0
 }

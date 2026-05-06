@@ -66,6 +66,19 @@ if [[ -f "$RESUME_UNIT_SRC" ]]; then
   fi
 fi
 
+# Install the /etc/profile.d/ wrapper that defines the `installicious` shell
+# function. Lets the user run `installicious` (which invokes installicious.sh
+# under sudo) instead of `sudo bash installicious.sh` and gets auto shell
+# reload at the end when a feature requests it (e.g. bash customizer).
+WRAPPER_SRC="$DEST/${PATH_RESOURCES:-resources}/installicious-shell.sh"
+WRAPPER_DST="/etc/profile.d/installicious.sh"
+if [[ -f "$WRAPPER_SRC" ]]; then
+  if [[ ! -f "$WRAPPER_DST" ]] || ! cmp -s "$WRAPPER_SRC" "$WRAPPER_DST" 2>/dev/null; then
+    sudo install -m 0644 "$WRAPPER_SRC" "$WRAPPER_DST"
+    echo "[setup] Installed $WRAPPER_DST — start a new shell, then run 'installicious' instead of 'bash installicious.sh' for auto shell reload."
+  fi
+fi
+
 echo "[setup] Setup complete. Running $DEST/installicious.sh"
 cd "$DEST"
 # We're already root (setup.sh was invoked via sudo). Re-sudo would overwrite
