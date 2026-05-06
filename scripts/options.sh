@@ -138,6 +138,7 @@ while true; do
   case "$stage" in
 
     pick_role)
+      log_info "Rendering role picker."
       role_id=$(menu_select_role "Installicious" \
         "Pick the role for this Pi. Choose Custom to pick features individually." \
         "$role_id")
@@ -184,6 +185,7 @@ while true; do
       ;;
 
     custom_options)
+      log_info "Rendering options checklist."
       options_selected=$(menu_select_category "option" \
         "Installicious Options" \
         "Select system options to configure." \
@@ -197,6 +199,7 @@ while true; do
       ;;
 
     custom_software)
+      log_info "Rendering software checklist."
       software_selected=$(menu_select_category "software" \
         "Installicious Software" \
         "Select software packages to install." \
@@ -225,6 +228,7 @@ while true; do
       ;;
 
     show_required)
+      log_info "Rendering required-features confirmation for role $role_id."
       # shellcheck disable=SC2086
       menu_show_required "$role_title" $role_required
       rc=$?
@@ -241,6 +245,7 @@ while true; do
       ;;
 
     pick_optional)
+      log_info "Rendering optional-features picker for role $role_id."
       # shellcheck disable=SC2086
       optional_picked=$(menu_pick_optionals "$role_title" \
         --previously "${optional_picked//\"/}" \
@@ -275,6 +280,7 @@ while true; do
       ;;
 
     pick_addons)
+      log_info "Rendering add-on sub-menus."
       # Walk each currently-selected installer; if it declares
       # II_OPTIONAL_GROUP, surface its add-ons as a checklist sub-menu.
       # User's picks for each parent are remembered in addons_picked so
@@ -344,6 +350,7 @@ while true; do
       ;;
 
     confirm)
+      log_info "Rendering install confirmation."
       confirm_msg="The following features will run, in dependency order:\n\n  $selected\n\nProceed?"
       menu_confirm "Confirm Install" "$confirm_msg"
       rc=$?
