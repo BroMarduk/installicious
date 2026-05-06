@@ -339,7 +339,7 @@ esac
 # Pi-model + Pi-Zero detection via the canonical `Model:` line in
 # /proc/cpuinfo (matches upstream raspi-config). lib/detect.sh maps
 # Pi Zero / Zero W to model 0 and Pi Zero 2 W to model 3 so the per-Pi
-# gating in install-rconf.choices.sh works for the Zero family without
+# gating in feature-rconf.choices.sh works for the Zero family without
 # special-casing.
 source lib/detect.sh
 PIMODELNUM=$(detect_pi_model)
@@ -351,7 +351,7 @@ fi
 
 # Detect Lite vs Full Pi OS. The desktop edition installs the
 # raspberrypi-ui-mods meta-package; Lite does not. Used by installer choices
-# functions (e.g. install-rconf.choices.sh) to filter desktop-only options
+# functions (e.g. feature-rconf.choices.sh) to filter desktop-only options
 # off the menu on Lite systems and skip applying them at install time.
 if dpkg-query -W -f='${Status}' raspberrypi-ui-mods 2>/dev/null | grep -q "ok installed"; then
   IS_LITE="false"

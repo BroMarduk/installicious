@@ -15,7 +15,7 @@
 # cpuinfo content; production callers omit it (defaults to /proc/cpuinfo).
 #
 # Pi Zero family is mapped to its hardware-equivalent model number so the
-# Pi-N gating in install-rconf.choices.sh works without special-casing:
+# Pi-N gating in feature-rconf.choices.sh works without special-casing:
 #   Pi Zero / Zero W (BCM2835, single-core ARM11) → model 0 (Pi 1 family)
 #   Pi Zero 2 W      (BCM2710, quad-core A53)     → model 3 (Pi 3 family)
 # Code that needs to specifically distinguish a Zero (e.g. RAM-aware
