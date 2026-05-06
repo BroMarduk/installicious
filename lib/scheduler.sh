@@ -171,6 +171,12 @@ scheduler_run_queue() {
     rc=$?
     if [[ $rc -eq $EXIT_REBOOT ]]; then
       log_info "Installer $id requested reboot. Halting queue at cursor $i."
+      # Tell post_install_apply that a reboot occurred during this queue —
+      # commands queued via post_install_run_unless_rebooted will be skipped
+      # when the queue eventually completes.
+      if declare -F post_install_mark_rebooted >/dev/null; then
+        post_install_mark_rebooted
+      fi
       return $EXIT_REBOOT
     fi
     if [[ $rc -ne 0 ]]; then

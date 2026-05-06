@@ -35,8 +35,10 @@
 #   PATH_STATE  - directory for state files
 
 _post_install_run_file()        { echo "${PATH_STATE:-state}/post-install-run.sh"; }
+_post_install_run_skip_file()   { echo "${PATH_STATE:-state}/post-install-run-skip-after-reboot.sh"; }
 _post_install_note_file()       { echo "${PATH_STATE:-state}/post-install-notes.txt"; }
 _post_install_reload_flag()     { echo "${PATH_STATE:-state}/reload-shell"; }
+_post_install_rebooted_flag()   { echo "${PATH_STATE:-state}/queue-rebooted.flag"; }
 
 _post_install_ensure_dir() {
   local dir="${PATH_STATE:-state}"
@@ -62,6 +64,43 @@ post_install_run() {
     || return 1
 }
 
+# post_install_run_unless_rebooted <shell command>
+# Like post_install_run, but if any reboot occurred during this queue
+# (whether triggered by an earlier feature or a later one), the reboot
+# already accomplished what this command does, so we skip it. Use for
+# commands whose effect is reboot-subsumed:
+#   - systemctl daemon-reload (reboot reloads all units anyway)
+#   - update-grub             (reboot re-reads grub config)
+#   - mandb -q                (cron will pick it up; reboot doesn't matter)
+# Anything where running it after a reboot is wasted work belongs here.
+# The reboot flag is set by the scheduler on EXIT_REBOOT and cleared at
+# the next post_install_clear / post_install_apply.
+post_install_run_unless_rebooted() {
+  local cmd="$1"
+  [[ -z $cmd ]] && return 0
+  _post_install_ensure_dir
+  local file
+  file=$(_post_install_run_skip_file)
+  if [[ -f $file ]] && grep -qFx -- "$cmd" "$file" 2>/dev/null; then
+    return 0
+  fi
+  echo "$cmd" | sudo tee -a "$file" >/dev/null 2>&1 \
+    || echo "$cmd" >> "$file" 2>/dev/null \
+    || return 1
+}
+
+# post_install_mark_rebooted
+# Called by the scheduler when an installer returns EXIT_REBOOT. Sets a
+# flag that post_install_apply consults to skip the unless-rebooted
+# command queue. Idempotent — multiple reboots in one queue still result
+# in one flag.
+post_install_mark_rebooted() {
+  _post_install_ensure_dir
+  local file
+  file=$(_post_install_rebooted_flag)
+  sudo touch "$file" 2>/dev/null || touch "$file" 2>/dev/null
+}
+
 # post_install_request_shell_reload
 # Set the flag that the /etc/profile.d/installicious.sh wrapper function
 # checks at the end of an installicious run. When the wrapper sees this
@@ -77,6 +116,16 @@ post_install_request_shell_reload() {
   local file
   file=$(_post_install_reload_flag)
   sudo touch "$file" 2>/dev/null || touch "$file" 2>/dev/null
+}
+
+# post_install_cancel_shell_reload
+# Drop the shell-reload flag. Called by request_reboot — a reboot already
+# starts every shell fresh, so the wrapper's exec-bash would be redundant.
+post_install_cancel_shell_reload() {
+  local file
+  file=$(_post_install_reload_flag)
+  [[ -f $file ]] && (sudo rm -f "$file" 2>/dev/null || rm -f "$file" 2>/dev/null)
+  return 0
 }
 
 # post_install_note <id> <message>
@@ -99,9 +148,14 @@ post_install_note() {
 
 # post_install_apply - run queued commands, then print queued notes, clear.
 post_install_apply() {
-  local cmd_file note_file rc=0
+  local cmd_file skip_file note_file rebooted_flag rc=0
   cmd_file=$(_post_install_run_file)
+  skip_file=$(_post_install_run_skip_file)
   note_file=$(_post_install_note_file)
+  rebooted_flag=$(_post_install_rebooted_flag)
+
+  local rebooted=0
+  [[ -f $rebooted_flag ]] && rebooted=1
 
   if [[ -s $cmd_file ]]; then
     echo
@@ -122,6 +176,35 @@ post_install_apply() {
     sudo rm -f "$cmd_file" 2>/dev/null || rm -f "$cmd_file" 2>/dev/null
   fi
 
+  if [[ -s $skip_file ]]; then
+    if [[ $rebooted -eq 1 ]]; then
+      local skipped
+      skipped=$(wc -l < "$skip_file" 2>/dev/null | tr -d ' ')
+      echo
+      echo "============================================================"
+      echo "  Skipping ${skipped} reboot-subsumed post-install command(s)"
+      echo "  (a reboot during this queue already covered them)"
+      echo "============================================================"
+    else
+      echo
+      echo "============================================================"
+      echo "  Running post-install commands (reboot-subsumable)"
+      echo "============================================================"
+      while IFS= read -r cmd; do
+        [[ -z $cmd ]] && continue
+        echo "  > $cmd"
+        bash -c "$cmd"
+        local cmd_rc=$?
+        if [[ $cmd_rc -ne 0 ]]; then
+          echo "  (exit $cmd_rc)"
+          rc=$cmd_rc
+        fi
+      done < "$skip_file"
+      echo "============================================================"
+    fi
+    sudo rm -f "$skip_file" 2>/dev/null || rm -f "$skip_file" 2>/dev/null
+  fi
+
   if [[ -s $note_file ]]; then
     echo
     echo "============================================================"
@@ -133,19 +216,28 @@ post_install_apply() {
     sudo rm -f "$note_file" 2>/dev/null || rm -f "$note_file" 2>/dev/null
   fi
 
+  # Drop the rebooted flag after we've used it. The next queue starts clean
+  # (post_install_clear at the top of scripts/options.sh also clears it).
+  [[ -f $rebooted_flag ]] && (sudo rm -f "$rebooted_flag" 2>/dev/null || rm -f "$rebooted_flag" 2>/dev/null)
+
   return $rc
 }
 
-# post_install_clear - drop both queues + the shell-reload flag. Called at
+# post_install_clear - drop all post-install state (commands, notes,
+# reload-shell flag, reboot flag, unless-rebooted command file). Called at
 # start of a fresh run so stale entries from a prior interrupted session
 # don't carry over.
 post_install_clear() {
-  local cmd_file note_file reload_flag
+  local cmd_file note_file reload_flag skip_file rebooted_flag
   cmd_file=$(_post_install_run_file)
   note_file=$(_post_install_note_file)
   reload_flag=$(_post_install_reload_flag)
-  [[ -f $cmd_file    ]] && (sudo rm -f "$cmd_file"    2>/dev/null || rm -f "$cmd_file"    2>/dev/null)
-  [[ -f $note_file   ]] && (sudo rm -f "$note_file"   2>/dev/null || rm -f "$note_file"   2>/dev/null)
-  [[ -f $reload_flag ]] && (sudo rm -f "$reload_flag" 2>/dev/null || rm -f "$reload_flag" 2>/dev/null)
+  skip_file=$(_post_install_run_skip_file)
+  rebooted_flag=$(_post_install_rebooted_flag)
+  [[ -f $cmd_file       ]] && (sudo rm -f "$cmd_file"       2>/dev/null || rm -f "$cmd_file"       2>/dev/null)
+  [[ -f $note_file      ]] && (sudo rm -f "$note_file"      2>/dev/null || rm -f "$note_file"      2>/dev/null)
+  [[ -f $reload_flag    ]] && (sudo rm -f "$reload_flag"    2>/dev/null || rm -f "$reload_flag"    2>/dev/null)
+  [[ -f $skip_file      ]] && (sudo rm -f "$skip_file"      2>/dev/null || rm -f "$skip_file"      2>/dev/null)
+  [[ -f $rebooted_flag  ]] && (sudo rm -f "$rebooted_flag"  2>/dev/null || rm -f "$rebooted_flag"  2>/dev/null)
   return 0
 }

@@ -68,6 +68,12 @@ request_reboot() {
   local cursor="${II_QUEUE_CURSOR:-0}"
   state_save_reboot "$cursor" "$reason" "$trigger"
 
+  # A pending shell-reload is already covered by the post-reboot login —
+  # cancel the flag so the wrapper function doesn't double-up later.
+  if declare -F post_install_cancel_shell_reload >/dev/null; then
+    post_install_cancel_shell_reload
+  fi
+
   # Best-effort enable the resume service. systemctl exists on all our target
   # OSes (Bookworm/Trixie and forward) but be defensive. Install the unit
   # file first so `systemctl enable` finds something to enable.
