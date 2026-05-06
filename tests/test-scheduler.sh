@@ -21,12 +21,15 @@ TMPDIR=$(mktemp -d)
 TMPLOG=$(mktemp)
 trap "rm -rf $TMPDIR $TMPLOG" EXIT
 
-# Override the default installer dir so manifest helpers see our synthetic ones.
-export PATH_INSTALLERS="$TMPDIR"
+# Override the default tier dirs so manifest helpers see only our synthetic
+# ones (point both feature + package scans at the same tempdir; we only drop
+# feature-*.sh files there, so the package glob is a no-op).
+export PATH_FEATURES="$TMPDIR"
+export PATH_PACKAGES="$TMPDIR"
 
 mk_installer() {
   local id="$1" deps="$2" rc="${3:-0}"
-  cat > "$TMPDIR/install-$id.sh" <<EOF
+  cat > "$TMPDIR/feature-$id.sh" <<EOF
 #!/bin/bash
 # === II_MANIFEST_BEGIN ===
 II_ID="$id"
@@ -39,7 +42,7 @@ II_REQUIRES_REBOOT="never"
 echo "$id" >> "$TMPLOG"
 exit $rc
 EOF
-  chmod +x "$TMPDIR/install-$id.sh"
+  chmod +x "$TMPDIR/feature-$id.sh"
 }
 
 reset_log() { > "$TMPLOG"; }
@@ -198,7 +201,7 @@ echo "$SCHEDULER_LAST_ERROR" | grep -q "ghost-dep" && ok "SCHEDULER_LAST_ERROR n
 # ===========================================================================
 echo
 echo "=== Test 16: skyfield → weewx dep resolves cleanly with both present ==="
-# Now that install-weewx.sh is real, picking skyfield should resolve to
+# Now that package-weewx.sh is real, picking skyfield should resolve to
 # {skyfield, weewx} without needing scheduler_run_queue at all (we just
 # verify the dep graph is well-formed).
 mk_installer weewx-fake ""

@@ -34,7 +34,7 @@ DEST="${PATH_INSTALLICIOUS:-/etc/installicious}"
 
 # Make scripts runnable in the source tree.
 chmod 755 setup.sh installicious.sh 2>/dev/null
-chmod 755 dependencies/*.sh installers/*.sh scripts/*.sh 2>/dev/null
+chmod 755 dependencies/*.sh features/*.sh packages/*.sh roles/*.sh scripts/*.sh 2>/dev/null
 [[ -d lib ]]   && chmod 755 lib/*.sh 2>/dev/null
 [[ -d tests ]] && chmod 755 tests/*.sh 2>/dev/null
 

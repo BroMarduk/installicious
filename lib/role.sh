@@ -10,11 +10,10 @@
 #   FEATURE  — a coherent piece of functionality (motd, weewx, pihole-core,
 #              raspi-config tweaks, …). A role pulls in some required
 #              features (shown but not toggleable) and may default-select or
-#              offer additional optional features. Today these still live as
-#              install-*.sh under installers/ and will migrate into
-#              features/ in a later pass.
+#              offer additional optional features. Lives as feature-*.sh
+#              under $PATH_FEATURES.
 #   PACKAGE  — a raw apt package installable independently or required by a
-#              feature.
+#              feature. Lives as package-*.sh under $PATH_PACKAGES.
 #
 # Each role lives in $PATH_ROLES/role-<id>.sh with a fenced manifest block:
 #

@@ -5,7 +5,7 @@
 # Two entry points, for two different cases:
 #
 # 1) Apt-only installer (the entire job is "ensure these apt packages are
-#    installed"). Drop in a thin installers/install-<id>.sh:
+#    installed"). Drop in a thin packages/package-<id>.sh:
 #
 #      #!/bin/bash
 #      # === II_MANIFEST_BEGIN ===

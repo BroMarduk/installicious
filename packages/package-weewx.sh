@@ -9,7 +9,7 @@
 #              v1 stub — installs the apt package and stops there. Station
 #              configuration (lat/lon, station type, skin selection, service
 #              enable, database path, etc.) is left for a follow-up pass.
-#              Extensions like SkyfieldAlmanac (install-skyfield.sh) layer on
+#              Extensions like SkyfieldAlmanac (feature-skyfield.sh) layer on
 #              top of this via II_DEPS and the wee_extension tool.
 #
 #              All lifecycle handling (install, skip-if-current, uninstall,

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Round-trip smoke test for the four migrated installers.
+# Round-trip smoke test for git/pip packages and pkupd/zram features.
 # install -> uninstall -> install verifies state is fully restored each cycle.
 #
 # Stubs apt-get/dpkg/dpkg-query/systemctl/swapoff/sudo so this can run on the
@@ -21,7 +21,7 @@ trap "mv -f config/installicious.config.bak config/installicious.config; rm -rf 
 sed -i "s|^PATH_STATUS=.*|PATH_STATUS=\"$TMPSTATUS\"|" config/installicious.config
 sed -i "s|^PATH_BACKUP=.*|PATH_BACKUP=\"$TMPBACKUP\"|" config/installicious.config
 
-# Redirect install-zram's /etc paths to a sandbox so the script's own [[ -f ]]
+# Redirect feature-zram's /etc paths to a sandbox so the script's own [[ -f ]]
 # checks see the same files our sudo stub creates. Production paths are the
 # defaults inside the script; these overrides are test-only.
 export ZRAMSWAP_DEFAULTS="$TMPETC/default/zramswap"
@@ -127,21 +127,21 @@ run()      { ( bash "$@" ) >/dev/null 2>&1; }
 
 # ===========================================================================
 echo "=== Test 1: install-git round-trip (git not pre-installed) ==="
-run installers/install-git.sh; rc=$?
+run packages/package-git.sh; rc=$?
 chkrc "install exit 0" $rc
 chkf "git installed" "$STUB/.installed_git"
 chkgrep "PRE_INSTALLED=false recorded" "^GIT_FW_PRE_INSTALLED=\"false\"" "$TMPSTATUS/git.status"
 
-run installers/install-git.sh --uninstall; rc=$?
+run packages/package-git.sh --uninstall; rc=$?
 chkrc "uninstall exit 0" $rc
 chknof "git removed" "$STUB/.installed_git"
 chkgrep "FW_STATE=uninstalled" "^GIT_FW_STATE=\"uninstalled\"" "$TMPSTATUS/git.status"
 
-run installers/install-git.sh
+run packages/package-git.sh
 chkf "re-install: git back" "$STUB/.installed_git"
 chkgrep "FW_STATE=completed" "^GIT_FW_STATE=\"completed\"" "$TMPSTATUS/git.status"
 
-run installers/install-git.sh --uninstall
+run packages/package-git.sh --uninstall
 chknof "re-uninstall: git gone" "$STUB/.installed_git"
 
 # ===========================================================================
@@ -149,10 +149,10 @@ echo
 echo "=== Test 2: install-git (git WAS pre-installed) — package preserved ==="
 rm -f "$TMPSTATUS"/git.status
 touch "$STUB/.installed_git"
-run installers/install-git.sh
+run packages/package-git.sh
 chkgrep "PRE_INSTALLED=true recorded" "^GIT_FW_PRE_INSTALLED=\"true\"" "$TMPSTATUS/git.status"
 
-run installers/install-git.sh --uninstall
+run packages/package-git.sh --uninstall
 chkf "uninstall did NOT remove pre-existing git" "$STUB/.installed_git"
 rm -f "$STUB/.installed_git"
 rm -f "$TMPSTATUS"/git.status
@@ -160,29 +160,29 @@ rm -f "$TMPSTATUS"/git.status
 # ===========================================================================
 echo
 echo "=== Test 3: install-pip round-trip ==="
-run installers/install-pip.sh
+run packages/package-pip.sh
 chkf "python3-pip installed" "$STUB/.installed_python3-pip"
 # Pre-state is keyed by package name (PYTHON3_PIP_…), not installer name —
 # installer_apt supports multi-package installers where this distinction matters.
 chkgrep "PRE_INSTALLED=false" "^PYTHON3_PIP_FW_PRE_INSTALLED=\"false\"" "$TMPSTATUS/pip.status"
 
-run installers/install-pip.sh --uninstall
+run packages/package-pip.sh --uninstall
 chknof "python3-pip removed" "$STUB/.installed_python3-pip"
 chkgrep "PIP_FW_STATE=uninstalled" "^PIP_FW_STATE=\"uninstalled\"" "$TMPSTATUS/pip.status"
 
-run installers/install-pip.sh
+run packages/package-pip.sh
 chkf "re-install" "$STUB/.installed_python3-pip"
-run installers/install-pip.sh --uninstall
+run packages/package-pip.sh --uninstall
 chknof "re-uninstall" "$STUB/.installed_python3-pip"
 
 # ===========================================================================
 echo
 echo "=== Test 4: install-pkupd uninstall is no-op + mark ==="
 > "$STUB/.calls"
-run installers/install-pkupd.sh
+run features/feature-pkupd.sh
 chkgrep "FW_STATE=completed" "^PKUPD_FW_STATE=\"completed\"" "$TMPSTATUS/pkupd.status"
 
-OUT=$(bash installers/install-pkupd.sh --uninstall 2>&1)
+OUT=$(bash features/feature-pkupd.sh --uninstall 2>&1)
 echo "$OUT" | grep -q "not reversible" && ok "uninstall logged 'not reversible'" || fail "uninstall did not log 'not reversible'"
 chkgrep "FW_STATE=uninstalled" "^PKUPD_FW_STATE=\"uninstalled\"" "$TMPSTATUS/pkupd.status"
 
@@ -192,7 +192,7 @@ echo "=== Test 5: install-zram round-trip (zram-tools, fresh system) ==="
 rm -rf "$TMPETC"/* 2>/dev/null
 rm -f "$TMPSTATUS"/zram.status
 
-run installers/install-zram.sh; rc=$?
+run features/feature-zram.sh; rc=$?
 chkrc "install exit 0" $rc
 chkf "zramswap config written" "$ZRAMSWAP_DEFAULTS"
 chkf "zram-tools installed" "$STUB/.installed_zram-tools"
@@ -200,13 +200,13 @@ chkgrep "PRE_ZRAM_TOOLS=false"    "^ZRAM_FW_PRE_ZRAM_TOOLS_INSTALLED=\"false\"" 
 chkgrep "PRE_DPHYS=false"         "^ZRAM_FW_PRE_DPHYS_ENABLED=\"false\""        "$TMPSTATUS/zram.status"
 chkgrep "SWAP_MANAGER=zram-tools" "^ZRAM_FW_SWAP_MANAGER_USED=\"zram-tools\""   "$TMPSTATUS/zram.status"
 
-run installers/install-zram.sh --uninstall; rc=$?
+run features/feature-zram.sh --uninstall; rc=$?
 chkrc "uninstall exit 0" $rc
 chknof "zramswap config removed (we created it)" "$ZRAMSWAP_DEFAULTS"
 chknof "zram-tools removed" "$STUB/.installed_zram-tools"
 chkgrep "FW_STATE=uninstalled" "^ZRAM_FW_STATE=\"uninstalled\"" "$TMPSTATUS/zram.status"
 
-run installers/install-zram.sh
+run features/feature-zram.sh
 chkf "re-install: zramswap config back" "$ZRAMSWAP_DEFAULTS"
 chkf "re-install: zram-tools back" "$STUB/.installed_zram-tools"
 
@@ -226,11 +226,11 @@ USER_CFG
 touch "$STUB/.installed_zram-tools"
 ORIG_CONTENT=$(cat "$ZRAMSWAP_DEFAULTS")
 
-run installers/install-zram.sh
+run features/feature-zram.sh
 chkgrep "PRE_ZRAM_TOOLS=true" "^ZRAM_FW_PRE_ZRAM_TOOLS_INSTALLED=\"true\"" "$TMPSTATUS/zram.status"
 chkgrep "config overwritten"  "^PERCENTAGE=50"                            "$ZRAMSWAP_DEFAULTS"
 
-run installers/install-zram.sh --uninstall
+run features/feature-zram.sh --uninstall
 chkf "pre-existing zram-tools NOT removed" "$STUB/.installed_zram-tools"
 chkf "config file restored (not deleted)" "$ZRAMSWAP_DEFAULTS"
 RESTORED=$(cat "$ZRAMSWAP_DEFAULTS")
@@ -245,11 +245,11 @@ rm -f "$STUB"/.svc_*
 rm -f "$STUB/.installed_zram-tools"
 touch "$STUB/.svc_dphys-swapfile_enabled"
 
-run installers/install-zram.sh
+run features/feature-zram.sh
 chkgrep "PRE_DPHYS=true recorded" "^ZRAM_FW_PRE_DPHYS_ENABLED=\"true\"" "$TMPSTATUS/zram.status"
 chknof "dphys disabled by install" "$STUB/.svc_dphys-swapfile_enabled"
 
-run installers/install-zram.sh --uninstall
+run features/feature-zram.sh --uninstall
 chkf "dphys re-enabled by uninstall (pre-state restored)" "$STUB/.svc_dphys-swapfile_enabled"
 
 echo

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Sanity check that install-bash.sh's match strings actually match the
+# Sanity check that feature-bash.sh's match strings actually match the
 # default Pi OS .bashrc lines. Re-uses the same string definitions.
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 1
@@ -23,7 +23,7 @@ cat > "$TMP" <<'BASHRC'
 # alias mv='mv -i'
 BASHRC
 
-# Reproduce the exact strings from install-bash.sh (must match its quoting).
+# Reproduce the exact strings from feature-bash.sh (must match its quoting).
 ROOT_PS1_OLD="# PS1='\${debian_chroot:+(\$debian_chroot)}\\h:\\w\\\$ '"
 ROOT_PS1_NEW="PS1='\${debian_chroot:+(\$debian_chroot)}\\[\\033[01;31m\\]\\u@\\h\\[\\033[00m\\]:\\[\\033[01;34m\\]\\w\\[\\033[00m\\]\\\$ '"
 

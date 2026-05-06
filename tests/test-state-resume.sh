@@ -21,7 +21,8 @@ TMPSTATE=$(mktemp -d)
 TMPLOG=$(mktemp)
 trap "rm -rf $TMPDIR $TMPSTATE $TMPLOG" EXIT
 
-export PATH_INSTALLERS="$TMPDIR"
+export PATH_FEATURES="$TMPDIR"
+export PATH_PACKAGES="$TMPDIR"
 export PATH_STATE="$TMPSTATE"
 
 # ===========================================================================
@@ -58,7 +59,7 @@ echo "=== Test 4: scheduler persists cursor and resume picks up ==="
 # Build synthetic installers.
 mk_installer() {
   local id="$1" deps="$2" rc="${3:-0}"
-  cat > "$TMPDIR/install-$id.sh" <<EOF
+  cat > "$TMPDIR/feature-$id.sh" <<EOF
 #!/bin/bash
 # === II_MANIFEST_BEGIN ===
 II_ID="$id"
@@ -71,7 +72,7 @@ II_REQUIRES_REBOOT="never"
 echo "$id" >> "$TMPLOG"
 exit $rc
 EOF
-  chmod +x "$TMPDIR/install-$id.sh"
+  chmod +x "$TMPDIR/feature-$id.sh"
 }
 > "$TMPLOG"
 mk_installer s1 ""

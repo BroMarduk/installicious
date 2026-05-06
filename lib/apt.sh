@@ -4,7 +4,7 @@
 #
 # Provides timestamp-cached apt operations + idempotent install/remove.
 # Absorbs the logic from functions/pkupd-software-check.sh and the apt cache
-# logic in installers/install-pkupd.sh.
+# logic in features/feature-pkupd.sh.
 #
 # Usage:
 #   source lib/installicious.config + lib/log.sh + lib/status.sh + lib/apt.sh

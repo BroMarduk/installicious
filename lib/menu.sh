@@ -244,15 +244,19 @@ menu_key_applicable() {
 }
 
 # _menu_source_choices_for <id>
-# Sources installers/install-<id>.choices.sh if present so its _choices_*/
+# Locates <id>'s feature/package manifest, then sources the sibling
+# *.choices.sh file (replace .sh suffix) if present so its _choices_*/
 # _applies_* functions become available. Side-effect-free: choices files
 # define functions only.
 _menu_source_choices_for() {
   local id="$1"
-  local path="${PATH_INSTALLERS:-installers}/install-${id}.choices.sh"
-  if [[ -f $path ]]; then
+  local manifest_path
+  manifest_path=$(manifest_path_for "$id" 2>/dev/null) || return 0
+  [[ -z $manifest_path ]] && return 0
+  local choices_path="${manifest_path%.sh}.choices.sh"
+  if [[ -f $choices_path ]]; then
     # shellcheck disable=SC1090
-    source "$path"
+    source "$choices_path"
   fi
 }
 

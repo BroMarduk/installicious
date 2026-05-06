@@ -125,16 +125,20 @@ else
   fi
 fi
 
-# Make sure the installers directory variable can be found.
-if [[ -z $PATH_INSTALLERS ]]; then
-  echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to find a value for the installers directory in the configuration $FILE_CONFIG_INSTALLICIOUS." | sudo tee --append $FILE_LOG_INSTALLER
+# Make sure the features and packages directory variables can be found.
+if [[ -z $PATH_FEATURES ]]; then
+  echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to find a value for the features directory in the configuration $FILE_CONFIG_INSTALLICIOUS." | sudo tee --append $FILE_LOG_INSTALLER
   exit 1
-else
-  # Check for scripts directory as it must exist.
-  if [[ ! -d $PATH_INSTALLERS ]]; then
-    echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to find the scripts installers $PATH_INSTALLERS specifed in the configuration file $FILE_CONFIG_INSTALLICIOUS." | sudo tee --append $FILE_LOG_INSTALLER
-    exit 1
-  fi
+elif [[ ! -d $PATH_FEATURES ]]; then
+  echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to find the features directory $PATH_FEATURES specifed in the configuration file $FILE_CONFIG_INSTALLICIOUS." | sudo tee --append $FILE_LOG_INSTALLER
+  exit 1
+fi
+if [[ -z $PATH_PACKAGES ]]; then
+  echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to find a value for the packages directory in the configuration $FILE_CONFIG_INSTALLICIOUS." | sudo tee --append $FILE_LOG_INSTALLER
+  exit 1
+elif [[ ! -d $PATH_PACKAGES ]]; then
+  echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to find the packages directory $PATH_PACKAGES specifed in the configuration file $FILE_CONFIG_INSTALLICIOUS." | sudo tee --append $FILE_LOG_INSTALLER
+  exit 1
 fi
 
 # PATH_DEPENDENCIES is legacy — the lib/apt.sh helpers replaced the

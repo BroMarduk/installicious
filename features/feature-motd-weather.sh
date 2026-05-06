@@ -9,7 +9,7 @@
 #              II_DEPS="motd" so the scheduler auto-pulls the base MOTD
 #              installer into the queue whenever weather is selected on its
 #              own. The Pillar-6 hardened scheduler will refuse to start the
-#              run if install-motd.sh is somehow missing.
+#              run if feature-motd.sh is somehow missing.
 #
 #              Symmetric --uninstall: removes the cron job, then reverts
 #              jshon (only if we installed it).

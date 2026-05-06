@@ -10,6 +10,7 @@
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 1
 
+source lib/manifest.sh
 source lib/menu.sh
 
 ok()    { echo "  OK $1"; }
@@ -49,13 +50,24 @@ unset -f _choices_K3
 
 # ===========================================================================
 echo
-echo "=== Test 5: synthetic installer choices file — Pi-version gating ==="
-# Drop a fake installer + choices file into a tempdir and source-load it
-# the same way menu_edit_config does in production. Validates that the
-# choices files can drive applicability via runtime detection variables
-# (II_MODEL_NUM, II_IS_LITE, II_CODENAME).
-mkdir -p "$TMPDIR/installers"
-cat > "$TMPDIR/installers/install-foo.choices.sh" <<'EOF'
+echo "=== Test 5: synthetic feature choices file — Pi-version gating ==="
+# Drop a fake feature manifest + sibling choices file into a tempdir and
+# source-load it the same way menu_edit_config does in production.
+# _menu_source_choices_for derives the choices path from the manifest's
+# location, so a real manifest needs to exist next to the choices file.
+mkdir -p "$TMPDIR/features"
+cat > "$TMPDIR/features/feature-foo.sh" <<'EOF'
+#!/bin/bash
+# === II_MANIFEST_BEGIN ===
+II_ID="foo"
+II_TITLE="Foo (synthetic)"
+II_CATEGORY="option"
+II_VERSION="1"
+II_DEPS=""
+II_REQUIRES_REBOOT="never"
+# === II_MANIFEST_END ===
+EOF
+cat > "$TMPDIR/features/feature-foo.choices.sh" <<'EOF'
 # Synthetic choices file — exercises common gating patterns.
 
 # Always-applicable enumerated key.
@@ -105,7 +117,11 @@ _applies_FOO_FREE_PI4() {
 EOF
 
 # Use _menu_source_choices_for to load it, exactly as menu_edit_config does.
-PATH_INSTALLERS="$TMPDIR/installers" _menu_source_choices_for "foo"
+# Override PATH_FEATURES + PATH_PACKAGES so manifest_path_for finds our synthetic
+# feature-foo.sh (manifest_path_for is what _menu_source_choices_for uses to
+# locate the sibling .choices.sh file).
+PATH_FEATURES="$TMPDIR/features" PATH_PACKAGES="$TMPDIR/features" \
+  _menu_source_choices_for "foo"
 declare -F _choices_FOO_BOOL >/dev/null && ok "synthetic choices loaded (FOO_BOOL)" \
   || fail "_menu_source_choices_for did not load synthetic file"
 
@@ -169,13 +185,15 @@ unset -f _choices_FOO_BOOL 2>/dev/null
 declare -F _choices_FOO_BOOL >/dev/null && fail "stale function not unset" \
   || ok "function unset (precondition)"
 
-# A path with no choices file shouldn't error or define functions.
-PATH_INSTALLERS="$TMPDIR/installers" _menu_source_choices_for "nonexistent-installer"
+# An ID with no manifest entry shouldn't error or define functions.
+PATH_FEATURES="$TMPDIR/features" PATH_PACKAGES="$TMPDIR/features" \
+  _menu_source_choices_for "nonexistent-feature"
 declare -F _choices_NONEXISTENT >/dev/null && fail "function unexpectedly defined" \
-  || ok "no function defined when file is missing"
+  || ok "no function defined when manifest is missing"
 
 # Re-loading the foo file restores its functions.
-PATH_INSTALLERS="$TMPDIR/installers" _menu_source_choices_for "foo"
+PATH_FEATURES="$TMPDIR/features" PATH_PACKAGES="$TMPDIR/features" \
+  _menu_source_choices_for "foo"
 declare -F _choices_FOO_BOOL >/dev/null && ok "function reloaded after second source" \
   || fail "function not reloaded"
 
