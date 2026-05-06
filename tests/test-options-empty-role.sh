@@ -5,7 +5,9 @@
 # the empty-role corner without driving whiptail.
 #
 # This is the path stubbed roles take today (homeassistant, mediaserver, pihole,
-# weewx all have empty required/optional and so fall through to merge_role).
+# weewx all have empty required/optional and so flow through the Custom-style
+# per-feature picker — they "behave like Custom" until they grow real feature
+# lists).
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 1
 
@@ -15,6 +17,7 @@ source lib/manifest.sh
 ok()    { echo "  OK $1"; }
 fail()  { echo "  FAIL $1"; }
 chkeq() { [[ "$2" == "$3" ]] && ok "$1" || fail "$1 (got '$2', want '$3')"; }
+chkrc() { [[ $2 -eq $3 ]] && ok "$1" || fail "$1 (rc=$2, want $3)"; }
 
 TMPDIR=$(mktemp -d)
 trap "rm -rf $TMPDIR" EXIT
@@ -44,9 +47,11 @@ chkeq "OPTIONAL empty" "$optional" ""
 
 # ===========================================================================
 echo
-echo "=== Test 2: pick_role stage routes empty role to merge_role ==="
+echo "=== Test 2: pick_role stage routes empty role to custom_options ==="
 # Mirrors the decision tree in scripts/options.sh::pick_role that selects the
 # next stage based on whether the role has required/optional features.
+# A role with neither required nor optional features falls through to
+# custom_options (the per-feature picker) — same flow Custom uses.
 next_stage_for_role() {
   local req="$1" opt="$2"
   if [[ -n $req ]]; then
@@ -54,27 +59,30 @@ next_stage_for_role() {
   elif [[ -n $opt ]]; then
     echo "pick_optional"
   else
-    echo "merge_role"
+    echo "custom_options"
   fi
 }
 chkeq "non-empty req → show_required"        "$(next_stage_for_role 'pkupd' '')"   "show_required"
 chkeq "empty req, opt only → pick_optional"  "$(next_stage_for_role '' 'zram')"    "pick_optional"
-chkeq "both empty → merge_role"              "$(next_stage_for_role '' '')"        "merge_role"
+chkeq "both empty → custom_options"          "$(next_stage_for_role '' '')"        "custom_options"
 
 # ===========================================================================
 echo
-echo "=== Test 3: merge_role with no input produces empty selection ==="
-# Mirrors the merge logic in scripts/options.sh::merge_role. An empty result
-# is the trigger for the "nothing to do" early exit.
-merge_role_selection() {
-  local req="$1" opt="$2"
-  local selected="$req ${opt//\"/}"
-  echo "$selected" | tr -s ' ' | sed 's/^ //; s/ $//'
+echo "=== Test 3: _role_uses_custom_flow predicate ==="
+# Mirrors the helper in scripts/options.sh used by prev_selection_stage and
+# _pre_addons_stage. Returns true (rc=0) for Custom OR any role with both
+# required and optional empty.
+role_uses_custom_flow() {
+  local role_id="$1" req="$2" opt="$3"
+  [[ $role_id == "custom" ]] && return 0
+  [[ -z $req && -z $opt ]] && return 0
+  return 1
 }
-chkeq "empty req + empty opt → empty"      "$(merge_role_selection '' '')"             ""
-chkeq "req only → req preserved"            "$(merge_role_selection 'pkupd rconf' '')" "pkupd rconf"
-chkeq "req + opt → space-joined"            "$(merge_role_selection 'pkupd' 'zram')"   "pkupd zram"
-chkeq "quoted opt has quotes stripped"      "$(merge_role_selection 'pkupd' '"zram"')" "pkupd zram"
+role_uses_custom_flow "custom" "" "";       chkrc "custom always true"            $? 0
+role_uses_custom_flow "weewx"  "" "";       chkrc "stubbed role (both empty) true" $? 0
+role_uses_custom_flow "weewx"  "pkupd" "";  chkrc "non-empty req → false"         $? 1
+role_uses_custom_flow "weewx"  "" "zram";   chkrc "non-empty opt → false"         $? 1
+role_uses_custom_flow "weewx"  "pkupd" "zram"; chkrc "both populated → false"     $? 1
 
 # ===========================================================================
 echo

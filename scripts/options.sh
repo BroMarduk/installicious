@@ -89,10 +89,19 @@ _any_parent_has_addons() {
   done
   return 1
 }
+# True for the Custom role and any role that declares no required / optional
+# features (the stubbed roles today: homeassistant, mediaserver, pihole,
+# weewx). Both flow through the per-feature checklist (custom_options →
+# custom_software) instead of show_required / pick_optional.
+_role_uses_custom_flow() {
+  [[ $role_id == "custom" ]] && return 0
+  [[ -z $role_required && -z $role_optional ]] && return 0
+  return 1
+}
 prev_selection_stage() {
   if _any_parent_has_addons; then
     echo "pick_addons"
-  elif [[ $role_id == "custom" ]]; then
+  elif _role_uses_custom_flow; then
     echo "custom_software"
   elif [[ -n $role_optional ]]; then
     echo "pick_optional"
@@ -105,7 +114,7 @@ prev_selection_stage() {
 # What pick_addons rewinds to (the same logic as prev_selection_stage but
 # without considering pick_addons itself).
 _pre_addons_stage() {
-  if [[ $role_id == "custom" ]]; then
+  if _role_uses_custom_flow; then
     echo "custom_software"
   elif [[ -n $role_optional ]]; then
     echo "pick_optional"
@@ -154,11 +163,14 @@ while true; do
         elif [[ -n $role_optional ]]; then
           stage="pick_optional"
         else
-          # Role with neither required nor optional — degenerate but harmless;
-          # treat like custom-with-empty-selection. (Stubbed roles take this
-          # branch today; once they declare their features they won't.)
-          selected=""
-          stage="merge_role"
+          # Role with neither required nor optional features — the stubbed
+          # roles today (homeassistant, mediaserver, pihole, weewx) take
+          # this branch. Behave like Custom: drop into the per-feature
+          # picker so the user can still build a queue. Once a stub gains
+          # real ROLE_FEATURES_REQUIRED/OPTIONAL it'll route through
+          # show_required / pick_optional like a populated role.
+          log_info "Role $role_id has no required/optional features defined; routing to per-feature picker."
+          stage="custom_options"
         fi
       fi
       ;;
