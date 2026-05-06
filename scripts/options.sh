@@ -73,6 +73,11 @@ selected=""           # final list (parents + their picked add-ons)
 selected_parents=""   # the user's category/role picks BEFORE add-ons get merged
 declare -A addons_picked   # parent_id → space-separated add-on IDs the user picked
 
+# Tracks the stage we just left, so stages that auto-advance on rc=2 (e.g.
+# edit_config when no keys are editable) can detect a back-from-confirm
+# bounce and rewind further instead of trapping the user on confirm.
+prev_stage=""
+
 # ---------------------------------------------------------------------------
 # Stage state machine
 # ---------------------------------------------------------------------------
@@ -126,7 +131,10 @@ _pre_addons_stage() {
 }
 
 stage="pick_role"
+_entry_stage=""
 while true; do
+  prev_stage="$_entry_stage"
+  _entry_stage="$stage"
   case "$stage" in
 
     pick_role)
@@ -321,7 +329,17 @@ while true; do
       case $rc in
         0)     stage="confirm" ;;
         1|255) stage=$(prev_selection_stage) ;;
-        2)     stage="confirm" ;;  # nothing to edit; auto-advance
+        2)
+          # No editable keys for the current selection. Auto-advance — but
+          # if the user just pressed BACK on confirm, going forward to
+          # confirm again creates an infinite bounce. Rewind further in
+          # that case instead.
+          if [[ $prev_stage == "confirm" ]]; then
+            stage=$(prev_selection_stage)
+          else
+            stage="confirm"
+          fi
+          ;;
       esac
       ;;
 
@@ -331,7 +349,7 @@ while true; do
       rc=$?
       case $rc in
         0)     stage="run" ;;
-        1|255) stage="edit_config" ;;        # BACK or ESC → editor
+        1|255) stage="edit_config" ;;  # BACK or ESC → editor
       esac
       ;;
 
