@@ -21,6 +21,19 @@
 #   source lib/menu.sh
 #   ids=$(menu_select_category option "Installicious Options" "Pick what you want.")
 
+# menu_loading_show [<message>]
+# Renders a non-blocking whiptail --infobox so the user has feedback during
+# the (sometimes slow) bash work between menus — manifest scanning is
+# O(n²) for hidden-child detection and noticeable on a Pi. The infobox
+# stays on screen until the next whiptail call replaces it. Helpers below
+# call this once at the top and again when the work moves to a new phase
+# ("Scanning…" → "Building menu…"), giving a step-through feel without
+# the flicker / curses-conflict risk of a real animated spinner.
+menu_loading_show() {
+  local msg="${1:-Loading…}"
+  whiptail --title "Installicious" --infobox "$msg" 8 60 2>/dev/null || true
+}
+
 # menu_select_category <category> [<title>] [<description>] [<previously_selected>]
 # Multi-select checklist for the given manifest category. Echoes the selected
 # IDs on stdout when the user picks NEXT.
@@ -34,6 +47,8 @@ menu_select_category() {
   local title="${2:-Installicious}"
   local desc="${3:-Select items from the ${category} category.}"
   local previously="${4:-}"
+
+  menu_loading_show "Scanning ${category} manifests…"
 
   local use_previously=0
   declare -A on_set=()
@@ -66,6 +81,8 @@ menu_select_category() {
     return 2
   fi
 
+  menu_loading_show "Building ${category} menu…"
+
   whiptail --title "$title" \
     --ok-button "NEXT" \
     --cancel-button "BACK" \
@@ -83,6 +100,8 @@ menu_select_role() {
   local title="${1:-Installicious — Pick a Role}"
   local desc="${2:-Pick the role for this Pi. Choose Custom to pick features individually.}"
   local default_item="${3:-}"
+
+  menu_loading_show "Loading roles…"
 
   local -a items=()
   local id path title_text
@@ -108,6 +127,7 @@ menu_select_role() {
 menu_show_required() {
   local role_title="$1"
   shift
+  menu_loading_show "Resolving required features for $role_title…"
   local message="$role_title will install:"
   local id feature_path feature_title
   for id in "$@"; do
@@ -145,6 +165,8 @@ menu_pick_optionals() {
   if [[ $# -eq 0 ]]; then
     return 2
   fi
+
+  menu_loading_show "Loading optional add-ons for $role_title…"
 
   local use_previously=0
   declare -A on_set=()
@@ -282,6 +304,8 @@ menu_edit_config() {
   shift
   local -a feature_ids=("$@")
 
+  menu_loading_show "Loading configuration…"
+
   # ---- discover editable keys + their owning labels ----
   #
   # Source order in config_files matters: later entries win in
@@ -333,8 +357,10 @@ menu_edit_config() {
     return 2  # nothing to edit; caller auto-advances
   fi
 
+  menu_loading_show "Resolving feature options…"
+
   # ---- source per-feature choices files for any feature contributing keys ----
-  # Each <id> contributing keys gets its install-<id>.choices.sh sourced once
+  # Each <id> contributing keys gets its sibling .choices.sh sourced once
   # so menu_key_applicable + the editor's whiptail-menu rendering can see
   # _choices_<KEY> / _applies_<KEY> functions.
   declare -A sourced_choices
@@ -361,6 +387,8 @@ menu_edit_config() {
   if [[ ${#key_seen[@]} -eq 0 ]]; then
     return 2  # nothing applies on this system
   fi
+
+  menu_loading_show "Reading saved values…"
 
   # ---- read current values via the chain ----
   declare -A current
