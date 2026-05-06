@@ -22,6 +22,31 @@
 
 EXIT_REBOOT=255
 RESUME_SERVICE_NAME="${RESUME_SERVICE_NAME:-installicious-resume.service}"
+RESUME_SERVICE_SRC="${RESUME_SERVICE_SRC:-${PATH_RESOURCES:-resources}/installicious-resume.service}"
+RESUME_SERVICE_DST="${RESUME_SERVICE_DST:-/etc/systemd/system/${RESUME_SERVICE_NAME}}"
+
+# _resume_service_install — copy the unit file into /etc/systemd/system/ so
+# `systemctl enable` actually finds it. systemd looks at /etc/systemd/system/
+# and /lib/systemd/system/, not at our checkout's resources/ dir. Idempotent:
+# copies if missing or out-of-date, otherwise no-op. setup.sh also drops the
+# unit at install time; this is the safety net for a fresh wget+tar that
+# skipped setup.sh.
+_resume_service_install() {
+  if [[ ! -f $RESUME_SERVICE_SRC ]]; then
+    echo "_resume_service_install: source unit not found at $RESUME_SERVICE_SRC" >&2
+    return 1
+  fi
+  if [[ -f $RESUME_SERVICE_DST ]] \
+     && cmp -s "$RESUME_SERVICE_SRC" "$RESUME_SERVICE_DST" 2>/dev/null; then
+    return 0
+  fi
+  if ! sudo install -m 0644 "$RESUME_SERVICE_SRC" "$RESUME_SERVICE_DST" 2>/dev/null; then
+    echo "_resume_service_install: failed to copy unit to $RESUME_SERVICE_DST" >&2
+    return 1
+  fi
+  sudo systemctl daemon-reload 2>/dev/null || true
+  return 0
+}
 
 # request_reboot <reason> <trigger>
 # Save state, enable resume unit, trigger reboot. Does NOT exit; caller is
@@ -44,8 +69,10 @@ request_reboot() {
   state_save_reboot "$cursor" "$reason" "$trigger"
 
   # Best-effort enable the resume service. systemctl exists on all our target
-  # OSes (Bookworm/Trixie and forward) but be defensive.
+  # OSes (Bookworm/Trixie and forward) but be defensive. Install the unit
+  # file first so `systemctl enable` finds something to enable.
   if command -v systemctl >/dev/null 2>&1; then
+    _resume_service_install
     if ! sudo systemctl enable "$RESUME_SERVICE_NAME" 2>/dev/null; then
       echo "request_reboot: failed to enable $RESUME_SERVICE_NAME (continuing)" >&2
     fi

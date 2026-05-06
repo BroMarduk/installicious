@@ -1,17 +1,29 @@
 [Unit]
 Description=Installicious resume after reboot
-Documentation=https://github.com/danbegallie/installicious
+Documentation=https://github.com/BroMarduk/installicious
 After=multi-user.target network-online.target
 Wants=network-online.target
+# Run before getty fires up tty1's login prompt. Conflicts ensures getty
+# is held back while we run; when our oneshot exits, getty starts and the
+# user sees the login prompt. This matches the legacy rc.local-hook
+# behaviour where the resume ran on the console before login was offered.
+Before=getty@tty1.service
+Conflicts=getty@tty1.service
 ConditionPathExists=/etc/installicious/state/queue.sh
 
 [Service]
 Type=oneshot
 WorkingDirectory=/etc/installicious
 ExecStart=/bin/bash /etc/installicious/scripts/resume.sh
+# Bind to /dev/tty1 so the user sees the resume on the console (and so
+# whiptail dialogs invoked by the resumed queue have a real TTY to draw on).
+StandardInput=tty
+StandardOutput=tty
+StandardError=tty
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
 User=root
-StandardOutput=journal
-StandardError=journal
 
 [Install]
 WantedBy=multi-user.target

@@ -53,6 +53,19 @@ sudo mkdir -p "$DEST/${PATH_STATUS:-status}"
 sudo mkdir -p "$DEST/${PATH_STATE:-state}"
 sudo mkdir -p "$DEST/${PATH_BACKUP:-backup}"
 
+# Install the resume systemd unit so request_reboot can enable it. The unit's
+# ConditionPathExists check keeps it dormant until queue.sh exists, so just
+# leaving the file in place is harmless.
+RESUME_UNIT_SRC="$DEST/${PATH_RESOURCES:-resources}/installicious-resume.service"
+RESUME_UNIT_DST="/etc/systemd/system/installicious-resume.service"
+if [[ -f "$RESUME_UNIT_SRC" ]]; then
+  if [[ ! -f "$RESUME_UNIT_DST" ]] || ! cmp -s "$RESUME_UNIT_SRC" "$RESUME_UNIT_DST" 2>/dev/null; then
+    sudo install -m 0644 "$RESUME_UNIT_SRC" "$RESUME_UNIT_DST"
+    sudo systemctl daemon-reload
+    echo "[setup] Installed $RESUME_UNIT_DST"
+  fi
+fi
+
 echo "[setup] Setup complete. Running $DEST/installicious.sh"
 cd "$DEST"
 # We're already root (setup.sh was invoked via sudo). Re-sudo would overwrite
