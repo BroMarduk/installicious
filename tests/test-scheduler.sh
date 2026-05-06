@@ -43,6 +43,9 @@ echo "$id" >> "$TMPLOG"
 exit $rc
 EOF
   chmod +x "$TMPDIR/feature-$id.sh"
+  # Drop the registry cache so manifest_path_for finds the new file. Real
+  # users never add manifests at runtime; this is test-only.
+  manifest_registry_reload
 }
 
 reset_log() { > "$TMPLOG"; }

@@ -73,6 +73,7 @@ echo "$id" >> "$TMPLOG"
 exit $rc
 EOF
   chmod +x "$TMPDIR/feature-$id.sh"
+  manifest_registry_reload
 }
 > "$TMPLOG"
 mk_installer s1 ""
