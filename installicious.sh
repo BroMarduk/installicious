@@ -39,18 +39,19 @@ if [[ -r "$(dirname "$0")/VERSION" ]]; then
 fi
 INSTALLICIOUS_VERSION="${INSTALLICIOUS_VERSION:-unknown}"
 
-# Whiptail color theme: leave the system default in place. We tried a
-# custom NEWT_COLORS theme to fix readability of the active listbox row,
-# but it broke focused-button highlighting in --menu/--yesno dialogs in
-# a way the default theme (which raspi-config also uses) doesn't. The
-# tradeoff wasn't worth it — defaults give working button focus
-# indication, which is more important for navigation than slightly more
-# readable listbox highlights.
+# Whiptail color theme: minimal single-key override.
 #
-# If the listbox active-row contrast becomes a problem again, the right
-# next step is probably to set ONLY actlistbox/actcheckbox via
-# NEWT_COLORS and leave button-related slots untouched, rather than
-# replacing the whole theme.
+# The system default Pi OS / raspi-config theme has the right visual
+# behavior for almost everything we care about — focused buttons get
+# clearly highlighted, listbox cursor row gets the white-on-blue
+# treatment, etc. The only slot we intentionally re-color is `checkbox`
+# (the inactive `[ ]` / `[*]` indicator) to cyan-on-lightgray, which
+# the user verified gives the look they want without breaking
+# button-focus highlighting (a previous attempt at a full custom theme
+# silently broke focused-button rendering in some way I couldn't pin
+# down — defaults work, ours didn't, so we leave well enough alone for
+# every other slot).
+export NEWT_COLORS='checkbox=cyan,lightgray'
 
 # Look for installicious.config file in the same directory.
 if [[ ! -f $FILE_CONFIG_INSTALLICIOUS ]]; then
