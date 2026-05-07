@@ -32,7 +32,7 @@
 # === II_MANIFEST_BEGIN ===
 II_ID="skyfield"
 II_TITLE="SkyfieldAlmanac (WeeWX extension)"
-II_CATEGORY="software"
+II_CATEGORY="feature"
 II_VERSION="1"
 II_DEPS="weewx"
 II_REQUIRES_REBOOT="never"

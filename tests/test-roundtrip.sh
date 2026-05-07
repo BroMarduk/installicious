@@ -197,38 +197,38 @@ echo "=== Test 5: zram round-trip (package + feature, fresh system) ==="
 # apt install + its own pre-state record), then feature-zram (handles
 # /dev/zram0 config + non-package pre-state).
 rm -rf "$TMPETC"/* 2>/dev/null
-rm -f "$TMPSTATUS"/zram.status "$TMPSTATUS"/zram-tools.status
+rm -f "$TMPSTATUS"/compressed-swap.status "$TMPSTATUS"/zram.status
 rm -f "$STUB/.installed_zram-tools"
 
-run packages/package-zram-tools.sh; rc=$?
+run packages/package-zram.sh; rc=$?
 chkrc "package install exit 0" $rc
 chkf "zram-tools installed by package" "$STUB/.installed_zram-tools"
-chkgrep "package PRE_INSTALLED=false" "^ZRAM_TOOLS_FW_PRE_INSTALLED=\"false\"" "$TMPSTATUS/zram-tools.status"
+chkgrep "package PRE_INSTALLED=false" "^ZRAM_TOOLS_FW_PRE_INSTALLED=\"false\"" "$TMPSTATUS/zram.status"
 
-run features/feature-zram.sh; rc=$?
+run features/feature-compressed-swap.sh; rc=$?
 chkrc "feature install exit 0" $rc
 chkf "zramswap config written" "$ZRAMSWAP_DEFAULTS"
-chkgrep "PRE_DPHYS=false"         "^ZRAM_FW_PRE_DPHYS_ENABLED=\"false\""        "$TMPSTATUS/zram.status"
-chkgrep "SWAP_MANAGER=zram-tools" "^ZRAM_FW_SWAP_MANAGER_USED=\"zram-tools\""   "$TMPSTATUS/zram.status"
+chkgrep "PRE_DPHYS=false"         "^COMPRESSED_SWAP_FW_PRE_DPHYS_ENABLED=\"false\"" "$TMPSTATUS/compressed-swap.status"
+chkgrep "SWAP_MANAGER=zram-tools" "^COMPRESSED_SWAP_FW_SWAP_MANAGER_USED=\"zram-tools\"" "$TMPSTATUS/compressed-swap.status"
 # zram-tools pre-state is now tracked by the package, NOT the feature.
-grep -q '^ZRAM_FW_PRE_ZRAM_TOOLS_INSTALLED=' "$TMPSTATUS/zram.status" 2>/dev/null \
-  && fail "feature should no longer track ZRAM_FW_PRE_ZRAM_TOOLS_INSTALLED" \
+grep -q '^COMPRESSED_SWAP_FW_PRE_ZRAM_TOOLS_INSTALLED=' "$TMPSTATUS/compressed-swap.status" 2>/dev/null \
+  && fail "feature should no longer track COMPRESSED_SWAP_FW_PRE_ZRAM_TOOLS_INSTALLED" \
   || ok "feature does not duplicate package's pre-state tracking"
 
 # Reverse order on uninstall: feature first (config files), package after
 # (apt remove). zram-tools should come out because its pre-state was false.
-run features/feature-zram.sh --uninstall; rc=$?
+run features/feature-compressed-swap.sh --uninstall; rc=$?
 chkrc "feature uninstall exit 0" $rc
 chknof "zramswap config removed (we created it)" "$ZRAMSWAP_DEFAULTS"
-chkgrep "FW_STATE=uninstalled" "^ZRAM_FW_STATE=\"uninstalled\"" "$TMPSTATUS/zram.status"
+chkgrep "FW_STATE=uninstalled" "^COMPRESSED_SWAP_FW_STATE=\"uninstalled\"" "$TMPSTATUS/compressed-swap.status"
 
-run packages/package-zram-tools.sh --uninstall; rc=$?
+run packages/package-zram.sh --uninstall; rc=$?
 chkrc "package uninstall exit 0" $rc
 chknof "zram-tools removed" "$STUB/.installed_zram-tools"
 
 # Re-install round-trip: package then feature, both come back.
-run packages/package-zram-tools.sh
-run features/feature-zram.sh
+run packages/package-zram.sh
+run features/feature-compressed-swap.sh
 chkf "re-install: zramswap config back" "$ZRAMSWAP_DEFAULTS"
 chkf "re-install: zram-tools back" "$STUB/.installed_zram-tools"
 
@@ -236,7 +236,7 @@ chkf "re-install: zram-tools back" "$STUB/.installed_zram-tools"
 echo
 echo "=== Test 6: zram preserves pre-existing zram-tools and config ==="
 rm -rf "$TMPETC"/*
-rm -f "$TMPSTATUS"/zram.status "$TMPSTATUS"/zram-tools.status
+rm -f "$TMPSTATUS"/compressed-swap.status "$TMPSTATUS"/zram.status
 rm -f "$STUB/.installed_zram-tools"
 mkdir -p "$(dirname "$ZRAMSWAP_DEFAULTS")"
 cat > "$ZRAMSWAP_DEFAULTS" <<USER_CFG
@@ -248,14 +248,14 @@ USER_CFG
 touch "$STUB/.installed_zram-tools"
 ORIG_CONTENT=$(cat "$ZRAMSWAP_DEFAULTS")
 
-run packages/package-zram-tools.sh
-chkgrep "package PRE_INSTALLED=true" "^ZRAM_TOOLS_FW_PRE_INSTALLED=\"true\"" "$TMPSTATUS/zram-tools.status"
+run packages/package-zram.sh
+chkgrep "package PRE_INSTALLED=true" "^ZRAM_TOOLS_FW_PRE_INSTALLED=\"true\"" "$TMPSTATUS/zram.status"
 
-run features/feature-zram.sh
+run features/feature-compressed-swap.sh
 chkgrep "config overwritten"  "^PERCENTAGE=50"                            "$ZRAMSWAP_DEFAULTS"
 
-run features/feature-zram.sh --uninstall
-run packages/package-zram-tools.sh --uninstall
+run features/feature-compressed-swap.sh --uninstall
+run packages/package-zram.sh --uninstall
 chkf "pre-existing zram-tools NOT removed" "$STUB/.installed_zram-tools"
 chkf "config file restored (not deleted)" "$ZRAMSWAP_DEFAULTS"
 RESTORED=$(cat "$ZRAMSWAP_DEFAULTS")
@@ -265,17 +265,17 @@ RESTORED=$(cat "$ZRAMSWAP_DEFAULTS")
 echo
 echo "=== Test 7: feature-zram preserves dphys-swapfile pre-state ==="
 rm -rf "$TMPETC"/*
-rm -f "$TMPSTATUS"/zram.status "$TMPSTATUS"/zram-tools.status
+rm -f "$TMPSTATUS"/compressed-swap.status "$TMPSTATUS"/zram.status
 rm -f "$STUB"/.svc_*
 rm -f "$STUB/.installed_zram-tools"
 touch "$STUB/.svc_dphys-swapfile_enabled"
 
-run packages/package-zram-tools.sh
-run features/feature-zram.sh
-chkgrep "PRE_DPHYS=true recorded" "^ZRAM_FW_PRE_DPHYS_ENABLED=\"true\"" "$TMPSTATUS/zram.status"
+run packages/package-zram.sh
+run features/feature-compressed-swap.sh
+chkgrep "PRE_DPHYS=true recorded" "^COMPRESSED_SWAP_FW_PRE_DPHYS_ENABLED=\"true\"" "$TMPSTATUS/compressed-swap.status"
 chknof "dphys disabled by install" "$STUB/.svc_dphys-swapfile_enabled"
 
-run features/feature-zram.sh --uninstall
+run features/feature-compressed-swap.sh --uninstall
 chkf "dphys re-enabled by uninstall (pre-state restored)" "$STUB/.svc_dphys-swapfile_enabled"
 
 echo

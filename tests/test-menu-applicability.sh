@@ -61,7 +61,7 @@ cat > "$TMPDIR/features/feature-foo.sh" <<'EOF'
 # === II_MANIFEST_BEGIN ===
 II_ID="foo"
 II_TITLE="Foo (synthetic)"
-II_CATEGORY="option"
+II_CATEGORY="feature"
 II_VERSION="1"
 II_DEPS=""
 II_REQUIRES_REBOOT="never"

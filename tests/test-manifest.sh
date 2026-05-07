@@ -23,7 +23,7 @@ cat > "$TMPDIR/feature-foo.sh" <<EOF
 # === II_MANIFEST_BEGIN ===
 II_ID="foo"
 II_TITLE="Foo Feature"
-II_CATEGORY="software"
+II_CATEGORY="package"
 II_VERSION="2"
 II_DEPS="bar baz"
 II_REQUIRES_REBOOT="never"
@@ -39,7 +39,7 @@ cat > "$TMPDIR/feature-bar.sh" <<EOF
 # === II_MANIFEST_BEGIN ===
 II_ID="bar"
 II_TITLE="Bar Setup"
-II_CATEGORY="option"
+II_CATEGORY="feature"
 II_VERSION="1"
 II_DEPS=""
 II_REQUIRES_REBOOT="conditional"
@@ -96,17 +96,17 @@ chkrc "path_for nonexistent" $rc 1
 # ===========================================================================
 echo
 echo "=== Test 6: manifest_filter_by_category ==="
-sw=$(manifest_filter_by_category software "$TMPDIR" | sort | tr "\n" ",")
-chkeq "software filter" "$sw" "foo,"
-op=$(manifest_filter_by_category option "$TMPDIR" | sort | tr "\n" ",")
-chkeq "option filter" "$op" "bar,"
+sw=$(manifest_filter_by_category package "$TMPDIR" | sort | tr "\n" ",")
+chkeq "feature filter" "$sw" "foo,"
+op=$(manifest_filter_by_category feature "$TMPDIR" | sort | tr "\n" ",")
+chkeq "package filter" "$op" "bar,"
 chkeq "empty filter" "$(manifest_filter_by_category nothing "$TMPDIR")" ""
 
 # ===========================================================================
 echo
 echo "=== Test 7: real features/ + packages/ have the expected manifest roster ==="
 real_ids=$(manifest_list_ids features packages | sort | tr "\n" ",")
-chkeq "real manifests" "$real_ids" "bash,git,locale,motd,motd-updates,motd-weather,pip,pkupd,rconf,skyfield,weewx,zram,zram-tools,"
+chkeq "real manifests" "$real_ids" "bash,compressed-swap,git,locale,motd,motd-updates,motd-weather,pip,pkupd,rconf,skyfield,weewx,zram,"
 
 # Each registered ID's filename must match feature-<id>.sh (when in features/)
 # OR package-<id>.sh (when in packages/).
@@ -124,10 +124,10 @@ for id in $(manifest_list_ids features packages); do
 done
 chkeq "ID matches filename" "$mismatched" ""
 
-# Categories partition cleanly: every registered ID is option or software, no other.
+# Categories partition cleanly: every registered ID is feature or package, no other.
 all_count=$(manifest_list_ids features packages | wc -l)
-opt_count=$(manifest_filter_by_category option features packages | wc -l)
-sw_count=$(manifest_filter_by_category software features packages | wc -l)
+opt_count=$(manifest_filter_by_category feature features packages | wc -l)
+sw_count=$(manifest_filter_by_category package features packages | wc -l)
 chkeq "categories partition" "$((opt_count + sw_count))" "$all_count"
 
 # ===========================================================================
@@ -139,7 +139,7 @@ cat > "$TMPDIR/feature-parent.sh" <<EOF
 # === II_MANIFEST_BEGIN ===
 II_ID="parent"
 II_TITLE="Parent"
-II_CATEGORY="option"
+II_CATEGORY="feature"
 II_VERSION="1"
 II_DEPS=""
 II_REQUIRES_REBOOT="never"
@@ -151,7 +151,7 @@ cat > "$TMPDIR/feature-child-a.sh" <<EOF
 # === II_MANIFEST_BEGIN ===
 II_ID="child-a"
 II_TITLE="Child A"
-II_CATEGORY="option"
+II_CATEGORY="feature"
 II_VERSION="1"
 II_DEPS=""
 II_REQUIRES_REBOOT="never"
@@ -162,7 +162,7 @@ cat > "$TMPDIR/feature-child-b.sh" <<EOF
 # === II_MANIFEST_BEGIN ===
 II_ID="child-b"
 II_TITLE="Child B"
-II_CATEGORY="software"
+II_CATEGORY="package"
 II_VERSION="1"
 II_DEPS=""
 II_REQUIRES_REBOOT="never"
@@ -200,7 +200,7 @@ echo "=== Test 10: defaults scan both tier directories ==="
 # With no dir args, manifest helpers should hit features/ AND packages/.
 # Picking IDs from each side proves both are scanned.
 default_ids=$(manifest_list_ids | sort | tr "\n" ",")
-chkeq "defaults match explicit two-dir scan" "$default_ids" "bash,git,locale,motd,motd-updates,motd-weather,pip,pkupd,rconf,skyfield,weewx,zram,zram-tools,"
+chkeq "defaults match explicit two-dir scan" "$default_ids" "bash,compressed-swap,git,locale,motd,motd-updates,motd-weather,pip,pkupd,rconf,skyfield,weewx,zram,"
 
 # A package ID and a feature ID both resolve to their respective dirs.
 git_path=$(manifest_path_for git)

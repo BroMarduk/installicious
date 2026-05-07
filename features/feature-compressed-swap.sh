@@ -40,11 +40,11 @@
 # The recorded config hash also forces a re-run if config/zram.config changes.
 
 # === II_MANIFEST_BEGIN ===
-II_ID="zram"
+II_ID="compressed-swap"
 II_TITLE="Compressed Swap (zram)"
-II_CATEGORY="software"
-II_VERSION="2"
-II_DEPS="zram-tools"
+II_CATEGORY="feature"
+II_VERSION="3"
+II_DEPS="zram"
 II_REQUIRES_REBOOT="conditional"
 II_EDITABLE_CONFIG="ZRAM_PERCENT_OF_RAM ZRAM_COMPRESSION_ALGO ZRAM_SWAP_PRIORITY"
 # === II_MANIFEST_END ===
@@ -77,7 +77,7 @@ declare -F state_apply_menu_overrides >/dev/null && state_apply_menu_overrides
 # Source the choices file so we can call _default_<KEY> helpers for any
 # value the user left blank. The same helpers feed the menu-editor display,
 # so the editor and the installer agree on smart defaults.
-FILE_CHOICES_ZRAM="${PATH_FEATURES:-features}/feature-zram.choices.sh"
+FILE_CHOICES_ZRAM="${PATH_FEATURES:-features}/feature-compressed-swap.choices.sh"
 [[ -f $FILE_CHOICES_ZRAM ]] && source "$FILE_CHOICES_ZRAM"
 
 # _resolve_default <var> <hardcoded_fallback>
@@ -159,16 +159,16 @@ do_install() {
   # (its own status file tracks pre-install state and handles symmetric
   # uninstall). We only track config-file + service pre-state here.
   if systemctl is-enabled --quiet dphys-swapfile 2>/dev/null; then
-    status_set "$STATUS_FILE" "ZRAM_FW_PRE_DPHYS_ENABLED" "true"
+    status_set "$STATUS_FILE" "COMPRESSED_SWAP_FW_PRE_DPHYS_ENABLED" "true"
   else
-    status_set "$STATUS_FILE" "ZRAM_FW_PRE_DPHYS_ENABLED" "false"
+    status_set "$STATUS_FILE" "COMPRESSED_SWAP_FW_PRE_DPHYS_ENABLED" "false"
   fi
   if systemctl is-enabled --quiet zramswap.service 2>/dev/null; then
-    status_set "$STATUS_FILE" "ZRAM_FW_PRE_ZRAMSWAP_SERVICE_ENABLED" "true"
+    status_set "$STATUS_FILE" "COMPRESSED_SWAP_FW_PRE_ZRAMSWAP_SERVICE_ENABLED" "true"
   else
-    status_set "$STATUS_FILE" "ZRAM_FW_PRE_ZRAMSWAP_SERVICE_ENABLED" "false"
+    status_set "$STATUS_FILE" "COMPRESSED_SWAP_FW_PRE_ZRAMSWAP_SERVICE_ENABLED" "false"
   fi
-  status_set "$STATUS_FILE" "ZRAM_FW_SWAP_MANAGER_USED" "$swap_manager"
+  status_set "$STATUS_FILE" "COMPRESSED_SWAP_FW_SWAP_MANAGER_USED" "$swap_manager"
 
   # Snapshot existing files we may overwrite (backup_create skips missing files).
   local snap
@@ -252,7 +252,7 @@ EOF
   if _zram_verify_active_config; then
     log_ok "Zram swap live: ${swap_manager}, ${ZRAM_PERCENT_OF_RAM}% of RAM, ${ZRAM_COMPRESSION_ALGO}."
     status_mark_complete "$II_ID" "$II_VERSION" "$FILE_CONFIG_ZRAM"
-    status_set "$STATUS_FILE" "ZRAM_STATUS" "Completed"
+    status_set "$STATUS_FILE" "COMPRESSED_SWAP_STATUS" "Completed"
     echo -e "[  \e[0;32mOK\e[0m  ] Installicious successfully configured ZRAM swap."
     return 0
   fi
@@ -263,7 +263,7 @@ EOF
   # systemd resume unit will run any remaining items after the reboot.
   log_warn "Live /dev/zram0 doesn't match configured size/algo. Requesting reboot to apply cleanly."
   status_mark_complete "$II_ID" "$II_VERSION" "$FILE_CONFIG_ZRAM"
-  status_set "$STATUS_FILE" "ZRAM_STATUS" "Pending Reboot"
+  status_set "$STATUS_FILE" "COMPRESSED_SWAP_STATUS" "Pending Reboot"
   echo -e "[  \e[0;32mOK\e[0m  ] ZRAM config written; reboot will be triggered to apply."
   request_reboot "zram swap config requires reboot to apply cleanly" "$II_ID"
   return $EXIT_REBOOT
@@ -325,9 +325,9 @@ do_uninstall() {
   esac
 
   local swap_manager pre_dphys pre_zramswap
-  swap_manager=$(status_get "$STATUS_FILE" "ZRAM_FW_SWAP_MANAGER_USED")
-  pre_dphys=$(status_get "$STATUS_FILE" "ZRAM_FW_PRE_DPHYS_ENABLED")
-  pre_zramswap=$(status_get "$STATUS_FILE" "ZRAM_FW_PRE_ZRAMSWAP_SERVICE_ENABLED")
+  swap_manager=$(status_get "$STATUS_FILE" "COMPRESSED_SWAP_FW_SWAP_MANAGER_USED")
+  pre_dphys=$(status_get "$STATUS_FILE" "COMPRESSED_SWAP_FW_PRE_DPHYS_ENABLED")
+  pre_zramswap=$(status_get "$STATUS_FILE" "COMPRESSED_SWAP_FW_PRE_ZRAMSWAP_SERVICE_ENABLED")
 
   log_info "Reverting zram setup (manager was $swap_manager)."
 
@@ -367,7 +367,7 @@ do_uninstall() {
   # system. The framework runs both uninstalls in scheduler order.
 
   status_mark_uninstalled "$II_ID"
-  status_set "$STATUS_FILE" "ZRAM_STATUS" "Uninstalled"
+  status_set "$STATUS_FILE" "COMPRESSED_SWAP_STATUS" "Uninstalled"
   log_ok "Zram swap reverted to pre-install state."
   echo -e "[  \e[0;32mOK\e[0m  ] Installicious successfully uninstalled ZRAM."
   return 0

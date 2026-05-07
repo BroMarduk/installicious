@@ -13,7 +13,7 @@
 # === II_MANIFEST_BEGIN ===
 II_ID="pip"
 II_TITLE="Python pip"
-II_CATEGORY="software"
+II_CATEGORY="package"
 II_VERSION="1"
 II_DEPS=""
 II_REQUIRES_REBOOT="never"

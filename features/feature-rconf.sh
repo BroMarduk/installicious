@@ -36,7 +36,7 @@
 # === II_MANIFEST_BEGIN ===
 II_ID="rconf"
 II_TITLE="Raspberry Pi Configuration (raspi-config)"
-II_CATEGORY="option"
+II_CATEGORY="feature"
 II_VERSION="3"
 II_DEPS=""
 II_REQUIRES_REBOOT="conditional"

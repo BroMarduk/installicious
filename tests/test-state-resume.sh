@@ -64,7 +64,7 @@ mk_installer() {
 # === II_MANIFEST_BEGIN ===
 II_ID="$id"
 II_TITLE="$id"
-II_CATEGORY="software"
+II_CATEGORY="package"
 II_VERSION="1"
 II_DEPS="$deps"
 II_REQUIRES_REBOOT="never"

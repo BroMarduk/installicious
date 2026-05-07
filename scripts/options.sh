@@ -9,8 +9,8 @@
 #
 # Stages (see the dispatcher at the bottom of the file):
 #   pick_role       — single-select role picker (first stage)
-#   custom_options  — Custom: pick option-category features
-#   custom_software — Custom: pick software-category features
+#   custom_features — Custom: pick from features/ (II_CATEGORY="feature")
+#   custom_packages — Custom: pick from packages/ (II_CATEGORY="package")
 #   show_required   — Role: confirm the required features (info)
 #   pick_optional   — Role: pick optional add-on features
 #   pick_addons     — sub-menu(s) for features that declare II_OPTIONAL_GROUP
@@ -67,8 +67,8 @@ role_title=""
 role_required=""
 role_default=""
 role_optional=""
-options_selected=""
-software_selected=""
+features_selected=""
+packages_selected=""
 optional_picked=""
 # Whether the user has visited the optional checklist for this role yet.
 # On the first visit we seed optional_picked from the role's DEFAULT list
@@ -102,8 +102,8 @@ _any_parent_has_addons() {
 }
 # True for the Custom role and any role that declares no required / optional
 # features (the stubbed roles today: homeassistant, mediaserver, pihole,
-# weewx). Both flow through the per-feature checklist (custom_options →
-# custom_software) instead of show_required / pick_optional.
+# weewx). Both flow through the per-feature checklist (custom_features →
+# custom_packages) instead of show_required / pick_optional.
 _role_uses_custom_flow() {
   [[ $role_id == "custom" ]] && return 0
   [[ -z $role_required && -z $role_default && -z $role_optional ]] && return 0
@@ -113,7 +113,7 @@ prev_selection_stage() {
   if _any_parent_has_addons; then
     echo "pick_addons"
   elif _role_uses_custom_flow; then
-    echo "custom_software"
+    echo "custom_packages"
   elif [[ -n $role_optional ]]; then
     echo "pick_optional"
   elif [[ -n $role_required ]]; then
@@ -126,7 +126,7 @@ prev_selection_stage() {
 # without considering pick_addons itself).
 _pre_addons_stage() {
   if _role_uses_custom_flow; then
-    echo "custom_software"
+    echo "custom_packages"
   elif [[ -n $role_optional ]]; then
     echo "pick_optional"
   elif [[ -n $role_required ]]; then
@@ -168,7 +168,7 @@ while true; do
         role_required=""
         role_default=""
         role_optional=""
-        stage="custom_options"
+        stage="custom_features"
       else
         role_path=$(role_path_for "$role_id")
         role_title=$(role_get_field "$role_path" "ROLE_TITLE")
@@ -187,41 +187,41 @@ while true; do
           # REQUIRED / DEFAULT / OPTIONAL it'll route through one of the
           # role-driven stages above.
           log_info "Role $role_id has no required/default/optional features defined; routing to per-feature picker."
-          stage="custom_options"
+          stage="custom_features"
         fi
       fi
       ;;
 
-    custom_options)
-      log_info "Rendering options checklist."
-      options_selected=$(menu_select_category "option" \
-        "Installicious Options" \
-        "Select system options to configure." \
-        "${options_selected//\"/}")
+    custom_features)
+      log_info "Rendering features checklist."
+      features_selected=$(menu_select_category "feature" \
+        "Installicious Features" \
+        "Select features to install or configure." \
+        "${features_selected//\"/}")
       rc=$?
       case $rc in
-        0)     stage="custom_software" ;;
+        0)     stage="custom_packages" ;;
         1|255) stage="pick_role" ;;          # BACK or ESC → previous stage
-        2)     options_selected=""; stage="custom_software" ;;
+        2)     features_selected=""; stage="custom_packages" ;;
       esac
       ;;
 
-    custom_software)
-      log_info "Rendering software checklist."
-      software_selected=$(menu_select_category "software" \
-        "Installicious Software" \
-        "Select software packages to install." \
-        "${software_selected//\"/}")
+    custom_packages)
+      log_info "Rendering packages checklist."
+      packages_selected=$(menu_select_category "package" \
+        "Installicious Packages" \
+        "Select apt packages to install (advanced — most users skip this)." \
+        "${packages_selected//\"/}")
       rc=$?
       case $rc in
         0)     stage="merge_custom" ;;
-        1|255) stage="custom_options" ;;     # BACK or ESC → previous stage
-        2)     software_selected=""; stage="merge_custom" ;;
+        1|255) stage="custom_features" ;;    # BACK or ESC → previous stage
+        2)     packages_selected=""; stage="merge_custom" ;;
       esac
       ;;
 
     merge_custom)
-      selected="${options_selected//\"/} ${software_selected//\"/}"
+      selected="${features_selected//\"/} ${packages_selected//\"/}"
       selected=$(echo "$selected" | tr -s ' ' | sed 's/^ //; s/ $//')
       if [[ -z $selected ]]; then
         log_info "User $CURRENTUSER continued without selecting any features; nothing to do."

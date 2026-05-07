@@ -9,7 +9,7 @@
 #   # === II_MANIFEST_BEGIN ===
 #   II_ID="git"
 #   II_TITLE="Git source control"
-#   II_CATEGORY="software"            # software | option
+#   II_CATEGORY="feature"             # feature (in features/) | package (in packages/)
 #   II_VERSION="1"
 #   II_DEPS=""                        # space-separated IDs (any tier)
 #   II_REQUIRES_REBOOT="never"        # never | conditional | always

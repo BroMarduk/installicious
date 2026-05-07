@@ -12,7 +12,7 @@
 # === II_MANIFEST_BEGIN ===
 II_ID="git"
 II_TITLE="Git source control"
-II_CATEGORY="software"
+II_CATEGORY="package"
 II_VERSION="1"
 II_DEPS=""
 II_REQUIRES_REBOOT="never"

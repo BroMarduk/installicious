@@ -19,7 +19,7 @@
 # === II_MANIFEST_BEGIN ===
 II_ID="weewx"
 II_TITLE="WeeWX weather software"
-II_CATEGORY="software"
+II_CATEGORY="package"
 II_VERSION="1"
 II_DEPS=""
 II_REQUIRES_REBOOT="never"

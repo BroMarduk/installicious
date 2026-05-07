@@ -17,7 +17,7 @@
 # === II_MANIFEST_BEGIN ===
 II_ID="motd-weather"
 II_TITLE="MOTD weather (hourly current conditions)"
-II_CATEGORY="option"
+II_CATEGORY="feature"
 II_VERSION="1"
 II_DEPS="motd"
 II_REQUIRES_REBOOT="never"
