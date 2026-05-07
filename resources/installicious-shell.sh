@@ -23,6 +23,74 @@
 [ -z "$PS1" ] && return 0
 case $- in *i*) ;; *) return 0 ;; esac
 
+# ---------------------------------------------------------------------------
+# Resume transcript display
+# ---------------------------------------------------------------------------
+# When a queue ran across a reboot, the systemd unit ran resume.sh on /dev/tty1
+# (the physical console). SSH'd users wouldn't see any of it. resume.sh now
+# also writes a transcript to /etc/installicious/state/resume-transcript.log;
+# we display it here on the user's first login.
+#
+#   - If resume is still running, tail -f the transcript bound to the
+#     resume's PID — the user watches the rest of the run live in their
+#     shell, control returns when the resume exits.
+#   - If resume already finished, replay the transcript with cat. Colors,
+#     [ OK ] markers, log lines all preserved.
+#
+# Per-user "already shown" marker (~/.installicious-transcript-shown) so
+# multiple users on the same Pi each see it once, and reopening a shell
+# after viewing doesn't replay.
+
+_installicious_show_resume_transcript() {
+  local transcript="/etc/installicious/state/resume-transcript.log"
+  local svc="installicious-resume.service"
+  local marker="$HOME/.installicious-transcript-shown"
+
+  # Live attach if the resume service is currently running.
+  if command -v systemctl >/dev/null 2>&1 \
+     && systemctl is-active --quiet "$svc" 2>/dev/null; then
+    local mainpid
+    mainpid=$(systemctl show -p MainPID --value "$svc" 2>/dev/null)
+    if [ -n "$mainpid" ] && [ "$mainpid" != "0" ] \
+       && kill -0 "$mainpid" 2>/dev/null \
+       && [ -f "$transcript" ]; then
+      echo
+      echo "============================================================"
+      echo "  Installicious is still resuming after a reboot."
+      echo "  Watching live; control returns when it completes..."
+      echo "============================================================"
+      # tail --pid exits when the watched process exits; -n +1 starts from
+      # the top so we see anything we missed.
+      tail -n +1 -f --pid="$mainpid" "$transcript" 2>/dev/null
+      echo
+      touch "$marker" 2>/dev/null
+      return 0
+    fi
+  fi
+
+  # Replay completed transcript if this user hasn't seen it yet. Compare
+  # mtimes so a transcript from THIS reboot is always shown once per user,
+  # but already-seen transcripts don't replay every time you open a shell.
+  if [ -s "$transcript" ]; then
+    if [ ! -f "$marker" ] || [ "$transcript" -nt "$marker" ]; then
+      echo
+      echo "============================================================"
+      echo "  Installicious resume transcript (last reboot):"
+      echo "============================================================"
+      cat "$transcript"
+      echo "============================================================"
+      echo
+      touch "$marker" 2>/dev/null
+    fi
+  fi
+}
+_installicious_show_resume_transcript
+unset -f _installicious_show_resume_transcript
+
+# ---------------------------------------------------------------------------
+# `installicious` shell wrapper function
+# ---------------------------------------------------------------------------
+
 installicious() {
   local script="/etc/installicious/installicious.sh"
   if [ ! -f "$script" ]; then

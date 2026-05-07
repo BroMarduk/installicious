@@ -8,13 +8,32 @@
 # scheduler_run_queue calls resume_service_disable which turns the unit back
 # off until the next reboot is requested.
 #
-# Output strategy: stream this script's stdout/stderr to the main console
-# (/dev/tty1) when writable, so progress is visible without having to follow
-# the systemd journal. Notifications also go out via `wall` at start, end,
-# and on failure so any logged-in users see what's happening.
+# Output strategy: stream this script's stdout/stderr to /dev/tty1 (when
+# writable) AND a transcript file under PATH_STATE. The /etc/profile.d/
+# installicious shell wrapper looks for the transcript on the next login —
+# if the resume is still running it tail-f's the transcript live, otherwise
+# it replays the completed transcript. Lets SSH'd users see the resume even
+# though tty1 is the physical console.
+#
+# stdbuf -oL forces tee to line-buffer so tail -f sees lines as they're
+# written, not in 4 KiB chunks.
+
+# Resolve the transcript path. installicious.config sourcing happens below;
+# do this here so we can set up the redirect before the rest of the script
+# runs. PATH_STATE is the only thing we need from config and it's reliably
+# /etc/installicious/state on production installs.
+_RESUME_TRANSCRIPT_FILE="/etc/installicious/state/resume-transcript.log"
+sudo mkdir -p "$(dirname "$_RESUME_TRANSCRIPT_FILE")" 2>/dev/null \
+  || mkdir -p "$(dirname "$_RESUME_TRANSCRIPT_FILE")" 2>/dev/null
+# Truncate any prior resume's transcript so a fresh tail-f sees only
+# this run's output.
+: > "$_RESUME_TRANSCRIPT_FILE" 2>/dev/null \
+  || sudo sh -c ": > '$_RESUME_TRANSCRIPT_FILE'" 2>/dev/null
 
 if [[ -w /dev/tty1 ]]; then
-  exec > >(tee -a /dev/tty1) 2>&1
+  exec > >(stdbuf -oL tee -a /dev/tty1 "$_RESUME_TRANSCRIPT_FILE") 2>&1
+else
+  exec > >(stdbuf -oL tee -a "$_RESUME_TRANSCRIPT_FILE") 2>&1
 fi
 
 II_TITLE="Installicious Resume"
