@@ -54,13 +54,15 @@ else
 fi
 log_init "$II_TITLE" "$FILE_LOG_INSTALLER"
 
-wall "[installicious] Resuming queue after reboot. Watch tty1 or 'journalctl -u installicious-resume -f' for progress." 2>/dev/null || true
+# menu-config.sh is intentionally preserved across runs so the user's edits
+# (API keys, hostnames, etc.) survive into future installicious sessions
+# without having to be re-entered. Reset manually with
+# `sudo rm $PATH_STATE/menu-config.sh` if desired.
 
 echo
 echo "============================================================"
 echo "  Installicious: resuming queue after reboot"
 echo "  Log file: $FILE_LOG_INSTALLER"
-echo "  Live tail: sudo journalctl -u installicious-resume -f"
 echo "============================================================"
 echo
 
@@ -69,21 +71,16 @@ rc=$?
 
 echo
 echo "============================================================"
-# menu-config.sh is intentionally preserved across runs so the user's edits
-# (API keys, hostnames, etc.) survive into future installicious sessions
-# without having to be re-entered. Reset manually with
-# `sudo rm $PATH_STATE/menu-config.sh` if desired.
 if [[ $rc -eq 0 ]]; then
   echo "  Installicious: queue completed successfully."
-  wall "[installicious] Queue completed; system ready." 2>/dev/null || true
   post_install_apply
 elif [[ $rc -eq 255 ]]; then
   echo "  Installicious: another reboot was requested; rebooting again..."
-  wall "[installicious] Another reboot requested; queue will continue after." 2>/dev/null || true
   # Don't apply — queued commands and notes will run after the next resume.
 else
-  echo "  Installicious: queue exited with errors (rc=$rc). See log: $FILE_LOG_INSTALLER"
-  wall "[installicious] Queue exited with errors (rc=$rc); check $FILE_LOG_INSTALLER" 2>/dev/null || true
+  echo "  Installicious: queue exited with errors (rc=$rc)."
+  echo "  See log:    $FILE_LOG_INSTALLER"
+  echo "  Or journal: sudo journalctl -u installicious-resume"
   post_install_apply
 fi
 echo "============================================================"
