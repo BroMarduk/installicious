@@ -66,10 +66,18 @@ STATUS_FILE=$(status_file_for "$II_ID")
 KEYBOARD_FILE="${KEYBOARD_FILE:-/etc/default/keyboard}"
 RASPI_CONFIG_BIN="${RASPI_CONFIG_BIN:-/usr/bin/raspi-config}"
 
+# All four nonint helpers run under `sudo env LC_ALL=C LANG=C ...` so any
+# perl / locale tools they spawn fall back to C immediately. Without this,
+# if the user's shell inherited a LANG that hasn't been generated on the
+# system yet (e.g. RPi Imager's en_GB.UTF-8 default before do_change_locale
+# has had a chance to run), every child process emits "Cannot set LC_CTYPE
+# to default locale" warnings — harmless, but a wall of noise.
+_RC_ENV=(env LC_ALL=C LANG=C)
+
 _apply_locale() {
   [[ -z $LOCALE_LANG ]] && { log_info "LOCALE_LANG blank; preserving system default."; return 0; }
   log_info "Setting locale to $LOCALE_LANG."
-  if sudo "$RASPI_CONFIG_BIN" nonint do_change_locale "$LOCALE_LANG"; then
+  if sudo "${_RC_ENV[@]}" "$RASPI_CONFIG_BIN" nonint do_change_locale "$LOCALE_LANG"; then
     status_set "$STATUS_FILE" "LOCALE_FW_LOCALE_APPLIED" "$LOCALE_LANG"
     log_ok "Locale set to $LOCALE_LANG."
   else
@@ -80,7 +88,7 @@ _apply_locale() {
 _apply_timezone() {
   [[ -z $LOCALE_TIMEZONE ]] && { log_info "LOCALE_TIMEZONE blank; preserving system default."; return 0; }
   log_info "Setting timezone to $LOCALE_TIMEZONE."
-  if sudo "$RASPI_CONFIG_BIN" nonint do_change_timezone "$LOCALE_TIMEZONE"; then
+  if sudo "${_RC_ENV[@]}" "$RASPI_CONFIG_BIN" nonint do_change_timezone "$LOCALE_TIMEZONE"; then
     status_set "$STATUS_FILE" "LOCALE_FW_TIMEZONE_APPLIED" "$LOCALE_TIMEZONE"
     log_ok "Timezone set to $LOCALE_TIMEZONE."
   else
@@ -91,7 +99,7 @@ _apply_timezone() {
 _apply_keyboard_layout() {
   [[ -z $LOCALE_KEYBOARD_LAYOUT ]] && { log_info "LOCALE_KEYBOARD_LAYOUT blank; preserving system default."; return 0; }
   log_info "Setting keyboard layout to $LOCALE_KEYBOARD_LAYOUT."
-  if sudo "$RASPI_CONFIG_BIN" nonint do_configure_keyboard "$LOCALE_KEYBOARD_LAYOUT"; then
+  if sudo "${_RC_ENV[@]}" "$RASPI_CONFIG_BIN" nonint do_configure_keyboard "$LOCALE_KEYBOARD_LAYOUT"; then
     status_set "$STATUS_FILE" "LOCALE_FW_KEYBOARD_LAYOUT_APPLIED" "$LOCALE_KEYBOARD_LAYOUT"
     log_ok "Keyboard layout set to $LOCALE_KEYBOARD_LAYOUT."
   else
@@ -130,7 +138,7 @@ _apply_keyboard_model() {
 _apply_wifi_country() {
   [[ -z $LOCALE_WIFI_COUNTRY ]] && { log_info "LOCALE_WIFI_COUNTRY blank; preserving system default."; return 0; }
   log_info "Setting WiFi country to $LOCALE_WIFI_COUNTRY."
-  if sudo "$RASPI_CONFIG_BIN" nonint do_wifi_country "$LOCALE_WIFI_COUNTRY"; then
+  if sudo "${_RC_ENV[@]}" "$RASPI_CONFIG_BIN" nonint do_wifi_country "$LOCALE_WIFI_COUNTRY"; then
     status_set "$STATUS_FILE" "LOCALE_FW_WIFI_COUNTRY_APPLIED" "$LOCALE_WIFI_COUNTRY"
     log_ok "WiFi country set to $LOCALE_WIFI_COUNTRY."
   else
