@@ -1,18 +1,30 @@
 #!/bin/bash
 
-# Module:      ZRAM Installer
-# Description: Sets up compressed RAM swap (zram) using whichever manager fits
-#              the OS:
+# Module:      Compressed Swap (zram)
+# Description: Configures /dev/zram0 as compressed-RAM swap using whichever
+#              manager fits the OS:
 #                - rpi-swap (preinstalled on Pi OS Trixie)
 #                - zram-tools (Bookworm)
 #              Disables dphys-swapfile (older SD-card swap) if present.
 #              Configurable via config/zram.config.
 #
-#              On install we capture pre-state — whether zram-tools/rpi-swap
-#              were already there, whether dphys-swapfile was enabled, whether
-#              zramswap.service was enabled, and a backup snapshot of any config
-#              files we'll replace. --uninstall reverses those, restoring the
-#              system as closely as possible to its pre-install state.
+#              The apt-package side (zram-tools binary + zramswap service)
+#              lives in packages/package-zram-tools.sh and is pulled in by
+#              the II_DEPS below — picking this feature in the menu auto-
+#              schedules zram-tools first.
+#
+#              On install we capture pre-state — whether zram-tools was
+#              installed, whether dphys-swapfile was enabled, whether
+#              zramswap.service was enabled, and a backup snapshot of any
+#              config files we'll replace. --uninstall reverses those,
+#              restoring the system as closely as possible to its pre-
+#              install state.
+#
+#              Reboot semantics: the installer attempts a live restart of
+#              /dev/zram0, then verifies the device's actual size + algo
+#              match the configured values. If the kernel refuses to reset
+#              a busy device (or boot-time generator state is stale), we
+#              request_reboot so the next boot picks up the config cleanly.
 #
 #              --uninstall                  defaults to strip-block-style revert:
 #                                           remove our drop-in, restore configs
@@ -29,10 +41,10 @@
 
 # === II_MANIFEST_BEGIN ===
 II_ID="zram"
-II_TITLE="ZRAM swap"
+II_TITLE="Compressed Swap (zram)"
 II_CATEGORY="software"
-II_VERSION="1"
-II_DEPS=""
+II_VERSION="2"
+II_DEPS="zram-tools"
 II_REQUIRES_REBOOT="conditional"
 II_EDITABLE_CONFIG="ZRAM_PERCENT_OF_RAM ZRAM_COMPRESSION_ALGO ZRAM_SWAP_PRIORITY"
 # === II_MANIFEST_END ===
@@ -41,6 +53,7 @@ source config/installicious.config || exit 1
 source lib/log.sh
 source lib/status.sh
 source lib/state.sh
+source lib/reboot.sh
 source lib/apt.sh
 source lib/backup.sh
 
@@ -142,11 +155,9 @@ do_install() {
   log_info "Detected swap manager: $swap_manager."
 
   # ---- capture pre-state (so uninstall can fully revert) ----
-  if apt_is_installed zram-tools; then
-    status_set "$STATUS_FILE" "ZRAM_FW_PRE_ZRAM_TOOLS_INSTALLED" "true"
-  else
-    status_set "$STATUS_FILE" "ZRAM_FW_PRE_ZRAM_TOOLS_INSTALLED" "false"
-  fi
+  # zram-tools install/remove is owned by packages/package-zram-tools.sh
+  # (its own status file tracks pre-install state and handles symmetric
+  # uninstall). We only track config-file + service pre-state here.
   if systemctl is-enabled --quiet dphys-swapfile 2>/dev/null; then
     status_set "$STATUS_FILE" "ZRAM_FW_PRE_DPHYS_ENABLED" "true"
   else
@@ -164,18 +175,9 @@ do_install() {
   snap=$(backup_create "$II_ID" "$ZRAMSWAP_DEFAULTS" "$ZRAM_GENERATOR_CONF" "$RPI_SWAP_DROPIN")
   log_info "Backup snapshot: $snap."
 
-  # ---- install zram-tools if needed ----
-  if [[ $swap_manager == "zram-tools" ]]; then
-    apt_ensure_installed zram-tools
-    local rc=$?
-    if [[ $rc -ne 0 ]]; then
-      log_fail "Failed to install zram-tools." "$rc"
-      status_mark_failed "$II_ID" "apt install zram-tools failed (code $rc)"
-      status_set "$STATUS_FILE" "ZRAM_STATUS" "Error"
-      echo -e "[ \e[0;31mFAIL\e[0m ] Installicious could not install zram-tools. Error Code: $rc."
-      return $rc
-    fi
-  fi
+  # zram-tools (apt package) is pulled in via II_DEPS — the scheduler
+  # runs packages/package-zram-tools.sh before us. We just need it
+  # available; no apt step here anymore.
 
   # ---- disable dphys-swapfile if requested and present ----
   if [[ $ZRAM_DISABLE_DPHYS_SWAPFILE == "true" ]] \
@@ -220,7 +222,7 @@ EOF
       sudo systemctl daemon-reload
       sleep 1
       sudo systemctl start dev-zram0.swap 2>/dev/null \
-        || log_warn "Live restart failed; reboot to pick up config cleanly."
+        || log_warn "Live restart of dev-zram0.swap failed; will verify state and request reboot if needed."
       ;;
 
     zram-tools)
@@ -236,14 +238,75 @@ EOF
       zram_reset_devices
       sudo systemctl daemon-reload
       sudo systemctl restart zramswap.service \
-        || log_warn "zramswap.service restart returned non-zero; check 'systemctl status zramswap'."
+        || log_warn "zramswap.service restart returned non-zero; will verify state and request reboot if needed."
       ;;
   esac
 
-  log_ok "Zram swap configured (${swap_manager}, ${ZRAM_PERCENT_OF_RAM}% of RAM, ${ZRAM_COMPRESSION_ALGO})."
+  # ---- verify the live device matches the configured size + algo ----
+  # The kernel sometimes refuses to reset /dev/zram0 cleanly (busy device,
+  # stale boot-time generator state, etc.). When that happens, the live
+  # restart appears to "succeed" but the device is still on its previous
+  # config. Catch that here so we don't mark the feature complete on a
+  # half-applied state — if the live device doesn't match, request a
+  # reboot. Boot-time generator picks up the new config cleanly.
+  if _zram_verify_active_config; then
+    log_ok "Zram swap live: ${swap_manager}, ${ZRAM_PERCENT_OF_RAM}% of RAM, ${ZRAM_COMPRESSION_ALGO}."
+    status_mark_complete "$II_ID" "$II_VERSION" "$FILE_CONFIG_ZRAM"
+    status_set "$STATUS_FILE" "ZRAM_STATUS" "Completed"
+    echo -e "[  \e[0;32mOK\e[0m  ] Installicious successfully configured ZRAM swap."
+    return 0
+  fi
+
+  # Device didn't come up matching the new config. Mark complete now (the
+  # config files are written; resume just needs a fresh boot to pick them
+  # up), then request_reboot. Scheduler will halt the queue and the
+  # systemd resume unit will run any remaining items after the reboot.
+  log_warn "Live /dev/zram0 doesn't match configured size/algo. Requesting reboot to apply cleanly."
   status_mark_complete "$II_ID" "$II_VERSION" "$FILE_CONFIG_ZRAM"
-  status_set "$STATUS_FILE" "ZRAM_STATUS" "Completed"
-  echo -e "[  \e[0;32mOK\e[0m  ] Installicious successfully configured ZRAM swap."
+  status_set "$STATUS_FILE" "ZRAM_STATUS" "Pending Reboot"
+  echo -e "[  \e[0;32mOK\e[0m  ] ZRAM config written; reboot will be triggered to apply."
+  request_reboot "zram swap config requires reboot to apply cleanly" "$II_ID"
+  return $EXIT_REBOOT
+}
+
+# _zram_verify_active_config — rc=0 if the live /dev/zram0 reflects
+# $ZRAM_PERCENT_OF_RAM + $ZRAM_COMPRESSION_ALGO, rc=1 otherwise. ±10%
+# size tolerance because the actual zram disksize is computed from the
+# kernel's view of total RAM, not /proc/meminfo's MemTotal (a few MB
+# off due to reserved memory).
+#
+# ZRAM_SKIP_LIVE_VERIFY=true forces rc=0 — used by the round-trip test
+# harness where /dev/zram0 doesn't exist (Windows/git-bash, no zram
+# kernel module). Production callers leave the env unset.
+_zram_verify_active_config() {
+  [[ ${ZRAM_SKIP_LIVE_VERIFY:-} == "true" ]] && return 0
+  [[ -b /dev/zram0 ]] || { log_warn "_zram_verify: /dev/zram0 not present."; return 1; }
+
+  local actual_bytes
+  actual_bytes=$(cat /sys/block/zram0/disksize 2>/dev/null || echo 0)
+  if (( actual_bytes == 0 )); then
+    log_warn "_zram_verify: /dev/zram0 disksize is 0 (device not initialized)."
+    return 1
+  fi
+
+  local actual_mb ram_mb expected_mb min_mb max_mb
+  actual_mb=$(( actual_bytes / 1024 / 1024 ))
+  ram_mb=$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo 2>/dev/null)
+  expected_mb=$(( ram_mb * ZRAM_PERCENT_OF_RAM / 100 ))
+  min_mb=$(( expected_mb * 90 / 100 ))
+  max_mb=$(( expected_mb * 110 / 100 ))
+
+  local actual_algo
+  actual_algo=$(awk -F'[][]' '/\[/{print $2; exit}' /sys/block/zram0/comp_algorithm 2>/dev/null)
+
+  if (( actual_mb < min_mb || actual_mb > max_mb )); then
+    log_warn "_zram_verify: live zram size ${actual_mb}M outside expected range ${min_mb}-${max_mb}M."
+    return 1
+  fi
+  if [[ -n $ZRAM_COMPRESSION_ALGO && "$actual_algo" != "$ZRAM_COMPRESSION_ALGO" ]]; then
+    log_warn "_zram_verify: live zram algo '$actual_algo' != configured '$ZRAM_COMPRESSION_ALGO'."
+    return 1
+  fi
   return 0
 }
 
@@ -261,9 +324,8 @@ do_uninstall() {
       ;;
   esac
 
-  local swap_manager pre_zram_tools pre_dphys pre_zramswap
+  local swap_manager pre_dphys pre_zramswap
   swap_manager=$(status_get "$STATUS_FILE" "ZRAM_FW_SWAP_MANAGER_USED")
-  pre_zram_tools=$(status_get "$STATUS_FILE" "ZRAM_FW_PRE_ZRAM_TOOLS_INSTALLED")
   pre_dphys=$(status_get "$STATUS_FILE" "ZRAM_FW_PRE_DPHYS_ENABLED")
   pre_zramswap=$(status_get "$STATUS_FILE" "ZRAM_FW_PRE_ZRAMSWAP_SERVICE_ENABLED")
 
@@ -299,12 +361,10 @@ do_uninstall() {
   zram_reset_devices
   sudo systemctl daemon-reload
 
-  # 5. If we installed zram-tools, remove it.
-  if [[ $pre_zram_tools == "false" ]] && apt_is_installed zram-tools; then
-    log_info "Removing zram-tools (we installed it)."
-    apt_remove zram-tools \
-      || log_warn "apt remove zram-tools returned non-zero (continuing)."
-  fi
+  # zram-tools removal is owned by packages/package-zram-tools.sh — its
+  # uninstall path checks its own pre-install record and apt-removes the
+  # package only if it wasn't there before installicious touched the
+  # system. The framework runs both uninstalls in scheduler order.
 
   status_mark_uninstalled "$II_ID"
   status_set "$STATUS_FILE" "ZRAM_STATUS" "Uninstalled"

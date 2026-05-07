@@ -106,7 +106,7 @@ chkeq "empty filter" "$(manifest_filter_by_category nothing "$TMPDIR")" ""
 echo
 echo "=== Test 7: real features/ + packages/ have the expected manifest roster ==="
 real_ids=$(manifest_list_ids features packages | sort | tr "\n" ",")
-chkeq "real manifests" "$real_ids" "bash,git,locale,motd,motd-updates,motd-weather,pip,pkupd,rconf,skyfield,weewx,zram,"
+chkeq "real manifests" "$real_ids" "bash,git,locale,motd,motd-updates,motd-weather,pip,pkupd,rconf,skyfield,weewx,zram,zram-tools,"
 
 # Each registered ID's filename must match feature-<id>.sh (when in features/)
 # OR package-<id>.sh (when in packages/).
@@ -200,7 +200,7 @@ echo "=== Test 10: defaults scan both tier directories ==="
 # With no dir args, manifest helpers should hit features/ AND packages/.
 # Picking IDs from each side proves both are scanned.
 default_ids=$(manifest_list_ids | sort | tr "\n" ",")
-chkeq "defaults match explicit two-dir scan" "$default_ids" "bash,git,locale,motd,motd-updates,motd-weather,pip,pkupd,rconf,skyfield,weewx,zram,"
+chkeq "defaults match explicit two-dir scan" "$default_ids" "bash,git,locale,motd,motd-updates,motd-weather,pip,pkupd,rconf,skyfield,weewx,zram,zram-tools,"
 
 # A package ID and a feature ID both resolve to their respective dirs.
 git_path=$(manifest_path_for git)
