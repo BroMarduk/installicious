@@ -109,7 +109,11 @@ _any_parent_has_addons() {
 _required_packages_from_features() {
   local id deps dep fpath ppath cat
   declare -A seen=()
-  for id in $features_selected; do
+  # whiptail --checklist emits selected IDs as space-separated double-
+  # quoted strings (e.g. `"compressed-swap" "bash"`). Strip quotes so
+  # the for loop sees raw IDs that match the manifest registry. Other
+  # dispatcher branches use the same `${var//\"/}` pattern.
+  for id in ${features_selected//\"/}; do
     [[ -z $id ]] && continue
     fpath=$(manifest_path_for "$id" 2>/dev/null)
     [[ -z $fpath ]] && continue
