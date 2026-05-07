@@ -22,6 +22,7 @@ ROLE_ID="foo"
 ROLE_TITLE="Foo Role"
 ROLE_DESCRIPTION="A pretend role"
 ROLE_FEATURES_REQUIRED="alpha beta"
+ROLE_FEATURES_DEFAULT="delta"
 ROLE_FEATURES_OPTIONAL="gamma"
 ROLE_CONFIG="config/role-foo.config"
 ROLE_EDITABLE_CONFIG="FOO_HOSTNAME"
@@ -37,6 +38,7 @@ ROLE_ID="bar"
 ROLE_TITLE="Bar Role"
 ROLE_DESCRIPTION="Another pretend role"
 ROLE_FEATURES_REQUIRED=""
+ROLE_FEATURES_DEFAULT=""
 ROLE_FEATURES_OPTIONAL=""
 ROLE_CONFIG=""
 ROLE_EDITABLE_CONFIG=""
@@ -66,6 +68,7 @@ echo "=== Test 2: role_get_field for various types ==="
 chkeq "ID"          "$(role_get_field "$TMPDIR/role-foo.sh" ROLE_ID)"                "foo"
 chkeq "TITLE space" "$(role_get_field "$TMPDIR/role-foo.sh" ROLE_TITLE)"             "Foo Role"
 chkeq "REQUIRED"    "$(role_get_field "$TMPDIR/role-foo.sh" ROLE_FEATURES_REQUIRED)" "alpha beta"
+chkeq "DEFAULT"     "$(role_get_field "$TMPDIR/role-foo.sh" ROLE_FEATURES_DEFAULT)"  "delta"
 chkeq "OPTIONAL"    "$(role_get_field "$TMPDIR/role-foo.sh" ROLE_FEATURES_OPTIONAL)" "gamma"
 chkeq "missing"     "$(role_get_field "$TMPDIR/role-foo.sh" NONEXISTENT)"            ""
 chkeq "no manifest" "$(role_get_field "$TMPDIR/role-no-manifest.sh" ROLE_ID)"        ""
@@ -110,12 +113,14 @@ chkeq "ID matches filename" "$mismatched" ""
 # Custom role is the special fallthrough — verify its required/optional lists
 # are empty (the menu logic relies on this).
 chkeq "custom has no required" "$(role_get_field "$(role_path_for custom roles)" ROLE_FEATURES_REQUIRED)" ""
+chkeq "custom has no default"  "$(role_get_field "$(role_path_for custom roles)" ROLE_FEATURES_DEFAULT)"  ""
 chkeq "custom has no optional" "$(role_get_field "$(role_path_for custom roles)" ROLE_FEATURES_OPTIONAL)" ""
 
 # Stubbed roles (homeassistant, mediaserver, pihole, weewx) currently behave
-# like Custom — empty required/optional. They'll grow real feature lists when
-# the features tier lands. Until then, assert they parse cleanly with empty
-# lists so a regression that drops the manifest sentinel gets caught here.
+# like Custom — empty required / default / optional. They'll grow real
+# feature lists when populated. Until then, assert they parse cleanly with
+# empty lists so a regression that drops the manifest sentinel gets caught
+# here.
 for id in homeassistant mediaserver pihole weewx; do
   path=$(role_path_for "$id" roles)
   if [[ -z $path ]]; then
@@ -123,11 +128,12 @@ for id in homeassistant mediaserver pihole weewx; do
     continue
   fi
   req=$(role_get_field "$path" ROLE_FEATURES_REQUIRED)
+  def=$(role_get_field "$path" ROLE_FEATURES_DEFAULT)
   opt=$(role_get_field "$path" ROLE_FEATURES_OPTIONAL)
   title=$(role_get_field "$path" ROLE_TITLE)
-  [[ -z $req && -z $opt && -n $title ]] \
-    && ok "stubbed role $id: empty required/optional, title set" \
-    || fail "stubbed role $id: req='$req' opt='$opt' title='$title'"
+  [[ -z $req && -z $def && -z $opt && -n $title ]] \
+    && ok "stubbed role $id: empty required/default/optional, title set" \
+    || fail "stubbed role $id: req='$req' def='$def' opt='$opt' title='$title'"
 done
 
 echo

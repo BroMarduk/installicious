@@ -65,10 +65,16 @@ role_id=""
 role_path=""
 role_title=""
 role_required=""
+role_default=""
 role_optional=""
 options_selected=""
 software_selected=""
 optional_picked=""
+# Whether the user has visited the optional checklist for this role yet.
+# On the first visit we seed optional_picked from the role's DEFAULT list
+# so those items are pre-checked; subsequent visits preserve the user's
+# edits via optional_picked itself.
+optional_visited=0
 selected=""           # final list (parents + their picked add-ons)
 selected_parents=""   # the user's category/role picks BEFORE add-ons get merged
 declare -A addons_picked   # parent_id → space-separated add-on IDs the user picked
@@ -100,7 +106,7 @@ _any_parent_has_addons() {
 # custom_software) instead of show_required / pick_optional.
 _role_uses_custom_flow() {
   [[ $role_id == "custom" ]] && return 0
-  [[ -z $role_required && -z $role_optional ]] && return 0
+  [[ -z $role_required && -z $role_default && -z $role_optional ]] && return 0
   return 1
 }
 prev_selection_stage() {
@@ -160,25 +166,27 @@ while true; do
         role_path=""
         role_title="Custom"
         role_required=""
+        role_default=""
         role_optional=""
         stage="custom_options"
       else
         role_path=$(role_path_for "$role_id")
         role_title=$(role_get_field "$role_path" "ROLE_TITLE")
         role_required=$(role_get_field "$role_path" "ROLE_FEATURES_REQUIRED")
+        role_default=$(role_get_field "$role_path" "ROLE_FEATURES_DEFAULT")
         role_optional=$(role_get_field "$role_path" "ROLE_FEATURES_OPTIONAL")
         if [[ -n $role_required ]]; then
           stage="show_required"
-        elif [[ -n $role_optional ]]; then
+        elif [[ -n $role_default || -n $role_optional ]]; then
           stage="pick_optional"
         else
-          # Role with neither required nor optional features — the stubbed
-          # roles today (homeassistant, mediaserver, pihole, weewx) take
-          # this branch. Behave like Custom: drop into the per-feature
-          # picker so the user can still build a queue. Once a stub gains
-          # real ROLE_FEATURES_REQUIRED/OPTIONAL it'll route through
-          # show_required / pick_optional like a populated role.
-          log_info "Role $role_id has no required/optional features defined; routing to per-feature picker."
+          # Role with no features in any tier — the stubbed roles today
+          # (homeassistant, mediaserver, pihole, weewx) take this branch.
+          # Behave like Custom: drop into the per-feature picker so the
+          # user can still build a queue. Once a stub populates any of
+          # REQUIRED / DEFAULT / OPTIONAL it'll route through one of the
+          # role-driven stages above.
+          log_info "Role $role_id has no required/default/optional features defined; routing to per-feature picker."
           stage="custom_options"
         fi
       fi
@@ -234,7 +242,7 @@ while true; do
       rc=$?
       case $rc in
         0)
-          if [[ -n $role_optional ]]; then
+          if [[ -n $role_default || -n $role_optional ]]; then
             stage="pick_optional"
           else
             stage="merge_role"
@@ -246,10 +254,17 @@ while true; do
 
     pick_optional)
       log_info "Rendering optional-features picker for role $role_id."
+      # First visit for this role: seed user's selection with the role's
+      # DEFAULT list so those items are pre-checked. Items in
+      # ROLE_FEATURES_OPTIONAL stay unchecked until the user toggles them.
+      if [[ $optional_visited -eq 0 ]]; then
+        optional_picked="$role_default"
+        optional_visited=1
+      fi
       # shellcheck disable=SC2086
       optional_picked=$(menu_pick_optionals "$role_title" \
         --previously "${optional_picked//\"/}" \
-        $role_optional)
+        $role_default $role_optional)
       rc=$?
       case $rc in
         0)     stage="merge_role" ;;

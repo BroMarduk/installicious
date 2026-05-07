@@ -21,11 +21,28 @@
 #   ROLE_ID="pihole"
 #   ROLE_TITLE="Pi-Hole — DNS Sinkhole"
 #   ROLE_DESCRIPTION="Network-wide ad blocking via DNS server."
-#   ROLE_FEATURES_REQUIRED="pkupd rconf bash pihole-core"
-#   ROLE_FEATURES_OPTIONAL="ssh log2ram"
+#   ROLE_FEATURES_REQUIRED="pkupd pihole-core"     # mandatory; not toggleable
+#   ROLE_FEATURES_DEFAULT="locale bash"            # pre-checked; user can deselect
+#   ROLE_FEATURES_OPTIONAL="rconf motd ssh"        # unchecked; user can add
 #   ROLE_CONFIG="config/role-pihole.config"
 #   ROLE_EDITABLE_CONFIG="PIHOLE_WEB_PASSWORD PIHOLE_HOSTNAME"
 #   # === II_ROLE_END ===
+#
+# Three feature tiers, in order of how the menu surfaces them:
+#   REQUIRED  — shown via menu_show_required (info-only confirmation).
+#               Always installed.
+#   DEFAULT   — pre-checked items in the optional checklist. User can
+#               uncheck any of them to skip that feature.
+#   OPTIONAL  — unchecked items in the same checklist. User can check
+#               any to add them.
+#
+# When ALL three are empty (the stub roles), the dispatcher falls
+# through to the per-feature picker (Custom flow) so the role still
+# does something useful.
+#
+# Per-feature II_DEFAULT_SELECTED in the manifest only matters in the
+# Custom flow — once a role places a feature into one of its three
+# tiers explicitly, the role's choice wins.
 #
 # Helpers parallel lib/manifest.sh.
 

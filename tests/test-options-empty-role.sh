@@ -31,6 +31,7 @@ ROLE_ID="empty"
 ROLE_TITLE="Empty Role"
 ROLE_DESCRIPTION="No features; degenerate but supported"
 ROLE_FEATURES_REQUIRED=""
+ROLE_FEATURES_DEFAULT=""
 ROLE_FEATURES_OPTIONAL=""
 ROLE_CONFIG=""
 ROLE_EDITABLE_CONFIG=""
@@ -49,40 +50,43 @@ chkeq "OPTIONAL empty" "$optional" ""
 echo
 echo "=== Test 2: pick_role stage routes empty role to custom_options ==="
 # Mirrors the decision tree in scripts/options.sh::pick_role that selects the
-# next stage based on whether the role has required/optional features.
-# A role with neither required nor optional features falls through to
-# custom_options (the per-feature picker) — same flow Custom uses.
+# next stage based on whether the role has required / default / optional
+# features. A role with all three empty falls through to custom_options
+# (the per-feature picker) — same flow Custom uses.
 next_stage_for_role() {
-  local req="$1" opt="$2"
+  local req="$1" def="$2" opt="$3"
   if [[ -n $req ]]; then
     echo "show_required"
-  elif [[ -n $opt ]]; then
+  elif [[ -n $def || -n $opt ]]; then
     echo "pick_optional"
   else
     echo "custom_options"
   fi
 }
-chkeq "non-empty req → show_required"        "$(next_stage_for_role 'pkupd' '')"   "show_required"
-chkeq "empty req, opt only → pick_optional"  "$(next_stage_for_role '' 'zram')"    "pick_optional"
-chkeq "both empty → custom_options"          "$(next_stage_for_role '' '')"        "custom_options"
+chkeq "non-empty req → show_required"           "$(next_stage_for_role 'pkupd' ''       '')"     "show_required"
+chkeq "default only → pick_optional"             "$(next_stage_for_role ''      'locale' '')"     "pick_optional"
+chkeq "optional only → pick_optional"            "$(next_stage_for_role ''      ''       'zram')" "pick_optional"
+chkeq "default + optional → pick_optional"       "$(next_stage_for_role ''      'locale' 'zram')" "pick_optional"
+chkeq "all empty → custom_options"               "$(next_stage_for_role ''      ''       '')"     "custom_options"
 
 # ===========================================================================
 echo
 echo "=== Test 3: _role_uses_custom_flow predicate ==="
 # Mirrors the helper in scripts/options.sh used by prev_selection_stage and
-# _pre_addons_stage. Returns true (rc=0) for Custom OR any role with both
-# required and optional empty.
+# _pre_addons_stage. Returns true (rc=0) for Custom OR any role with all
+# three feature lists empty.
 role_uses_custom_flow() {
-  local role_id="$1" req="$2" opt="$3"
+  local role_id="$1" req="$2" def="$3" opt="$4"
   [[ $role_id == "custom" ]] && return 0
-  [[ -z $req && -z $opt ]] && return 0
+  [[ -z $req && -z $def && -z $opt ]] && return 0
   return 1
 }
-role_uses_custom_flow "custom" "" "";       chkrc "custom always true"            $? 0
-role_uses_custom_flow "weewx"  "" "";       chkrc "stubbed role (both empty) true" $? 0
-role_uses_custom_flow "weewx"  "pkupd" "";  chkrc "non-empty req → false"         $? 1
-role_uses_custom_flow "weewx"  "" "zram";   chkrc "non-empty opt → false"         $? 1
-role_uses_custom_flow "weewx"  "pkupd" "zram"; chkrc "both populated → false"     $? 1
+role_uses_custom_flow "custom" ""      ""       "";     chkrc "custom always true"            $? 0
+role_uses_custom_flow "weewx"  ""      ""       "";     chkrc "stubbed (all empty) true"      $? 0
+role_uses_custom_flow "weewx"  "pkupd" ""       "";     chkrc "non-empty req → false"         $? 1
+role_uses_custom_flow "weewx"  ""      "locale" "";     chkrc "non-empty default → false"     $? 1
+role_uses_custom_flow "weewx"  ""      ""       "zram"; chkrc "non-empty optional → false"    $? 1
+role_uses_custom_flow "weewx"  "pkupd" "locale" "zram"; chkrc "all three populated → false"   $? 1
 
 # ===========================================================================
 echo
