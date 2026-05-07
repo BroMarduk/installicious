@@ -21,7 +21,7 @@
 #   source lib/menu.sh
 #   ids=$(menu_select_category option "Installicious Options" "Pick what you want.")
 
-# menu_select_category <category> [<title>] [<description>] [<previously_selected>]
+# menu_select_category <category> [<title>] [<description>] [<previously_selected>] [<exclude>]
 # Multi-select checklist for the given manifest category. Echoes the selected
 # IDs on stdout when the user picks NEXT.
 #
@@ -29,11 +29,17 @@
 # IDs are pre-checked and any others are unchecked — overriding the manifest's
 # II_DEFAULT_SELECTED. This is how options.sh preserves the user's prior
 # selections when they navigate BACK and then forward again.
+#
+# If <exclude> (space-separated IDs) is provided, those IDs are dropped from
+# the checklist entirely. Used by custom_packages to hide packages that are
+# already required by selected features — those get pulled in via II_DEPS by
+# the scheduler regardless, so showing them as toggleable would be misleading.
 menu_select_category() {
   local category="$1"
   local title="${2:-Installicious}"
   local desc="${3:-Select items from the ${category} category.}"
   local previously="${4:-}"
+  local exclude="${5:-}"
 
   local use_previously=0
   declare -A on_set=()
@@ -45,12 +51,21 @@ menu_select_category() {
     done
   fi
 
+  declare -A excluded=()
+  if [[ -n $exclude ]]; then
+    local x
+    for x in $exclude; do
+      [[ -n $x ]] && excluded[$x]=1
+    done
+  fi
+
   local -a items=()
   local id path title_text default
   while IFS= read -r id; do
     # Skip add-on installers — they belong under their parent's sub-menu
     # (see manifest_is_hidden_child / II_OPTIONAL_GROUP).
     manifest_is_hidden_child "$id" && continue
+    [[ -n ${excluded[$id]:-} ]] && continue
     path=$(manifest_path_for "$id")
     title_text=$(manifest_get_field "$path" "II_TITLE")
     if [[ $use_previously -eq 1 ]]; then

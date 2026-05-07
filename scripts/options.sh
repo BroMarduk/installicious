@@ -100,6 +100,33 @@ _any_parent_has_addons() {
   done
   return 1
 }
+# Returns the unique package IDs that any feature in $features_selected
+# declares as a dependency (II_DEPS). The scheduler pulls these in via
+# scheduler_resolve_deps regardless, but we surface them on the
+# custom_packages screen so the user knows they'll be installed AND
+# can't accidentally try to deselect them (we filter them out of the
+# toggleable checklist via menu_select_category's exclude param).
+_required_packages_from_features() {
+  local id deps dep fpath ppath cat
+  declare -A seen=()
+  for id in $features_selected; do
+    [[ -z $id ]] && continue
+    fpath=$(manifest_path_for "$id" 2>/dev/null)
+    [[ -z $fpath ]] && continue
+    deps=$(manifest_get_field "$fpath" "II_DEPS")
+    for dep in $deps; do
+      [[ -z $dep ]] && continue
+      [[ -n ${seen[$dep]:-} ]] && continue
+      ppath=$(manifest_path_for "$dep" 2>/dev/null)
+      [[ -z $ppath ]] && continue
+      cat=$(manifest_get_field "$ppath" "II_CATEGORY")
+      if [[ $cat == "package" ]]; then
+        seen[$dep]=1
+        echo "$dep"
+      fi
+    done
+  done
+}
 # True for the Custom role and any role that declares no required / optional
 # features (the stubbed roles today: homeassistant, mediaserver, pihole,
 # weewx). Both flow through the per-feature checklist (custom_features →
@@ -208,10 +235,21 @@ while true; do
 
     custom_packages)
       log_info "Rendering packages checklist."
+      # Surface any packages that selected features pull in via II_DEPS
+      # so the user sees them but can't fight the scheduler by trying
+      # to uncheck them. We list them in the description and exclude
+      # them from the toggleable checklist below.
+      required_packages=$(_required_packages_from_features | tr '\n' ' ' | sed 's/[[:space:]]*$//')
+      if [[ -n $required_packages ]]; then
+        packages_desc="Required by selected features (auto-installed):\n  $required_packages\n\nOptional apt packages below. Most users skip this."
+      else
+        packages_desc="Optional apt packages. Most users skip this; required ones are auto-installed."
+      fi
       packages_selected=$(menu_select_category "package" \
         "Installicious Packages" \
-        "Select apt packages to install (advanced — most users skip this)." \
-        "${packages_selected//\"/}")
+        "$packages_desc" \
+        "${packages_selected//\"/}" \
+        "$required_packages")
       rc=$?
       case $rc in
         0)     stage="merge_custom" ;;
