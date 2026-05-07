@@ -40,7 +40,7 @@ II_CATEGORY="option"
 II_VERSION="3"
 II_DEPS=""
 II_REQUIRES_REBOOT="conditional"
-II_DEFAULT_SELECTED="on"
+II_DEFAULT_SELECTED="off"
 # === II_MANIFEST_END ===
 
 source config/installicious.config || exit 1

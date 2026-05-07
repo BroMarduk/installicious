@@ -27,6 +27,7 @@ II_CATEGORY="option"
 II_VERSION="1"
 II_DEPS=""
 II_REQUIRES_REBOOT="never"
+II_DEFAULT_SELECTED="on"
 # === II_MANIFEST_END ===
 
 source config/installicious.config || exit 1
