@@ -60,9 +60,33 @@ FILE_CONFIG_ZRAM="$PATH_CONFIG/zram.config"
 # Apply user edits from the menu_edit_config screen (Phase 2). Sourced after
 # the baseline config so menu edits win for this run.
 declare -F state_apply_menu_overrides >/dev/null && state_apply_menu_overrides
-ZRAM_PERCENT_OF_RAM="${ZRAM_PERCENT_OF_RAM:-50}"
-ZRAM_COMPRESSION_ALGO="${ZRAM_COMPRESSION_ALGO:-zstd}"
-ZRAM_SWAP_PRIORITY="${ZRAM_SWAP_PRIORITY:-100}"
+
+# Source the choices file so we can call _default_<KEY> helpers for any
+# value the user left blank. The same helpers feed the menu-editor display,
+# so the editor and the installer agree on smart defaults.
+FILE_CHOICES_ZRAM="${PATH_FEATURES:-features}/feature-zram.choices.sh"
+[[ -f $FILE_CHOICES_ZRAM ]] && source "$FILE_CHOICES_ZRAM"
+
+# _resolve_default <var> <hardcoded_fallback>
+# If <var> is empty and _default_<var> is defined, use it. Otherwise
+# fall back to the hardcoded value. Lets blank-in-config "do the smart
+# thing" without losing the safety net for cases where the choices
+# file is somehow missing.
+_resolve_default() {
+  local key="$1" fallback="$2"
+  local current_val="${!key}"
+  if [[ -n $current_val ]]; then
+    return 0
+  fi
+  if declare -F "_default_$key" >/dev/null; then
+    printf -v "$key" '%s' "$("_default_$key")"
+  else
+    printf -v "$key" '%s' "$fallback"
+  fi
+}
+_resolve_default ZRAM_PERCENT_OF_RAM   50
+_resolve_default ZRAM_COMPRESSION_ALGO zstd
+_resolve_default ZRAM_SWAP_PRIORITY    100
 ZRAM_DISABLE_DPHYS_SWAPFILE="${ZRAM_DISABLE_DPHYS_SWAPFILE:-true}"
 
 if [[ -z $FILE_LOG_INSTALLICIOUS ]]; then
