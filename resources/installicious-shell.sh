@@ -63,7 +63,6 @@ _installicious_show_resume_transcript() {
       # the top so we see anything we missed.
       tail -n +1 -f --pid="$mainpid" "$transcript" 2>/dev/null
       echo
-      _installicious_pause_after_transcript
       touch "$marker" 2>/dev/null
       return 0
     fi
@@ -81,20 +80,8 @@ _installicious_show_resume_transcript() {
       cat "$transcript"
       echo "============================================================"
       echo
-      _installicious_pause_after_transcript
       touch "$marker" 2>/dev/null
     fi
-  fi
-}
-
-# Brief pause so the transcript stays on screen even if a verbose MOTD,
-# bashrc banner, or fast prompt-paint would otherwise push it offscreen.
-# 5-second timeout — user can press Enter to skip, or just ignore it.
-# Reads from /dev/tty so it works even when stdin is redirected.
-_installicious_pause_after_transcript() {
-  if [ -t 0 ] || [ -t 1 ]; then
-    read -t 5 -rp "Press Enter to continue (auto-continues in 5s)... " _ </dev/tty 2>/dev/null
-    echo
   fi
 }
 # Defer the actual display until just before the user's first prompt via
@@ -110,7 +97,6 @@ _installicious_pending_resume_check() {
   PROMPT_COMMAND="${PROMPT_COMMAND//_installicious_pending_resume_check;/}"
   PROMPT_COMMAND="${PROMPT_COMMAND//_installicious_pending_resume_check/}"
   unset -f _installicious_show_resume_transcript
-  unset -f _installicious_pause_after_transcript
   unset -f _installicious_pending_resume_check
 }
 PROMPT_COMMAND="_installicious_pending_resume_check;${PROMPT_COMMAND:-}"
