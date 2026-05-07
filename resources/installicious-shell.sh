@@ -97,9 +97,23 @@ _installicious_pause_after_transcript() {
     echo
   fi
 }
-_installicious_show_resume_transcript
-unset -f _installicious_show_resume_transcript
-unset -f _installicious_pause_after_transcript
+# Defer the actual display until just before the user's first prompt via
+# PROMPT_COMMAND. /etc/profile's default loop sources profile.d/*.sh BEFORE
+# anything appended later in /etc/profile (notably feature-motd's MOTD
+# launcher block) — running the transcript display inline here means MOTD
+# would paint over it. PROMPT_COMMAND runs after /etc/profile finishes,
+# after MOTD, right before the first prompt is drawn.
+_installicious_pending_resume_check() {
+  _installicious_show_resume_transcript
+  # One-shot: drop ourselves from PROMPT_COMMAND so subsequent prompts
+  # don't re-run, then garbage-collect the helpers.
+  PROMPT_COMMAND="${PROMPT_COMMAND//_installicious_pending_resume_check;/}"
+  PROMPT_COMMAND="${PROMPT_COMMAND//_installicious_pending_resume_check/}"
+  unset -f _installicious_show_resume_transcript
+  unset -f _installicious_pause_after_transcript
+  unset -f _installicious_pending_resume_check
+}
+PROMPT_COMMAND="_installicious_pending_resume_check;${PROMPT_COMMAND:-}"
 
 # ---------------------------------------------------------------------------
 # `installicious` shell wrapper function
