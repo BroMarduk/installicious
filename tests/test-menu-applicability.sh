@@ -197,5 +197,42 @@ PATH_FEATURES="$TMPDIR/features" PATH_PACKAGES="$TMPDIR/features" \
 declare -F _choices_FOO_BOOL >/dev/null && ok "function reloaded after second source" \
   || fail "function not reloaded"
 
+
+# ===========================================================================
+echo
+echo "=== Test 9: _default_<KEY> convention — runtime display fallback ==="
+# menu_edit_config consults _default_<KEY> when the config chain produces
+# an empty value, so the editor can show the live system state for keys
+# whose static config default is blank (e.g. LOCALE_TIMEZONE, LOCALE_WIFI_COUNTRY).
+# This test only verifies the convention loads; the persist-skipping
+# behavior is covered by code review since it's inside menu_edit_config's
+# whiptail loop.
+cat >> "$TMPDIR/features/feature-foo.choices.sh" <<'EOF'
+
+# Dynamic fallback — returns the current system value for FOO_DYN_KEY.
+_default_FOO_DYN_KEY() {
+  echo "system-runtime-value"
+}
+EOF
+
+PATH_FEATURES="$TMPDIR/features" PATH_PACKAGES="$TMPDIR/features" \
+  _menu_source_choices_for "foo"
+declare -F _default_FOO_DYN_KEY >/dev/null \
+  && ok "_default_<KEY> helper sourced" \
+  || fail "_default_FOO_DYN_KEY not defined after source"
+
+got=$(_default_FOO_DYN_KEY)
+chkeq "_default_<KEY> output" "$got" "system-runtime-value"
+
+# Real-world example — verify feature-locale.choices.sh defines all five.
+source features/feature-locale.choices.sh 2>/dev/null
+for key in LOCALE_LANG LOCALE_TIMEZONE LOCALE_KEYBOARD_LAYOUT LOCALE_KEYBOARD_MODEL LOCALE_WIFI_COUNTRY; do
+  if declare -F "_default_$key" >/dev/null; then
+    ok "feature-locale defines _default_$key"
+  else
+    fail "feature-locale missing _default_$key"
+  fi
+done
+
 echo
 echo "=== Done ==="
