@@ -38,12 +38,34 @@ chmod 755 dependencies/*.sh features/*.sh packages/*.sh roles/*.sh scripts/*.sh 
 [[ -d lib ]]   && chmod 755 lib/*.sh 2>/dev/null
 [[ -d tests ]] && chmod 755 tests/*.sh 2>/dev/null
 
-# If we're not already living at the destination, copy there.
+# If we're not already living at the destination, sync there.
+# rsync --delete removes files that are no longer in the source tree —
+# essential for cleaning up renamed/retired feature/package/role files
+# (cp -R would leave stale orphans behind, which then show up as
+# duplicate IDs in the manifest registry and cause weird half-broken
+# behavior). Excludes: runtime dirs that hold per-install state we
+# don't want to nuke. The user's menu_edit_config overrides live in
+# state/menu-config.sh, kept by the state/ exclusion. backup snapshots
+# created during prior --install runs stay too.
 if [[ "$SCRIPT_DIR" != "$DEST" ]]; then
-  echo "[setup] Installing to $DEST"
+  echo "[setup] Syncing to $DEST"
   sudo mkdir -p "$DEST"
-  # Copy the contents (not the source dir itself) into DEST.
-  sudo cp -R "$SCRIPT_DIR"/. "$DEST"/
+  if command -v rsync >/dev/null 2>&1; then
+    sudo rsync -a --delete \
+      --exclude='/state/' \
+      --exclude='/status/' \
+      --exclude='/logs/' \
+      --exclude='/backup/' \
+      "$SCRIPT_DIR"/ "$DEST"/
+  else
+    # Fallback: cp + manual prune of common framework dirs so renamed
+    # files don't linger. Less thorough than rsync but better than nothing.
+    echo "[setup] rsync not available; falling back to cp -R (renamed files may linger)"
+    for d in features packages roles lib scripts resources dependencies tests; do
+      [[ -d "$DEST/$d" ]] && sudo rm -rf "$DEST/$d"
+    done
+    sudo cp -R "$SCRIPT_DIR"/. "$DEST"/
+  fi
 fi
 
 # Runtime directories — installicious creates these on the fly too, but having
