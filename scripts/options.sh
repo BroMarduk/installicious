@@ -7,17 +7,46 @@
 # screen EXCEPT the splash (in installicious.sh) and the role picker
 # below — at those two, ESC exits the installer.
 #
-# Stages (see the dispatcher at the bottom of the file):
-#   pick_role       — single-select role picker (first stage)
-#   custom_features — Custom: pick from features/ (II_CATEGORY="feature")
-#   custom_packages — Custom: pick from packages/ (II_CATEGORY="package")
-#   show_required   — Role: confirm the required features (info)
-#   pick_optional   — Role: pick optional add-on features
-#   pick_addons     — sub-menu(s) for features that declare II_OPTIONAL_GROUP
-#                     (skipped automatically when no selected parent has add-ons)
-#   edit_config     — surface II_EDITABLE_CONFIG / ROLE_EDITABLE_CONFIG values
-#   confirm         — final yes/no
-#   run             — scheduler hand-off (terminal stage)
+# Custom-flow order (when the user picks the Custom role, or any role
+# that doesn't yet declare REQUIRED/DEFAULT/OPTIONAL features):
+#
+#   pick_role  →  custom_features  →  merge_features  →  pick_addons*
+#                                                       →  edit_config
+#                                                       →  custom_packages
+#                                                       →  merge_packages
+#                                                       →  confirm  →  run
+#
+#   *pick_addons fires only when at least one selected feature declares
+#    II_OPTIONAL_GROUP. The Packages screen comes AFTER edit_config so
+#    feature configs are known before any package decisions, and so the
+#    "required by selected features" header on Packages reflects every
+#    feature/addon's II_DEPS.
+#
+# Role-flow order (role declares REQUIRED / DEFAULT / OPTIONAL features):
+#
+#   pick_role  →  show_required*  →  pick_optional*  →  merge_role
+#                                                    →  pick_addons*
+#                                                    →  edit_config
+#                                                    →  confirm  →  run
+#
+#   No Custom packages screen — the role's features pull in their
+#   package deps via II_DEPS automatically; the user doesn't see the
+#   raw package picker.
+#
+# Stage glossary:
+#   pick_role         single-select role picker (first stage)
+#   custom_features   Custom: pick from features/ (II_CATEGORY="feature")
+#   merge_features    internal: stage selected = features + (later) addons
+#   show_required     Role: confirm the required features (info)
+#   pick_optional     Role: pick optional add-on features
+#   merge_role        internal: stage selected = required + optional
+#   pick_addons       sub-menu(s) for features with II_OPTIONAL_GROUP
+#   edit_config       surface II_EDITABLE_CONFIG / ROLE_EDITABLE_CONFIG values
+#   custom_packages   Custom: pick from packages/ (II_CATEGORY="package");
+#                     required-by-features auto-listed and excluded from picker
+#   merge_packages    internal: append picked packages, exit if nothing at all
+#   confirm           final yes/no
+#   run               scheduler hand-off (terminal stage)
 #
 # Invoked from installicious.sh after hardware/OS detection and the initial
 # whiptail confirmation.
@@ -100,20 +129,20 @@ _any_parent_has_addons() {
   done
   return 1
 }
-# Returns the unique package IDs that any feature in $features_selected
-# declares as a dependency (II_DEPS). The scheduler pulls these in via
-# scheduler_resolve_deps regardless, but we surface them on the
+# Returns the unique package IDs that any selected feature (or its
+# add-on) declares as a dependency (II_DEPS). The scheduler pulls these
+# in via scheduler_resolve_deps regardless, but we surface them on the
 # custom_packages screen so the user knows they'll be installed AND
 # can't accidentally try to deselect them (we filter them out of the
 # toggleable checklist via menu_select_category's exclude param).
+#
+# Reads from $selected (which by the time custom_packages runs in the
+# new flow contains features + their picked addons) so addon deps are
+# accounted for too.
 _required_packages_from_features() {
   local id deps dep fpath ppath cat
   declare -A seen=()
-  # whiptail --checklist emits selected IDs as space-separated double-
-  # quoted strings (e.g. `"compressed-swap" "bash"`). Strip quotes so
-  # the for loop sees raw IDs that match the manifest registry. Other
-  # dispatcher branches use the same `${var//\"/}` pattern.
-  for id in ${features_selected//\"/}; do
+  for id in $selected; do
     [[ -z $id ]] && continue
     fpath=$(manifest_path_for "$id" 2>/dev/null)
     [[ -z $fpath ]] && continue
@@ -134,17 +163,21 @@ _required_packages_from_features() {
 # True for the Custom role and any role that declares no required / optional
 # features (the stubbed roles today: homeassistant, mediaserver, pihole,
 # weewx). Both flow through the per-feature checklist (custom_features →
-# custom_packages) instead of show_required / pick_optional.
+# edit_config → custom_packages → confirm) instead of
+# show_required / pick_optional.
 _role_uses_custom_flow() {
   [[ $role_id == "custom" ]] && return 0
   [[ -z $role_required && -z $role_default && -z $role_optional ]] && return 0
   return 1
 }
+# Returns the stage that BACK from edit_config rewinds to. Doesn't
+# include packages or confirm — those come AFTER edit_config in the
+# new flow (features → addons → edit_config → packages → confirm).
 prev_selection_stage() {
   if _any_parent_has_addons; then
     echo "pick_addons"
   elif _role_uses_custom_flow; then
-    echo "custom_packages"
+    echo "custom_features"
   elif [[ -n $role_optional ]]; then
     echo "pick_optional"
   elif [[ -n $role_required ]]; then
@@ -157,13 +190,23 @@ prev_selection_stage() {
 # without considering pick_addons itself).
 _pre_addons_stage() {
   if _role_uses_custom_flow; then
-    echo "custom_packages"
+    echo "custom_features"
   elif [[ -n $role_optional ]]; then
     echo "pick_optional"
   elif [[ -n $role_required ]]; then
     echo "show_required"
   else
     echo "pick_role"
+  fi
+}
+# Where confirm BACK rewinds to: in Custom flow it's the Packages
+# screen, in Role flow there's no Packages screen so it goes to the
+# config editor.
+_pre_confirm_stage() {
+  if _role_uses_custom_flow; then
+    echo "custom_packages"
+  else
+    echo "edit_config"
   fi
 }
 
@@ -231,44 +274,18 @@ while true; do
         "${features_selected//\"/}")
       rc=$?
       case $rc in
-        0)     stage="custom_packages" ;;
+        0)     stage="merge_features" ;;
         1|255) stage="pick_role" ;;          # BACK or ESC → previous stage
-        2)     features_selected=""; stage="custom_packages" ;;
+        2)     features_selected=""; stage="merge_features" ;;
       esac
       ;;
 
-    custom_packages)
-      log_info "Rendering packages checklist."
-      # Surface any packages that selected features pull in via II_DEPS
-      # so the user sees them but can't fight the scheduler by trying
-      # to uncheck them. We list them in the description and exclude
-      # them from the toggleable checklist below.
-      required_packages=$(_required_packages_from_features | tr '\n' ' ' | sed 's/[[:space:]]*$//')
-      if [[ -n $required_packages ]]; then
-        packages_desc="Required by selected features (auto-installed):\n  $required_packages\n\nOptional apt packages below. Most users skip this."
-      else
-        packages_desc="Optional apt packages. Most users skip this; required ones are auto-installed."
-      fi
-      packages_selected=$(menu_select_category "package" \
-        "Installicious Packages" \
-        "$packages_desc" \
-        "${packages_selected//\"/}" \
-        "$required_packages")
-      rc=$?
-      case $rc in
-        0)     stage="merge_custom" ;;
-        1|255) stage="custom_features" ;;    # BACK or ESC → previous stage
-        2)     packages_selected=""; stage="merge_custom" ;;
-      esac
-      ;;
-
-    merge_custom)
-      selected="${features_selected//\"/} ${packages_selected//\"/}"
+    merge_features)
+      # Pre-packages merge: $selected holds features (and, after
+      # pick_addons, their addons too). Don't exit on empty here —
+      # the user may still pick packages on custom_packages.
+      selected="${features_selected//\"/}"
       selected=$(echo "$selected" | tr -s ' ' | sed 's/^ //; s/ $//')
-      if [[ -z $selected ]]; then
-        log_info "User $CURRENTUSER continued without selecting any features; nothing to do."
-        exit 0
-      fi
       selected_parents="$selected"
       if _any_parent_has_addons; then
         stage="pick_addons"
@@ -390,20 +407,77 @@ while true; do
       # only there as belt-and-suspenders if a future helper change leaks
       # 255 through.
       case $rc in
-        0)     stage="confirm" ;;
-        1|255) stage=$(prev_selection_stage) ;;
-        2)
-          # No editable keys for the current selection. Auto-advance — but
-          # if the user just pressed BACK on confirm, going forward to
-          # confirm again creates an infinite bounce. Rewind further in
-          # that case instead.
-          if [[ $prev_stage == "confirm" ]]; then
-            stage=$(prev_selection_stage)
+        0)
+          # Custom flow: advance to packages screen so the user can pick
+          # additional apt packages with full knowledge of the feature
+          # configs they just edited (and so the packages screen knows
+          # which packages are required by feature II_DEPS).
+          # Role flow: no packages screen — go straight to confirm.
+          if _role_uses_custom_flow; then
+            stage="custom_packages"
           else
             stage="confirm"
           fi
           ;;
+        1|255) stage=$(prev_selection_stage) ;;
+        2)
+          # No editable keys for the current selection. Auto-advance — but
+          # if the user just pressed BACK on confirm or custom_packages,
+          # going forward again would bounce them right back. Rewind
+          # further in that case instead.
+          case "$prev_stage" in
+            confirm|custom_packages)
+              stage=$(prev_selection_stage)
+              ;;
+            *)
+              if _role_uses_custom_flow; then
+                stage="custom_packages"
+              else
+                stage="confirm"
+              fi
+              ;;
+          esac
+          ;;
       esac
+      ;;
+
+    custom_packages)
+      log_info "Rendering packages checklist."
+      # Surface packages that selected features pull in via II_DEPS so
+      # the user sees them but can't fight the scheduler by trying to
+      # uncheck them. We list them in the description and exclude them
+      # from the toggleable checklist below.
+      required_packages=$(_required_packages_from_features | tr '\n' ' ' | sed 's/[[:space:]]*$//')
+      if [[ -n $required_packages ]]; then
+        packages_desc="Required by selected features (auto-installed):\n  $required_packages\n\nOptional apt packages below. Most users skip this."
+      else
+        packages_desc="Optional apt packages. Most users skip this; required ones are auto-installed."
+      fi
+      packages_selected=$(menu_select_category "package" \
+        "Installicious Packages" \
+        "$packages_desc" \
+        "${packages_selected//\"/}" \
+        "$required_packages")
+      rc=$?
+      case $rc in
+        0)     stage="merge_packages" ;;
+        1|255) stage="edit_config" ;;        # BACK or ESC → editor
+        2)     packages_selected=""; stage="merge_packages" ;;
+      esac
+      ;;
+
+    merge_packages)
+      # Append packages to the already-selected features+addons. This
+      # is where we make the final "did the user pick anything at all"
+      # decision — features alone, packages alone, or any combination
+      # is fine. Empty everything means "nothing to do" → exit.
+      selected="$selected ${packages_selected//\"/}"
+      selected=$(echo "$selected" | tr -s ' ' | sed 's/^ //; s/ $//')
+      if [[ -z $selected ]]; then
+        log_info "User $CURRENTUSER continued without selecting any features or packages; nothing to do."
+        exit 0
+      fi
+      stage="confirm"
       ;;
 
     confirm)
@@ -413,7 +487,7 @@ while true; do
       rc=$?
       case $rc in
         0)     stage="run" ;;
-        1|255) stage="edit_config" ;;  # BACK or ESC → editor
+        1|255) stage=$(_pre_confirm_stage) ;;  # Custom: → custom_packages; Role: → edit_config
       esac
       ;;
 
