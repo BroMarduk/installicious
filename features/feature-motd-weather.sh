@@ -1,28 +1,34 @@
 #!/bin/bash
 
 # Module:      MOTD Weather Add-on
-# Description: Adds the hourly weather fetch to the MOTD. Installs the jshon
-#              apt package and renders motd-current-weather.sh into
-#              /etc/cron.hourly/, which writes the current conditions to a
-#              results file the base motd.sh / motd-small.sh banner reads.
+# Description: Adds the hourly weather fetch to the MOTD. Renders
+#              motd-current-weather.sh into /etc/cron.hourly/, which
+#              writes the current conditions to a results file the
+#              base motd.sh / motd-small.sh banner reads.
 #
-#              II_DEPS="motd" so the scheduler auto-pulls the base MOTD
-#              installer into the queue whenever weather is selected on its
-#              own. The Pillar-6 hardened scheduler will refuse to start the
-#              run if feature-motd.sh is somehow missing.
+#              II_DEPS="motd jshon":
+#                motd  - base MOTD installer; scheduler auto-pulls it
+#                        when weather is selected on its own
+#                jshon - tiny JSON-parser CLI used inside the cron
+#                        script to pluck fields from the AccuWeather
+#                        response. Lives as packages/package-jshon.sh
+#                        so the apt install + symmetric --uninstall
+#                        revert is owned there, not here.
 #
-#              Symmetric --uninstall: removes the cron job, then reverts
-#              jshon (only if we installed it).
+#              The Pillar-6 hardened scheduler will refuse to start the
+#              run if either dependency manifest is missing.
+#
+#              Symmetric --uninstall: removes the cron job. The jshon
+#              package's own --uninstall handles its apt-revert.
 
 # === II_MANIFEST_BEGIN ===
 II_ID="motd-weather"
 II_TITLE="MOTD weather (hourly current conditions)"
 II_CATEGORY="feature"
-II_VERSION="1"
-II_DEPS="motd"
+II_VERSION="2"
+II_DEPS="motd jshon"
 II_REQUIRES_REBOOT="never"
 II_DEFAULT_SELECTED="off"
-II_APT_PACKAGES="jshon"
 II_EDITABLE_CONFIG="MOTD_WEATHER_LOC_CODE MOTD_WEATHER_API_KEY"
 # === II_MANIFEST_END ===
 
@@ -31,7 +37,6 @@ source lib/log.sh
 source lib/status.sh
 source lib/state.sh
 source lib/apt.sh
-source lib/installer_apt.sh
 
 FILE_CONFIG_MOTD="${PATH_CONFIG:-config}/motd.config"
 [[ -f $FILE_CONFIG_MOTD ]] && source "$FILE_CONFIG_MOTD"
@@ -102,16 +107,9 @@ do_install() {
     return 2
   fi
 
-  # ---- apt deps (with per-package pre-state) ----
-  log_info "Ensuring apt deps: $II_APT_PACKAGES."
-  # shellcheck disable=SC2086
-  installer_apt_record_install "$STATUS_FILE" $II_APT_PACKAGES
-  local rc=$?
-  if [[ $rc -ne 0 ]]; then
-    status_mark_failed "$II_ID" "apt deps install failed (code $rc)"
-    echo -e "[ \e[0;31mFAIL\e[0m ] Installicious could not install jshon. Error Code: $rc."
-    return $rc
-  fi
+  # jshon is pulled in via II_DEPS — packages/package-jshon.sh runs
+  # before us in the scheduler order and handles apt install + its
+  # own pre-install state record. No apt step here anymore.
 
   # ---- hourly cron ----
   log_info "Installing $CRON_HOURLY_WEATHER."
@@ -154,8 +152,9 @@ do_uninstall() {
     sudo rm -f "$CRON_HOURLY_WEATHER"
   fi
 
-  # shellcheck disable=SC2086
-  installer_apt_revert "$STATUS_FILE" $II_APT_PACKAGES
+  # jshon apt-revert is owned by packages/package-jshon.sh — its
+  # --uninstall checks its own pre-install record and apt-removes
+  # only if it wasn't there before installicious touched the system.
 
   status_mark_uninstalled "$II_ID"
   log_ok "MOTD weather uninstalled."
