@@ -28,6 +28,22 @@
 
 APT_TIME_FILE="${APT_TIME_FILE:-}"
 
+# Env vars forced on every apt-get invocation:
+#   LC_ALL=C LANG=C   silences perl / locale tooling (apt-listchanges,
+#                     dpkg postinst hooks) that would otherwise inherit
+#                     the user's shell LANG and emit "Cannot set
+#                     LC_CTYPE" warnings when that locale isn't
+#                     generated yet — typical on a fresh RPi Imager
+#                     install where LANG=en_GB.UTF-8 but only the C
+#                     locale exists. Cosmetic but loud, masks real
+#                     errors in the install transcript.
+#   DEBIAN_FRONTEND=noninteractive  prevents dpkg/debconf from pausing
+#                     for prompts during unattended installs.
+#
+# Used internally; package-log2ram and other callers that need the same
+# wrap can borrow via `${_APT_ENV[@]}` after sourcing this lib.
+_APT_ENV=(env LC_ALL=C LANG=C DEBIAN_FRONTEND=noninteractive)
+
 _apt_time_file() {
   if [[ -n $APT_TIME_FILE ]]; then
     echo "$APT_TIME_FILE"
@@ -81,19 +97,19 @@ _apt_run_with_cache() {
 # apt_ensure_fresh - run apt-get update if the cached run is stale.
 apt_ensure_fresh() {
   _apt_run_with_cache "PKUPD_UPDATE_RUN" \
-    sudo DEBIAN_FRONTEND="noninteractive" apt-get update --yes
+    sudo "${_APT_ENV[@]}" apt-get update --yes
 }
 
 # apt_dist_upgrade_fresh - run apt-get dist-upgrade if the cached run is stale.
 apt_dist_upgrade_fresh() {
   _apt_run_with_cache "PKUPD_UPGRADE_RUN" \
-    sudo DEBIAN_FRONTEND="noninteractive" apt-get dist-upgrade --yes
+    sudo "${_APT_ENV[@]}" apt-get dist-upgrade --yes
 }
 
 # apt_autoremove_fresh - run apt-get autoremove (with --purge) if the cached run is stale.
 apt_autoremove_fresh() {
   _apt_run_with_cache "PKUPD_AUTOREMOVE_RUN" \
-    sudo DEBIAN_FRONTEND="noninteractive" apt-get --yes --purge autoremove
+    sudo "${_APT_ENV[@]}" apt-get --yes --purge autoremove
 }
 
 # apt_is_installed <package> - return 0 if dpkg reports the package installed.
@@ -116,7 +132,7 @@ apt_ensure_installed() {
     return 0
   fi
   apt_ensure_fresh || return $?
-  sudo DEBIAN_FRONTEND="noninteractive" apt-get install --yes "${missing[@]}"
+  sudo "${_APT_ENV[@]}" apt-get install --yes "${missing[@]}"
 }
 
 # apt_remove <package> [<package> ...] - purge packages and autoremove unused deps.
@@ -124,5 +140,5 @@ apt_remove() {
   if [[ $# -eq 0 ]]; then
     return 0
   fi
-  sudo DEBIAN_FRONTEND="noninteractive" apt-get --yes --purge autoremove "$@"
+  sudo "${_APT_ENV[@]}" apt-get --yes --purge autoremove "$@"
 }
