@@ -31,7 +31,7 @@
 
 # === II_MANIFEST_BEGIN ===
 II_ID="ram-logging"
-II_TITLE="RAM Logging (/var/log in RAM via log2ram)"
+II_TITLE="Logging in RAM (log2ram)"
 II_CATEGORY="feature"
 II_VERSION="1"
 II_DEPS="log2ram"

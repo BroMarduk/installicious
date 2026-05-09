@@ -23,7 +23,7 @@
 
 # === II_MANIFEST_BEGIN ===
 II_ID="motd"
-II_TITLE="Login MOTD (banner)"
+II_TITLE="Login Message of the Day (MOTD)"
 II_CATEGORY="feature"
 II_VERSION="1"
 II_DEPS=""

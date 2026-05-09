@@ -27,7 +27,7 @@
 
 # === II_MANIFEST_BEGIN ===
 II_ID="locale"
-II_TITLE="Set Localizations (locale, timezone, keyboard, WiFi country)"
+II_TITLE="Set Localizations"
 II_CATEGORY="feature"
 II_VERSION="1"
 II_DEPS=""

@@ -23,7 +23,7 @@
 
 # === II_MANIFEST_BEGIN ===
 II_ID="zram"
-II_TITLE="ZRAM (zram-tools apt package)"
+II_TITLE="ZRAM tools"
 II_CATEGORY="package"
 II_VERSION="1"
 II_DEPS=""

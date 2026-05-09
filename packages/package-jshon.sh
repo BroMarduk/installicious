@@ -20,7 +20,7 @@
 
 # === II_MANIFEST_BEGIN ===
 II_ID="jshon"
-II_TITLE="jshon (JSON parser for shell)"
+II_TITLE="JSON parser for shell"
 II_CATEGORY="package"
 II_VERSION="1"
 II_DEPS=""
