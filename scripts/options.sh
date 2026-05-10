@@ -246,6 +246,24 @@ _pre_addons_required_stage() {
     echo "pick_role"
   fi
 }
+# Returns the space-separated list of features that are already locked
+# in for the queue at pick_optional time: role_required plus whatever
+# the user picked in pick_addons_required (e.g. the nginx selection
+# from the webserver radio). Used to compose the "auto-selected (will
+# install automatically)" header on the optional-features screen, the
+# same way custom_packages surfaces required-by-features packages.
+_auto_selected_for_optional() {
+  local out=""
+  local id
+  for id in $role_required; do
+    out+=" $id"
+  done
+  for id in $role_required; do
+    [[ -n ${addons_picked[$id]:-} ]] && out+=" ${addons_picked[$id]}"
+  done
+  echo "$out" | tr -s ' ' | sed 's/^ //; s/ $//'
+}
+
 # Where confirm BACK rewinds to: in Custom flow it's the Packages
 # screen, in Role flow there's no Packages screen so it goes to the
 # config editor.
@@ -435,8 +453,19 @@ while true; do
         optional_picked="$role_default"
         optional_visited=1
       fi
+      # Compose the screen description so the user sees what's already
+      # locked in (role_required + the radio backend picked in
+      # pick_addons_required), mirroring how custom_packages shows
+      # auto-installed required packages above its checklist.
+      auto_selected=$(_auto_selected_for_optional)
+      if [[ -n $auto_selected ]]; then
+        optional_desc="Auto-selected (will install automatically):\n  $auto_selected\n\nOptional add-ons below. Default-on rows are pre-checked; toggle as needed."
+      else
+        optional_desc="Optional add-ons (default off; pick any you want)."
+      fi
       # shellcheck disable=SC2086
       optional_picked=$(menu_pick_optionals "$role_title" \
+        --desc "$optional_desc" \
         --previously "${optional_picked//\"/}" \
         $role_default $role_optional)
       rc=$?

@@ -163,10 +163,14 @@ menu_pick_optionals() {
   local role_title="$1"
   shift
   local previously=""
-  if [[ "${1:-}" == "--previously" ]]; then
-    previously="$2"
-    shift 2
-  fi
+  local desc="Optional add-ons (default off; pick any you want)."
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --previously) previously="$2"; shift 2 ;;
+      --desc)       desc="$2";       shift 2 ;;
+      *)            break ;;
+    esac
+  done
   if [[ $# -eq 0 ]]; then
     return 2
   fi
@@ -201,7 +205,7 @@ menu_pick_optionals() {
   whiptail --title "$role_title - Optional Add-ons" \
     --ok-button "NEXT" \
     --cancel-button "BACK" \
-    --checklist "Optional add-ons (default off; pick any you want)." 20 80 12 \
+    --checklist "$desc" 20 80 12 \
     "${items[@]}" \
     3>&1 1>&2 2>&3
 }
