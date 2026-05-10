@@ -106,7 +106,7 @@ chkeq "empty filter" "$(manifest_filter_by_category nothing "$TMPDIR")" ""
 echo
 echo "=== Test 7: real features/ + packages/ have the expected manifest roster ==="
 real_ids=$(manifest_list_ids features packages | sort | tr "\n" ",")
-chkeq "real manifests" "$real_ids" "bash,compressed-swap,git,jshon,locale,log2ram,motd,motd-updates,motd-weather,pip,pkupd,ram-logging,rconf,skyfield,weewx,zram,"
+chkeq "real manifests" "$real_ids" "apache,bash,caddy,compressed-swap,git,jshon,lighttpd,locale,log2ram,motd,motd-updates,motd-weather,nginx,pip,pkupd,ram-logging,rconf,skyfield,webserver,weewx,zram,"
 
 # Each registered ID's filename must match feature-<id>.sh (when in features/)
 # OR package-<id>.sh (when in packages/).
@@ -194,13 +194,37 @@ manifest_is_hidden_child motd-updates features packages; chkrc "motd-updates is 
 manifest_is_hidden_child motd         features packages; chkrc "motd is NOT hidden"      $? 1
 manifest_is_hidden_child skyfield     features packages; chkrc "skyfield is NOT hidden"  $? 1
 
+# Web server backends are hidden children of the webserver parent.
+ws_children=$(manifest_optional_children_of webserver features packages)
+chkeq "webserver's optional children" "$ws_children" "nginx apache lighttpd caddy"
+manifest_is_hidden_child nginx    features packages; chkrc "nginx is hidden child"    $? 0
+manifest_is_hidden_child apache   features packages; chkrc "apache is hidden child"   $? 0
+manifest_is_hidden_child lighttpd features packages; chkrc "lighttpd is hidden child" $? 0
+manifest_is_hidden_child caddy    features packages; chkrc "caddy is hidden child"    $? 0
+manifest_is_hidden_child webserver features packages; chkrc "webserver is NOT hidden" $? 1
+
 # ===========================================================================
 echo
 echo "=== Test 10: defaults scan both tier directories ==="
 # With no dir args, manifest helpers should hit features/ AND packages/.
 # Picking IDs from each side proves both are scanned.
 default_ids=$(manifest_list_ids | sort | tr "\n" ",")
-chkeq "defaults match explicit two-dir scan" "$default_ids" "bash,compressed-swap,git,jshon,locale,log2ram,motd,motd-updates,motd-weather,pip,pkupd,ram-logging,rconf,skyfield,weewx,zram,"
+chkeq "defaults match explicit two-dir scan" "$default_ids" "apache,bash,caddy,compressed-swap,git,jshon,lighttpd,locale,log2ram,motd,motd-updates,motd-weather,nginx,pip,pkupd,ram-logging,rconf,skyfield,webserver,weewx,zram,"
+
+# Web server visibility gate: backends are restricted to webserver + weewx.
+manifest_is_visible_for_role nginx    webserver; chkrc "nginx visible under webserver"   $? 0
+manifest_is_visible_for_role nginx    weewx;     chkrc "nginx visible under weewx"       $? 0
+manifest_is_visible_for_role nginx    custom;    chkrc "nginx hidden under custom"       $? 1
+manifest_is_visible_for_role apache   pihole;    chkrc "apache hidden under pihole"      $? 1
+manifest_is_visible_for_role lighttpd webserver; chkrc "lighttpd visible under webserver" $? 0
+manifest_is_visible_for_role caddy    weewx;     chkrc "caddy visible under weewx"       $? 0
+
+# II_OPTIONAL_GROUP_MODE round-trips for the parent.
+ws_path=$(manifest_path_for webserver)
+chkeq "webserver mode" "$(manifest_get_field "$ws_path" II_OPTIONAL_GROUP_MODE)" "exclusive"
+# Other parents (motd) don't set the mode -> empty string (legacy multi-select).
+motd_mode_path=$(manifest_path_for motd)
+chkeq "motd mode (empty=multi)" "$(manifest_get_field "$motd_mode_path" II_OPTIONAL_GROUP_MODE)" ""
 
 # A package ID and a feature ID both resolve to their respective dirs.
 git_path=$(manifest_path_for git)

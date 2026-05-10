@@ -98,7 +98,7 @@ chkrc "path_for nonexistent rc=1" $rc 1
 echo
 echo "=== Test 6: real roles/ directory has the expected starter set ==="
 real_ids=$(role_list_ids roles | sort | tr "\n" ",")
-chkeq "real roles discovered" "$real_ids" "custom,homeassistant,mediaserver,pihole,weewx,"
+chkeq "real roles discovered" "$real_ids" "custom,homeassistant,mediaserver,pihole,webserver,weewx,"
 
 # Each registered ID must point to its own role-<id>.sh file.
 mismatched=""
@@ -136,16 +136,28 @@ for id in homeassistant mediaserver pihole; do
     || fail "stubbed role $id: req='$req' def='$def' opt='$opt' title='$title'"
 done
 
-# WeeWx role is now populated. Spot-check the canonical tier shape:
-# REQUIRED contains the always-on baseline, DEFAULT contains the MOTD
-# bundle + skyfield, OPTIONAL contains Pi-tuning toggles.
+# WeeWx role is populated. Spot-check the canonical tier shape: REQUIRED
+# contains pkupd + the webserver parent (which triggers the radio sub-menu);
+# locale lives in DEFAULT so the user can deselect it; the rest of DEFAULT is
+# the MOTD bundle + skyfield; OPTIONAL is Pi-tuning toggles.
 weewx_path=$(role_path_for weewx roles)
 weewx_req=$(role_get_field "$weewx_path" ROLE_FEATURES_REQUIRED)
 weewx_def=$(role_get_field "$weewx_path" ROLE_FEATURES_DEFAULT)
 weewx_opt=$(role_get_field "$weewx_path" ROLE_FEATURES_OPTIONAL)
-chkeq "weewx required" "$weewx_req" "pkupd locale"
-chkeq "weewx default"  "$weewx_def" "bash motd skyfield motd-weather"
+chkeq "weewx required" "$weewx_req" "pkupd webserver"
+chkeq "weewx default"  "$weewx_def" "locale bash motd skyfield motd-weather"
 chkeq "weewx optional" "$weewx_opt" "rconf compressed-swap ram-logging motd-updates"
+
+# Webserver role is the second populated role. REQUIRED includes the
+# webserver parent feature (so the apache/nginx/lighttpd/caddy radio
+# fires); DEFAULT keeps locale/bash/motd toggleable.
+ws_path=$(role_path_for webserver roles)
+ws_req=$(role_get_field "$ws_path" ROLE_FEATURES_REQUIRED)
+ws_def=$(role_get_field "$ws_path" ROLE_FEATURES_DEFAULT)
+ws_opt=$(role_get_field "$ws_path" ROLE_FEATURES_OPTIONAL)
+chkeq "webserver required" "$ws_req" "pkupd webserver"
+chkeq "webserver default"  "$ws_def" "locale bash motd"
+chkeq "webserver optional" "$ws_opt" "rconf compressed-swap ram-logging motd-updates"
 
 echo
 echo "=== Done ==="

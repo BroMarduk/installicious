@@ -19,6 +19,15 @@
 #                                     # under any role not in this list (e.g.
 #                                     # skyfield with "weewx" hides under
 #                                     # custom / pihole / homeassistant / etc.).
+#   II_OPTIONAL_GROUP_MODE=""         # only meaningful on a parent that also
+#                                     # declares II_OPTIONAL_GROUP. Values:
+#                                     #   "" / "multi"  → checklist (default;
+#                                     #                   user picks any subset)
+#                                     #   "exclusive"   → radiolist (user picks
+#                                     #                   exactly one of the
+#                                     #                   listed children)
+#                                     # Used by webserver to force a single
+#                                     # apache/nginx/lighttpd/caddy choice.
 #   # === II_MANIFEST_END ===
 #
 # These vars are sourced by the script at runtime AND by the orchestrator

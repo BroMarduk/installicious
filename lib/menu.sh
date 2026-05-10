@@ -196,6 +196,83 @@ menu_pick_optionals() {
     3>&1 1>&2 2>&3
 }
 
+# menu_pick_one_optional <parent_title> [--previously <selected_id>] <child_id> [<child_id> ...]
+# Single-select radiolist for sub-features under a parent that declares
+# II_OPTIONAL_GROUP_MODE="exclusive" (e.g. webserver -> nginx | apache |
+# lighttpd | caddy, mutually exclusive on port 80). Echoes the chosen
+# child ID (single value, no quotes) on stdout.
+#
+# Default selection on first visit comes from each child's
+# II_DEFAULT_SELECTED — the first child whose value is "on" wins. If none
+# declare "on", the first listed child is selected. Subsequent visits
+# (--previously <selected_id>) preserve the user's prior pick across
+# back-and-forward navigation.
+#
+# Return codes follow the same convention as menu_pick_optionals.
+menu_pick_one_optional() {
+  local parent_title="$1"
+  shift
+  local previously=""
+  if [[ "${1:-}" == "--previously" ]]; then
+    previously="$2"
+    shift 2
+  fi
+  if [[ $# -eq 0 ]]; then
+    return 2
+  fi
+
+  # Resolve the row that should be marked "on". Priority:
+  #   1. --previously value (user's prior pick)
+  #   2. The first child with II_DEFAULT_SELECTED="on"
+  #   3. The first child in the list
+  local selected_id=""
+  local id path default
+  if [[ -n $previously ]]; then
+    for id in "$@"; do
+      if [[ "$id" == "$previously" ]]; then
+        selected_id="$id"
+        break
+      fi
+    done
+  fi
+  if [[ -z $selected_id ]]; then
+    for id in "$@"; do
+      path=$(manifest_path_for "$id" 2>/dev/null)
+      [[ -z $path ]] && continue
+      default=$(manifest_get_field "$path" "II_DEFAULT_SELECTED")
+      if [[ $default == "on" ]]; then
+        selected_id="$id"
+        break
+      fi
+    done
+  fi
+  [[ -z $selected_id ]] && selected_id="$1"
+
+  local -a items=()
+  local feature_title state
+  for id in "$@"; do
+    path=$(manifest_path_for "$id" 2>/dev/null)
+    if [[ -n $path ]]; then
+      feature_title=$(manifest_get_field "$path" "II_TITLE")
+    else
+      feature_title=""
+    fi
+    if [[ "$id" == "$selected_id" ]]; then
+      state="on"
+    else
+      state="off"
+    fi
+    items+=("$id" "${feature_title:-$id}" "$state")
+  done
+
+  whiptail --title "$parent_title - Pick One" \
+    --ok-button "NEXT" \
+    --cancel-button "BACK" \
+    --radiolist "Pick exactly one. Use SPACE to select, TAB to move to NEXT/BACK." 20 80 12 \
+    "${items[@]}" \
+    3>&1 1>&2 2>&3
+}
+
 # menu_confirm <title> <message>
 # Final yes/no. RUN forwards, BACK rewinds.
 menu_confirm() {

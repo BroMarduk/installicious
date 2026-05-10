@@ -370,9 +370,11 @@ while true; do
     pick_addons)
       log_info "Rendering add-on sub-menus."
       # Walk each currently-selected installer; if it declares
-      # II_OPTIONAL_GROUP, surface its add-ons as a checklist sub-menu.
-      # User's picks for each parent are remembered in addons_picked so
-      # back-nav re-presents them pre-checked.
+      # II_OPTIONAL_GROUP, surface its add-ons as a sub-menu. Mode is
+      # controlled by II_OPTIONAL_GROUP_MODE on the parent: "exclusive"
+      # renders a radiolist (pick exactly one), default/empty/"multi"
+      # renders a checklist (pick any). User's picks for each parent
+      # are remembered in addons_picked so back-nav re-presents them.
       _rewind=0
       for parent_id in $selected_parents; do
         ppath=$(manifest_path_for "$parent_id" 2>/dev/null)
@@ -380,11 +382,19 @@ while true; do
         pchildren=$(manifest_get_field "$ppath" "II_OPTIONAL_GROUP")
         [[ -z $pchildren ]] && continue
         ptitle=$(manifest_get_field "$ppath" "II_TITLE")
+        pmode=$(manifest_get_field "$ppath" "II_OPTIONAL_GROUP_MODE")
 
-        # shellcheck disable=SC2086
-        picked=$(menu_pick_optionals "$ptitle" \
-          --previously "${addons_picked[$parent_id]:-}" \
-          $pchildren)
+        if [[ $pmode == "exclusive" ]]; then
+          # shellcheck disable=SC2086
+          picked=$(menu_pick_one_optional "$ptitle" \
+            --previously "${addons_picked[$parent_id]:-}" \
+            $pchildren)
+        else
+          # shellcheck disable=SC2086
+          picked=$(menu_pick_optionals "$ptitle" \
+            --previously "${addons_picked[$parent_id]:-}" \
+            $pchildren)
+        fi
         rc=$?
         case $rc in
           0)     addons_picked[$parent_id]="${picked//\"/}" ;;
