@@ -268,10 +268,24 @@ while true; do
 
     custom_features)
       log_info "Rendering features checklist."
+      # Compute the role-restriction exclude list: any feature whose
+      # II_RESTRICT_TO_ROLES is non-empty and doesn't include the
+      # currently-picked role gets dropped from the checklist. Skyfield
+      # with II_RESTRICT_TO_ROLES="weewx" stays hidden under custom /
+      # pihole / homeassistant / mediaserver — only visible in the
+      # weewx role's flow (which doesn't even reach this stage once
+      # WeeWx's tiers are populated).
+      restricted_excludes=""
+      while IFS= read -r _fid; do
+        if ! manifest_is_visible_for_role "$_fid" "$role_id"; then
+          restricted_excludes="$restricted_excludes $_fid"
+        fi
+      done < <(manifest_filter_by_category "feature")
       features_selected=$(menu_select_category "feature" \
         "Installicious Features" \
         "Select features to install or configure." \
-        "${features_selected//\"/}")
+        "${features_selected//\"/}" \
+        "$restricted_excludes")
       rc=$?
       case $rc in
         0)     stage="merge_features" ;;

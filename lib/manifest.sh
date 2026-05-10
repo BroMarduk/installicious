@@ -13,6 +13,12 @@
 #   II_VERSION="1"
 #   II_DEPS=""                        # space-separated IDs (any tier)
 #   II_REQUIRES_REBOOT="never"        # never | conditional | always
+#   II_RESTRICT_TO_ROLES=""           # space-separated role IDs; empty = visible
+#                                     # to every role. When set, the feature is
+#                                     # hidden from the Custom-flow checklist
+#                                     # under any role not in this list (e.g.
+#                                     # skyfield with "weewx" hides under
+#                                     # custom / pihole / homeassistant / etc.).
 #   # === II_MANIFEST_END ===
 #
 # These vars are sourced by the script at runtime AND by the orchestrator
@@ -293,6 +299,36 @@ manifest_is_hidden_child() {
       [[ "$child" == "$id" ]] && return 0
     done
   done < <(manifest_list_ids "$@")
+  return 1
+}
+
+# manifest_is_visible_for_role <id> <current_role_id> [<dir>...] -> rc=0 if
+# the feature/package's II_RESTRICT_TO_ROLES is empty OR contains
+# current_role_id; rc=1 if it's restricted to roles that don't include the
+# current one.
+#
+# An empty restriction list (the default for nearly every manifest) means
+# "visible everywhere" — the gate is opt-in. A missing manifest is treated
+# as visible too, so callers iterating registry IDs never get spurious
+# rc=1 from a typo.
+#
+# Used by scripts/options.sh in the custom_features stage to drop role-
+# exclusive features from the per-feature picker. Role flows
+# (show_required / pick_optional) trust the role's own tier lists and
+# don't consult this helper today.
+manifest_is_visible_for_role() {
+  local id="$1" current_role="$2"
+  shift 2
+  local path
+  path=$(manifest_path_for "$id" "$@")
+  [[ -z $path ]] && return 0
+  local restrict
+  restrict=$(manifest_get_field "$path" "II_RESTRICT_TO_ROLES")
+  [[ -z $restrict ]] && return 0
+  local r
+  for r in $restrict; do
+    [[ "$r" == "$current_role" ]] && return 0
+  done
   return 1
 }
 

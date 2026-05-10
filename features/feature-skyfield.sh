@@ -37,6 +37,7 @@ II_VERSION="1"
 II_DEPS="weewx"
 II_REQUIRES_REBOOT="never"
 II_APT_PACKAGES="python3-numpy python3-pandas python3-skyfield"
+II_RESTRICT_TO_ROLES="weewx"
 # === II_MANIFEST_END ===
 
 source config/installicious.config || exit 1

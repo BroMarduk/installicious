@@ -116,12 +116,12 @@ chkeq "custom has no required" "$(role_get_field "$(role_path_for custom roles)"
 chkeq "custom has no default"  "$(role_get_field "$(role_path_for custom roles)" ROLE_FEATURES_DEFAULT)"  ""
 chkeq "custom has no optional" "$(role_get_field "$(role_path_for custom roles)" ROLE_FEATURES_OPTIONAL)" ""
 
-# Stubbed roles (homeassistant, mediaserver, pihole, weewx) currently behave
+# Stubbed roles (homeassistant, mediaserver, pihole) currently behave
 # like Custom — empty required / default / optional. They'll grow real
 # feature lists when populated. Until then, assert they parse cleanly with
 # empty lists so a regression that drops the manifest sentinel gets caught
 # here.
-for id in homeassistant mediaserver pihole weewx; do
+for id in homeassistant mediaserver pihole; do
   path=$(role_path_for "$id" roles)
   if [[ -z $path ]]; then
     fail "stubbed role $id: no path resolved"
@@ -135,6 +135,17 @@ for id in homeassistant mediaserver pihole weewx; do
     && ok "stubbed role $id: empty required/default/optional, title set" \
     || fail "stubbed role $id: req='$req' def='$def' opt='$opt' title='$title'"
 done
+
+# WeeWx role is now populated. Spot-check the canonical tier shape:
+# REQUIRED contains the always-on baseline, DEFAULT contains the MOTD
+# bundle + skyfield, OPTIONAL contains Pi-tuning toggles.
+weewx_path=$(role_path_for weewx roles)
+weewx_req=$(role_get_field "$weewx_path" ROLE_FEATURES_REQUIRED)
+weewx_def=$(role_get_field "$weewx_path" ROLE_FEATURES_DEFAULT)
+weewx_opt=$(role_get_field "$weewx_path" ROLE_FEATURES_OPTIONAL)
+chkeq "weewx required" "$weewx_req" "pkupd locale"
+chkeq "weewx default"  "$weewx_def" "bash motd skyfield motd-weather"
+chkeq "weewx optional" "$weewx_opt" "rconf compressed-swap ram-logging motd-updates"
 
 echo
 echo "=== Done ==="

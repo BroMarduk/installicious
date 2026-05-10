@@ -211,5 +211,54 @@ motd_path=$(manifest_path_for motd)
 [[ "$motd_path" == *features/feature-motd.sh ]] && ok "feature-motd resolves under features/" \
   || fail "motd resolved to '$motd_path'"
 
+# ===========================================================================
+echo
+echo "=== Test 11: manifest_is_visible_for_role — II_RESTRICT_TO_ROLES gate ==="
+# Synthetic feature with a role restriction.
+cat > "$TMPDIR/feature-restricted.sh" <<EOF
+#!/bin/bash
+# === II_MANIFEST_BEGIN ===
+II_ID="restricted"
+II_TITLE="Restricted Feature"
+II_CATEGORY="feature"
+II_VERSION="1"
+II_DEPS=""
+II_REQUIRES_REBOOT="never"
+II_RESTRICT_TO_ROLES="weewx"
+# === II_MANIFEST_END ===
+EOF
+
+manifest_is_visible_for_role restricted weewx   "$TMPDIR"; chkrc "weewx sees restricted"             $? 0
+manifest_is_visible_for_role restricted custom  "$TMPDIR"; chkrc "custom hides restricted"           $? 1
+manifest_is_visible_for_role restricted pihole  "$TMPDIR"; chkrc "pihole hides restricted"           $? 1
+manifest_is_visible_for_role foo        custom  "$TMPDIR"; chkrc "unrestricted foo visible (custom)" $? 0
+manifest_is_visible_for_role nonexistent custom "$TMPDIR"; chkrc "missing id treated as visible"     $? 0
+
+# Multi-role restriction: each listed role sees it, others don't.
+cat > "$TMPDIR/feature-multi.sh" <<EOF
+#!/bin/bash
+# === II_MANIFEST_BEGIN ===
+II_ID="multi"
+II_TITLE="Multi-role Feature"
+II_CATEGORY="feature"
+II_VERSION="1"
+II_DEPS=""
+II_REQUIRES_REBOOT="never"
+II_RESTRICT_TO_ROLES="weewx homeassistant"
+# === II_MANIFEST_END ===
+EOF
+
+manifest_is_visible_for_role multi weewx         "$TMPDIR"; chkrc "multi visible for weewx"         $? 0
+manifest_is_visible_for_role multi homeassistant "$TMPDIR"; chkrc "multi visible for homeassistant" $? 0
+manifest_is_visible_for_role multi custom        "$TMPDIR"; chkrc "multi hidden for custom"         $? 1
+
+# Real-tree check: skyfield is restricted to the weewx role.
+manifest_is_visible_for_role skyfield weewx;  chkrc "real skyfield visible under weewx" $? 0
+manifest_is_visible_for_role skyfield custom; chkrc "real skyfield hidden under custom" $? 1
+manifest_is_visible_for_role skyfield pihole; chkrc "real skyfield hidden under pihole" $? 1
+# Unrestricted features should be visible regardless of role.
+manifest_is_visible_for_role bash     custom; chkrc "real bash visible under custom"    $? 0
+manifest_is_visible_for_role git      pihole; chkrc "real git visible under pihole"     $? 0
+
 echo
 echo "=== Done ==="
