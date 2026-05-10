@@ -95,7 +95,7 @@ menu_select_category() {
 # role ID, that row is highlighted by default — useful for preserving the
 # user's prior pick when they navigate BACK to this screen.
 menu_select_role() {
-  local title="${1:-Installicious — Pick a Role}"
+  local title="${1:-Installicious - Pick a Role}"
   local desc="${2:-Pick the role for this Pi. Choose Custom to pick features individually.}"
   local default_item="${3:-}"
 
@@ -135,7 +135,7 @@ menu_show_required() {
     fi
   done
   message+="\n\nThese are required and will run automatically. Optional add-ons come next."
-  whiptail --title "$role_title — Required Features" \
+  whiptail --title "$role_title - Required Features" \
     --yes-button "OK" \
     --no-button "BACK" \
     --yesno "$message" 20 80
@@ -188,7 +188,7 @@ menu_pick_optionals() {
     items+=("$id" "${feature_title:-$id}" "$default")
   done
 
-  whiptail --title "$role_title — Optional Add-ons" \
+  whiptail --title "$role_title - Optional Add-ons" \
     --ok-button "NEXT" \
     --cancel-button "BACK" \
     --checklist "Optional add-ons (default off; pick any you want)." 20 80 12 \

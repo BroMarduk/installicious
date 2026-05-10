@@ -535,7 +535,7 @@ case $rc in
     # Pre-flight validation rejected the queue (missing dep installer or
     # similar). No state was changed; surface to the user and exit cleanly.
     msg="${SCHEDULER_LAST_ERROR:-Pre-flight validation failed.}\n\nNothing was installed. Aborting."
-    whiptail --title "Installicious — Cannot start queue" --msgbox "$msg" 14 78
+    whiptail --title "Installicious - Cannot start queue" --msgbox "$msg" 14 78
     exit 3
     ;;
   $EXIT_REBOOT)
