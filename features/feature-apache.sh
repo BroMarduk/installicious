@@ -21,6 +21,7 @@ II_REQUIRES_REBOOT="never"
 II_DEFAULT_SELECTED="off"
 II_APT_PACKAGES="apache2"
 II_RESTRICT_TO_ROLES="webserver weewx"
+II_OPTIONAL_GROUP="webserver-under-construction webserver-ssl"
 # === II_MANIFEST_END ===
 
 source config/installicious.config || exit 1

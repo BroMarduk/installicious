@@ -106,7 +106,7 @@ chkeq "empty filter" "$(manifest_filter_by_category nothing "$TMPDIR")" ""
 echo
 echo "=== Test 7: real features/ + packages/ have the expected manifest roster ==="
 real_ids=$(manifest_list_ids features packages | sort | tr "\n" ",")
-chkeq "real manifests" "$real_ids" "apache,bash,caddy,compressed-swap,git,jshon,lighttpd,locale,log2ram,motd,motd-updates,motd-weather,nginx,pip,pkupd,ram-logging,rconf,skyfield,webserver,weewx,zram,"
+chkeq "real manifests" "$real_ids" "apache,bash,caddy,compressed-swap,git,jshon,lighttpd,locale,log2ram,motd,motd-updates,motd-weather,nginx,pip,pkupd,ram-logging,rconf,skyfield,webserver,webserver-ssl,webserver-under-construction,weewx,zram,"
 
 # Each registered ID's filename must match feature-<id>.sh (when in features/)
 # OR package-<id>.sh (when in packages/).
@@ -203,13 +203,30 @@ manifest_is_hidden_child lighttpd features packages; chkrc "lighttpd is hidden c
 manifest_is_hidden_child caddy    features packages; chkrc "caddy is hidden child"    $? 0
 manifest_is_hidden_child webserver features packages; chkrc "webserver is NOT hidden" $? 1
 
+# Each backend declares its own II_OPTIONAL_GROUP for the post-radio
+# sub-features. nginx / apache / lighttpd offer under-construction +
+# ssl; caddy offers only under-construction (auto-HTTPS).
+nginx_children=$(manifest_optional_children_of nginx features packages)
+apache_children=$(manifest_optional_children_of apache features packages)
+lighttpd_children=$(manifest_optional_children_of lighttpd features packages)
+caddy_children=$(manifest_optional_children_of caddy features packages)
+chkeq "nginx's optional children"    "$nginx_children"    "webserver-under-construction webserver-ssl"
+chkeq "apache's optional children"   "$apache_children"   "webserver-under-construction webserver-ssl"
+chkeq "lighttpd's optional children" "$lighttpd_children" "webserver-under-construction webserver-ssl"
+chkeq "caddy's optional children"    "$caddy_children"    "webserver-under-construction"
+
+# under-construction is a hidden child (of all four backends).
+manifest_is_hidden_child webserver-under-construction features packages; chkrc "under-construction is hidden child" $? 0
+# ssl is a hidden child too (of nginx/apache/lighttpd; not caddy).
+manifest_is_hidden_child webserver-ssl                features packages; chkrc "ssl is hidden child" $? 0
+
 # ===========================================================================
 echo
 echo "=== Test 10: defaults scan both tier directories ==="
 # With no dir args, manifest helpers should hit features/ AND packages/.
 # Picking IDs from each side proves both are scanned.
 default_ids=$(manifest_list_ids | sort | tr "\n" ",")
-chkeq "defaults match explicit two-dir scan" "$default_ids" "apache,bash,caddy,compressed-swap,git,jshon,lighttpd,locale,log2ram,motd,motd-updates,motd-weather,nginx,pip,pkupd,ram-logging,rconf,skyfield,webserver,weewx,zram,"
+chkeq "defaults match explicit two-dir scan" "$default_ids" "apache,bash,caddy,compressed-swap,git,jshon,lighttpd,locale,log2ram,motd,motd-updates,motd-weather,nginx,pip,pkupd,ram-logging,rconf,skyfield,webserver,webserver-ssl,webserver-under-construction,weewx,zram,"
 
 # Web server visibility gate: backends are restricted to webserver + weewx.
 manifest_is_visible_for_role nginx    webserver; chkrc "nginx visible under webserver"   $? 0

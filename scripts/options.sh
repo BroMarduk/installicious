@@ -390,39 +390,53 @@ while true; do
 
     pick_addons_required)
       log_info "Rendering required-feature add-on sub-menus."
-      # Fire a sub-menu for each REQUIRED parent that declares
-      # II_OPTIONAL_GROUP. Mode dispatches the same way as the regular
-      # pick_addons stage: "exclusive" → radiolist, default → checklist.
-      # Picks land in addons_picked[parent_id] and are merged into the
-      # final $selected at the end of the (later) pick_addons stage.
+      # BFS over the required-feature subtree: start with role_required,
+      # fire each parent's sub-menu (radio if II_OPTIONAL_GROUP_MODE is
+      # "exclusive", checklist otherwise), then recurse into the picks so
+      # a chosen backend's own II_OPTIONAL_GROUP (e.g. nginx -> under-
+      # construction + ssl) fires next. Picks land in addons_picked and
+      # are folded into $selected by pick_addons's trailing merge.
       _rewind=0
       _had_work=0
-      for parent_id in $role_required; do
-        ppath=$(manifest_path_for "$parent_id" 2>/dev/null)
-        [[ -z $ppath ]] && continue
-        pchildren=$(manifest_get_field "$ppath" "II_OPTIONAL_GROUP")
-        [[ -z $pchildren ]] && continue
-        ptitle=$(manifest_get_field "$ppath" "II_TITLE")
-        pmode=$(manifest_get_field "$ppath" "II_OPTIONAL_GROUP_MODE")
-        _had_work=1
+      declare -A _processed=()
+      _worklist="$role_required"
+      while [[ -n $_worklist ]]; do
+        _next=""
+        for parent_id in $_worklist; do
+          [[ -z $parent_id ]] && continue
+          [[ -n ${_processed[$parent_id]:-} ]] && continue
+          _processed[$parent_id]=1
 
-        if [[ $pmode == "exclusive" ]]; then
-          # shellcheck disable=SC2086
-          picked=$(menu_pick_one_optional "$ptitle" \
-            --previously "${addons_picked[$parent_id]:-}" \
-            $pchildren)
-        else
-          # shellcheck disable=SC2086
-          picked=$(menu_pick_optionals "$ptitle" \
-            --previously "${addons_picked[$parent_id]:-}" \
-            $pchildren)
-        fi
-        rc=$?
-        case $rc in
-          0)     addons_picked[$parent_id]="${picked//\"/}" ;;
-          1|255) _rewind=1; break ;;
-          2)     ;;
-        esac
+          ppath=$(manifest_path_for "$parent_id" 2>/dev/null)
+          [[ -z $ppath ]] && continue
+          pchildren=$(manifest_get_field "$ppath" "II_OPTIONAL_GROUP")
+          [[ -z $pchildren ]] && continue
+          ptitle=$(manifest_get_field "$ppath" "II_TITLE")
+          pmode=$(manifest_get_field "$ppath" "II_OPTIONAL_GROUP_MODE")
+          _had_work=1
+
+          if [[ $pmode == "exclusive" ]]; then
+            # shellcheck disable=SC2086
+            picked=$(menu_pick_one_optional "$ptitle" \
+              --previously "${addons_picked[$parent_id]:-}" \
+              $pchildren)
+          else
+            # shellcheck disable=SC2086
+            picked=$(menu_pick_optionals "$ptitle" \
+              --previously "${addons_picked[$parent_id]:-}" \
+              $pchildren)
+          fi
+          rc=$?
+          case $rc in
+            0)
+              addons_picked[$parent_id]="${picked//\"/}"
+              _next+=" ${picked//\"/}"
+              ;;
+            1|255) _rewind=1; break 2 ;;
+            2)     ;;
+          esac
+        done
+        _worklist=$(echo "$_next" | tr -s ' ' | sed 's/^ //; s/ $//')
       done
 
       if [[ $_rewind -eq 1 ]]; then
@@ -505,39 +519,57 @@ while true; do
 
     pick_addons)
       log_info "Rendering non-required add-on sub-menus."
-      # Walk each selected_parent that's NOT in role_required and
-      # declares II_OPTIONAL_GROUP. REQUIRED parents already had their
-      # sub-menus in pick_addons_required (which fires earlier, between
-      # show_required and pick_optional) so we skip them here to avoid
-      # asking the same question twice. Mode dispatch matches the
-      # required pass: "exclusive" → radiolist, default → checklist.
+      # BFS over the non-required subtree of selected_parents. REQUIRED
+      # parents already had their sub-menus in pick_addons_required
+      # (which also recursed into their picks), so we skip required IDs
+      # at level 0 to avoid asking the same question twice. Mode
+      # dispatch matches the required pass.
       _rewind=0
+      declare -A _processed=()
+      # Seed level-0 worklist with non-required selected_parents.
+      _worklist=""
       for parent_id in $selected_parents; do
         _id_in_required "$parent_id" && continue
-        ppath=$(manifest_path_for "$parent_id" 2>/dev/null)
-        [[ -z $ppath ]] && continue
-        pchildren=$(manifest_get_field "$ppath" "II_OPTIONAL_GROUP")
-        [[ -z $pchildren ]] && continue
-        ptitle=$(manifest_get_field "$ppath" "II_TITLE")
-        pmode=$(manifest_get_field "$ppath" "II_OPTIONAL_GROUP_MODE")
+        _worklist+=" $parent_id"
+      done
+      _worklist=$(echo "$_worklist" | tr -s ' ' | sed 's/^ //; s/ $//')
 
-        if [[ $pmode == "exclusive" ]]; then
-          # shellcheck disable=SC2086
-          picked=$(menu_pick_one_optional "$ptitle" \
-            --previously "${addons_picked[$parent_id]:-}" \
-            $pchildren)
-        else
-          # shellcheck disable=SC2086
-          picked=$(menu_pick_optionals "$ptitle" \
-            --previously "${addons_picked[$parent_id]:-}" \
-            $pchildren)
-        fi
-        rc=$?
-        case $rc in
-          0)     addons_picked[$parent_id]="${picked//\"/}" ;;
-          1|255) _rewind=1; break ;;
-          2)     ;;
-        esac
+      while [[ -n $_worklist ]]; do
+        _next=""
+        for parent_id in $_worklist; do
+          [[ -z $parent_id ]] && continue
+          [[ -n ${_processed[$parent_id]:-} ]] && continue
+          _processed[$parent_id]=1
+
+          ppath=$(manifest_path_for "$parent_id" 2>/dev/null)
+          [[ -z $ppath ]] && continue
+          pchildren=$(manifest_get_field "$ppath" "II_OPTIONAL_GROUP")
+          [[ -z $pchildren ]] && continue
+          ptitle=$(manifest_get_field "$ppath" "II_TITLE")
+          pmode=$(manifest_get_field "$ppath" "II_OPTIONAL_GROUP_MODE")
+
+          if [[ $pmode == "exclusive" ]]; then
+            # shellcheck disable=SC2086
+            picked=$(menu_pick_one_optional "$ptitle" \
+              --previously "${addons_picked[$parent_id]:-}" \
+              $pchildren)
+          else
+            # shellcheck disable=SC2086
+            picked=$(menu_pick_optionals "$ptitle" \
+              --previously "${addons_picked[$parent_id]:-}" \
+              $pchildren)
+          fi
+          rc=$?
+          case $rc in
+            0)
+              addons_picked[$parent_id]="${picked//\"/}"
+              _next+=" ${picked//\"/}"
+              ;;
+            1|255) _rewind=1; break 2 ;;
+            2)     ;;
+          esac
+        done
+        _worklist=$(echo "$_next" | tr -s ' ' | sed 's/^ //; s/ $//')
       done
 
       if [[ $_rewind -eq 1 ]]; then
@@ -545,13 +577,29 @@ while true; do
         continue
       fi
 
-      # Rebuild `selected` from `selected_parents` + currently-picked add-ons
-      # for each. Always start from selected_parents so a back-and-forward
-      # trip never duplicates or carries over add-ons of a since-deselected
-      # parent.
+      # Rebuild `selected` from `selected_parents` + ALL transitively-
+      # picked add-ons (BFS-follow addons_picked chains). Always start
+      # from selected_parents so a back-and-forward trip never carries
+      # over add-ons of a since-deselected parent — stale addons_picked
+      # entries for unreachable IDs are ignored here. dedup with an
+      # associative array.
       _merged="$selected_parents"
-      for parent_id in $selected_parents; do
-        _merged="$_merged ${addons_picked[$parent_id]:-}"
+      declare -A _merge_seen=()
+      for _mid in $selected_parents; do _merge_seen[$_mid]=1; done
+      _mwl="$selected_parents"
+      while [[ -n $_mwl ]]; do
+        _mnext=""
+        for _mid in $_mwl; do
+          children="${addons_picked[$_mid]:-}"
+          for _mchild in $children; do
+            [[ -z $_mchild ]] && continue
+            [[ -n ${_merge_seen[$_mchild]:-} ]] && continue
+            _merge_seen[$_mchild]=1
+            _merged+=" $_mchild"
+            _mnext+=" $_mchild"
+          done
+        done
+        _mwl=$(echo "$_mnext" | tr -s ' ' | sed 's/^ //; s/ $//')
       done
       selected=$(echo "$_merged" | tr -s ' ' | sed 's/^ //; s/ $//')
       log_info "User $CURRENTUSER add-ons merged: $selected."

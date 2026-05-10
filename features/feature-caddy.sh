@@ -24,6 +24,9 @@ II_REQUIRES_REBOOT="never"
 II_DEFAULT_SELECTED="off"
 II_APT_PACKAGES="caddy"
 II_RESTRICT_TO_ROLES="webserver weewx"
+# Caddy auto-handles HTTPS, so webserver-ssl is deliberately excluded
+# from this backend's optional sub-menu (no manual cert flow needed).
+II_OPTIONAL_GROUP="webserver-under-construction"
 # === II_MANIFEST_END ===
 
 source config/installicious.config || exit 1
