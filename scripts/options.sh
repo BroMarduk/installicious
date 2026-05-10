@@ -390,53 +390,75 @@ while true; do
 
     pick_addons_required)
       log_info "Rendering required-feature add-on sub-menus."
-      # BFS over the required-feature subtree: start with role_required,
-      # fire each parent's sub-menu (radio if II_OPTIONAL_GROUP_MODE is
-      # "exclusive", checklist otherwise), then recurse into the picks so
-      # a chosen backend's own II_OPTIONAL_GROUP (e.g. nginx -> under-
-      # construction + ssl) fires next. Picks land in addons_picked and
-      # are folded into $selected by pick_addons's trailing merge.
+      # Walk an indexed _screens array so the user can navigate BACK one
+      # screen at a time. Level 0 holds the role_required parents that
+      # have II_OPTIONAL_GROUP. When NEXT advances past a screen we
+      # discover whether the picked feature itself has II_OPTIONAL_GROUP
+      # (e.g. nginx -> under-construction + ssl) and append it to
+      # _screens. Re-picking at an earlier level truncates the future
+      # screens so stale ones from a prior backend choice don't linger.
       _rewind=0
-      _had_work=0
-      declare -A _processed=()
-      _worklist="$role_required"
-      while [[ -n $_worklist ]]; do
-        _next=""
-        for parent_id in $_worklist; do
-          [[ -z $parent_id ]] && continue
-          [[ -n ${_processed[$parent_id]:-} ]] && continue
-          _processed[$parent_id]=1
+      declare -a _screens=()
+      for parent_id in $role_required; do
+        [[ -z $parent_id ]] && continue
+        ppath=$(manifest_path_for "$parent_id" 2>/dev/null)
+        [[ -z $ppath ]] && continue
+        pchildren=$(manifest_get_field "$ppath" "II_OPTIONAL_GROUP")
+        [[ -z $pchildren ]] && continue
+        _screens+=("$parent_id")
+      done
 
-          ppath=$(manifest_path_for "$parent_id" 2>/dev/null)
-          [[ -z $ppath ]] && continue
-          pchildren=$(manifest_get_field "$ppath" "II_OPTIONAL_GROUP")
-          [[ -z $pchildren ]] && continue
-          ptitle=$(manifest_get_field "$ppath" "II_TITLE")
-          pmode=$(manifest_get_field "$ppath" "II_OPTIONAL_GROUP_MODE")
-          _had_work=1
+      _idx=0
+      while [[ $_idx -lt ${#_screens[@]} ]]; do
+        parent_id="${_screens[$_idx]}"
+        ppath=$(manifest_path_for "$parent_id" 2>/dev/null)
+        pchildren=$(manifest_get_field "$ppath" "II_OPTIONAL_GROUP")
+        ptitle=$(manifest_get_field "$ppath" "II_TITLE")
+        pmode=$(manifest_get_field "$ppath" "II_OPTIONAL_GROUP_MODE")
 
-          if [[ $pmode == "exclusive" ]]; then
-            # shellcheck disable=SC2086
-            picked=$(menu_pick_one_optional "$ptitle" \
-              --previously "${addons_picked[$parent_id]:-}" \
-              $pchildren)
-          else
-            # shellcheck disable=SC2086
-            picked=$(menu_pick_optionals "$ptitle" \
-              --previously "${addons_picked[$parent_id]:-}" \
-              $pchildren)
-          fi
-          rc=$?
-          case $rc in
-            0)
-              addons_picked[$parent_id]="${picked//\"/}"
-              _next+=" ${picked//\"/}"
-              ;;
-            1|255) _rewind=1; break 2 ;;
-            2)     ;;
-          esac
-        done
-        _worklist=$(echo "$_next" | tr -s ' ' | sed 's/^ //; s/ $//')
+        if [[ $pmode == "exclusive" ]]; then
+          # shellcheck disable=SC2086
+          picked=$(menu_pick_one_optional "$ptitle" \
+            --previously "${addons_picked[$parent_id]:-}" \
+            $pchildren)
+        else
+          # shellcheck disable=SC2086
+          picked=$(menu_pick_optionals "$ptitle" \
+            --previously "${addons_picked[$parent_id]:-}" \
+            $pchildren)
+        fi
+        rc=$?
+        case $rc in
+          0)
+            addons_picked[$parent_id]="${picked//\"/}"
+            # Truncate _screens past the current index — any future
+            # screens belonged to a prior pick at this level and may now
+            # be stale. Then append fresh picks (only those with their
+            # own II_OPTIONAL_GROUP), skipping anything already queued.
+            _screens=("${_screens[@]:0:$((_idx+1))}")
+            for _pid in ${picked//\"/}; do
+              [[ -z $_pid ]] && continue
+              _dup=0
+              for _s in "${_screens[@]}"; do [[ "$_s" == "$_pid" ]] && _dup=1 && break; done
+              [[ $_dup -eq 1 ]] && continue
+              _pp=$(manifest_path_for "$_pid" 2>/dev/null)
+              [[ -z $_pp ]] && continue
+              _pc=$(manifest_get_field "$_pp" "II_OPTIONAL_GROUP")
+              [[ -z $_pc ]] && continue
+              _screens+=("$_pid")
+            done
+            _idx=$((_idx + 1))
+            ;;
+          1|255)
+            if [[ $_idx -gt 0 ]]; then
+              _idx=$((_idx - 1))
+            else
+              _rewind=1
+              break
+            fi
+            ;;
+          2) _idx=$((_idx + 1)) ;;
+        esac
       done
 
       if [[ $_rewind -eq 1 ]]; then
@@ -445,10 +467,9 @@ while true; do
       fi
 
       # Forward: pick_optional if the role offers any default/optional
-      # features, otherwise straight to merge_role. (No work needed for
-      # roles whose REQUIRED parents have no II_OPTIONAL_GROUP — this
-      # stage falls through immediately in that case.)
-      if [[ $_had_work -eq 0 ]]; then
+      # features, otherwise straight to merge_role. (No work shown if
+      # _screens stayed empty — no required parent had II_OPTIONAL_GROUP.)
+      if [[ ${#_screens[@]} -eq 0 ]]; then
         log_info "No required parents have II_OPTIONAL_GROUP; auto-advancing."
       fi
       if [[ -n $role_default || -n $role_optional ]]; then
@@ -519,57 +540,71 @@ while true; do
 
     pick_addons)
       log_info "Rendering non-required add-on sub-menus."
-      # BFS over the non-required subtree of selected_parents. REQUIRED
-      # parents already had their sub-menus in pick_addons_required
-      # (which also recursed into their picks), so we skip required IDs
-      # at level 0 to avoid asking the same question twice. Mode
-      # dispatch matches the required pass.
+      # Walk an indexed _screens array so BACK rewinds one screen at a
+      # time (rather than exiting the whole stage). Level 0 holds the
+      # non-required selected_parents that declare II_OPTIONAL_GROUP;
+      # REQUIRED parents already had their sub-menus in
+      # pick_addons_required, so they're skipped here. NEXT can append
+      # newly-picked features that themselves have II_OPTIONAL_GROUP.
       _rewind=0
-      declare -A _processed=()
-      # Seed level-0 worklist with non-required selected_parents.
-      _worklist=""
+      declare -a _screens=()
       for parent_id in $selected_parents; do
+        [[ -z $parent_id ]] && continue
         _id_in_required "$parent_id" && continue
-        _worklist+=" $parent_id"
+        ppath=$(manifest_path_for "$parent_id" 2>/dev/null)
+        [[ -z $ppath ]] && continue
+        pchildren=$(manifest_get_field "$ppath" "II_OPTIONAL_GROUP")
+        [[ -z $pchildren ]] && continue
+        _screens+=("$parent_id")
       done
-      _worklist=$(echo "$_worklist" | tr -s ' ' | sed 's/^ //; s/ $//')
 
-      while [[ -n $_worklist ]]; do
-        _next=""
-        for parent_id in $_worklist; do
-          [[ -z $parent_id ]] && continue
-          [[ -n ${_processed[$parent_id]:-} ]] && continue
-          _processed[$parent_id]=1
+      _idx=0
+      while [[ $_idx -lt ${#_screens[@]} ]]; do
+        parent_id="${_screens[$_idx]}"
+        ppath=$(manifest_path_for "$parent_id" 2>/dev/null)
+        pchildren=$(manifest_get_field "$ppath" "II_OPTIONAL_GROUP")
+        ptitle=$(manifest_get_field "$ppath" "II_TITLE")
+        pmode=$(manifest_get_field "$ppath" "II_OPTIONAL_GROUP_MODE")
 
-          ppath=$(manifest_path_for "$parent_id" 2>/dev/null)
-          [[ -z $ppath ]] && continue
-          pchildren=$(manifest_get_field "$ppath" "II_OPTIONAL_GROUP")
-          [[ -z $pchildren ]] && continue
-          ptitle=$(manifest_get_field "$ppath" "II_TITLE")
-          pmode=$(manifest_get_field "$ppath" "II_OPTIONAL_GROUP_MODE")
-
-          if [[ $pmode == "exclusive" ]]; then
-            # shellcheck disable=SC2086
-            picked=$(menu_pick_one_optional "$ptitle" \
-              --previously "${addons_picked[$parent_id]:-}" \
-              $pchildren)
-          else
-            # shellcheck disable=SC2086
-            picked=$(menu_pick_optionals "$ptitle" \
-              --previously "${addons_picked[$parent_id]:-}" \
-              $pchildren)
-          fi
-          rc=$?
-          case $rc in
-            0)
-              addons_picked[$parent_id]="${picked//\"/}"
-              _next+=" ${picked//\"/}"
-              ;;
-            1|255) _rewind=1; break 2 ;;
-            2)     ;;
-          esac
-        done
-        _worklist=$(echo "$_next" | tr -s ' ' | sed 's/^ //; s/ $//')
+        if [[ $pmode == "exclusive" ]]; then
+          # shellcheck disable=SC2086
+          picked=$(menu_pick_one_optional "$ptitle" \
+            --previously "${addons_picked[$parent_id]:-}" \
+            $pchildren)
+        else
+          # shellcheck disable=SC2086
+          picked=$(menu_pick_optionals "$ptitle" \
+            --previously "${addons_picked[$parent_id]:-}" \
+            $pchildren)
+        fi
+        rc=$?
+        case $rc in
+          0)
+            addons_picked[$parent_id]="${picked//\"/}"
+            _screens=("${_screens[@]:0:$((_idx+1))}")
+            for _pid in ${picked//\"/}; do
+              [[ -z $_pid ]] && continue
+              _dup=0
+              for _s in "${_screens[@]}"; do [[ "$_s" == "$_pid" ]] && _dup=1 && break; done
+              [[ $_dup -eq 1 ]] && continue
+              _pp=$(manifest_path_for "$_pid" 2>/dev/null)
+              [[ -z $_pp ]] && continue
+              _pc=$(manifest_get_field "$_pp" "II_OPTIONAL_GROUP")
+              [[ -z $_pc ]] && continue
+              _screens+=("$_pid")
+            done
+            _idx=$((_idx + 1))
+            ;;
+          1|255)
+            if [[ $_idx -gt 0 ]]; then
+              _idx=$((_idx - 1))
+            else
+              _rewind=1
+              break
+            fi
+            ;;
+          2) _idx=$((_idx + 1)) ;;
+        esac
       done
 
       if [[ $_rewind -eq 1 ]]; then

@@ -157,7 +157,7 @@ ws_def=$(role_get_field "$ws_path" ROLE_FEATURES_DEFAULT)
 ws_opt=$(role_get_field "$ws_path" ROLE_FEATURES_OPTIONAL)
 chkeq "webserver required" "$ws_req" "pkupd webserver"
 chkeq "webserver default"  "$ws_def" "locale bash motd"
-chkeq "webserver optional" "$ws_opt" "rconf compressed-swap ram-logging motd-updates"
+chkeq "webserver optional" "$ws_opt" "rconf compressed-swap ram-logging"
 
 echo
 echo "=== Done ==="
