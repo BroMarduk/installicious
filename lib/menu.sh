@@ -100,11 +100,21 @@ menu_select_role() {
   local default_item="${3:-}"
 
   local -a items=()
-  local id path title_text
+  local id path title_text desc_text label
   while IFS= read -r id; do
     path=$(role_path_for "$id")
     title_text=$(role_get_field "$path" "ROLE_TITLE")
-    items+=("$id" "${title_text:-$id}")
+    desc_text=$(role_get_field "$path" "ROLE_DESCRIPTION")
+    # Role picker is the only screen that surfaces the full description —
+    # subsequent dialogs (show_required, pick_optional, pick_addons) use
+    # the short ROLE_TITLE so the heading stays clean. Whiptail will
+    # truncate the item text if it overflows the menu width.
+    if [[ -n $desc_text ]]; then
+      label="${title_text:-$id} - $desc_text"
+    else
+      label="${title_text:-$id}"
+    fi
+    items+=("$id" "$label")
   done < <(role_list_ids | sort)
 
   if [[ ${#items[@]} -eq 0 ]]; then

@@ -9,7 +9,7 @@
 
 # === II_ROLE_BEGIN ===
 ROLE_ID="pihole"
-ROLE_TITLE="Pi-Hole - DNS sinkhole / ad blocker"
+ROLE_TITLE="Pi-Hole"
 ROLE_DESCRIPTION="Network-wide DNS-level ad blocking. (Stub - currently behaves like Custom.)"
 ROLE_FEATURES_REQUIRED=""
 ROLE_FEATURES_DEFAULT=""
