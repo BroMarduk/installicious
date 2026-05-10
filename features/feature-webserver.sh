@@ -8,6 +8,13 @@
 #              config keys this parent declares and writes its own
 #              native config file accordingly.
 #
+#              Visible in every role and in the Custom flow — picking
+#              this feature anywhere fires the radio so only one HTTP
+#              backend can be installed at a time. The four backends
+#              themselves stay restricted (II_RESTRICT_TO_ROLES on
+#              each) since they're hidden children and shouldn't
+#              surface as standalone rows in any picker.
+#
 #              The body is intentionally a no-op apart from status
 #              bookkeeping — all real install work happens in the
 #              chosen child feature. Bump II_VERSION if the picker
@@ -29,7 +36,7 @@ II_DEFAULT_SELECTED="off"
 II_EDITABLE_CONFIG="WEBSERVER_DOC_ROOT WEBSERVER_SERVER_NAME WEBSERVER_PORT"
 II_OPTIONAL_GROUP="nginx apache lighttpd caddy"
 II_OPTIONAL_GROUP_MODE="exclusive"
-II_RESTRICT_TO_ROLES="webserver weewx"
+II_RESTRICT_TO_ROLES=""
 # === II_MANIFEST_END ===
 
 source config/installicious.config || exit 1
