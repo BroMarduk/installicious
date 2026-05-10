@@ -15,7 +15,7 @@
 # === II_ROLE_BEGIN ===
 ROLE_ID="webserver"
 ROLE_TITLE="Web Server"
-ROLE_DESCRIPTION="Generic Pi web server. Pick one HTTP backend on the next screen; configure document root, server name, and port via the editor."
+ROLE_DESCRIPTION="Pick apache / nginx / lighttpd / caddy."
 ROLE_FEATURES_REQUIRED="pkupd webserver"
 ROLE_FEATURES_DEFAULT="locale bash motd"
 ROLE_FEATURES_OPTIONAL="rconf compressed-swap ram-logging motd-updates"

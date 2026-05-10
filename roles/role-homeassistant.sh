@@ -15,7 +15,7 @@
 # === II_ROLE_BEGIN ===
 ROLE_ID="homeassistant"
 ROLE_TITLE="Home Assistant"
-ROLE_DESCRIPTION="Open-source home automation. (Stub - currently behaves like Custom.)"
+ROLE_DESCRIPTION="Open-source home automation. (Stub.)"
 ROLE_FEATURES_REQUIRED=""
 ROLE_FEATURES_DEFAULT=""
 ROLE_FEATURES_OPTIONAL=""

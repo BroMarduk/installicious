@@ -11,7 +11,7 @@
 # === II_ROLE_BEGIN ===
 ROLE_ID="custom"
 ROLE_TITLE="Custom"
-ROLE_DESCRIPTION="Bypass the role list and pick from all available features (option + software categories)."
+ROLE_DESCRIPTION="Bypass the role list; pick features individually."
 ROLE_FEATURES_REQUIRED=""
 ROLE_FEATURES_DEFAULT=""
 ROLE_FEATURES_OPTIONAL=""

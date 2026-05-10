@@ -20,7 +20,7 @@
 # === II_ROLE_BEGIN ===
 ROLE_ID="weewx"
 ROLE_TITLE="WeeWx"
-ROLE_DESCRIPTION="WeeWx weather station software with SkyfieldAlmanac astronomy extension."
+ROLE_DESCRIPTION="Weather station software + Skyfield extension."
 ROLE_FEATURES_REQUIRED="pkupd webserver"
 ROLE_FEATURES_DEFAULT="locale bash motd skyfield motd-weather"
 ROLE_FEATURES_OPTIONAL="rconf compressed-swap ram-logging motd-updates"

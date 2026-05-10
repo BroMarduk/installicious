@@ -10,7 +10,7 @@
 # === II_ROLE_BEGIN ===
 ROLE_ID="mediaserver"
 ROLE_TITLE="Media Server"
-ROLE_DESCRIPTION="Streaming media server. (Stub - currently behaves like Custom.)"
+ROLE_DESCRIPTION="Streaming media (Plex / Jellyfin). (Stub.)"
 ROLE_FEATURES_REQUIRED=""
 ROLE_FEATURES_DEFAULT=""
 ROLE_FEATURES_OPTIONAL=""
