@@ -24,24 +24,36 @@
 #
 # Role-flow order (role declares REQUIRED / DEFAULT / OPTIONAL features):
 #
-#   pick_role  →  show_required*  →  pick_optional*  →  merge_role
-#                                                    →  pick_addons*
-#                                                    →  edit_config
-#                                                    →  confirm  →  run
+#   pick_role  →  show_required*  →  pick_addons_required*  →  pick_optional*
+#                                                           →  merge_role
+#                                                           →  pick_addons*
+#                                                           →  edit_config
+#                                                           →  confirm  →  run
+#
+#   pick_addons_required fires the sub-menu for any REQUIRED parent
+#   with an II_OPTIONAL_GROUP (e.g. webserver's apache/nginx/lighttpd/
+#   caddy radio) BEFORE pick_optional, so mandatory-backend choices
+#   land while the user is still on the "required setup" mental track.
+#   pick_addons (post-merge_role) handles non-required parents only,
+#   so motd's optional add-on checkboxes still come after the user has
+#   confirmed motd is selected on the optional list.
 #
 #   No Custom packages screen — the role's features pull in their
 #   package deps via II_DEPS automatically; the user doesn't see the
 #   raw package picker.
 #
 # Stage glossary:
-#   pick_role         single-select role picker (first stage)
-#   custom_features   Custom: pick from features/ (II_CATEGORY="feature")
-#   merge_features    internal: stage selected = features + (later) addons
-#   show_required     Role: confirm the required features (info)
-#   pick_optional     Role: pick optional add-on features
-#   merge_role        internal: stage selected = required + optional
-#   pick_addons       sub-menu(s) for features with II_OPTIONAL_GROUP
-#   edit_config       surface II_EDITABLE_CONFIG / ROLE_EDITABLE_CONFIG values
+#   pick_role             single-select role picker (first stage)
+#   custom_features       Custom: pick from features/ (II_CATEGORY="feature")
+#   merge_features        internal: stage selected = features + (later) addons
+#   show_required         Role: confirm the required features (info)
+#   pick_addons_required  Role: sub-menu(s) for REQUIRED parents that
+#                         declare II_OPTIONAL_GROUP (e.g. webserver radio)
+#   pick_optional         Role: pick optional add-on features
+#   merge_role            internal: stage selected = required + optional
+#   pick_addons           sub-menu(s) for NON-required parents with
+#                         II_OPTIONAL_GROUP (e.g. motd's checkbox children)
+#   edit_config           surface II_EDITABLE_CONFIG / ROLE_EDITABLE_CONFIG values
 #   custom_packages   Custom: pick from packages/ (II_CATEGORY="package");
 #                     required-by-features auto-listed and excluded from picker
 #   merge_packages    internal: append picked packages, exit if nothing at all
@@ -116,12 +128,36 @@ prev_stage=""
 # ---------------------------------------------------------------------------
 # Stage state machine
 # ---------------------------------------------------------------------------
-# Helper: figure out which stage precedes edit_config / confirm so BACK from
-# the editor or confirm rewinds to the right place. If any selected parent
-# has an II_OPTIONAL_GROUP, the most recent selection stage is pick_addons.
-_any_parent_has_addons() {
+# Helpers: figure out which stage precedes edit_config / confirm so BACK
+# from the editor or confirm rewinds to the right place. Required parents
+# fire their sub-menu in pick_addons_required (between show_required and
+# pick_optional); non-required parents fire theirs in the regular
+# pick_addons stage (between merge_role and edit_config). Each helper
+# answers "does THAT stage have anything to render right now?".
+
+_id_in_required() {
+  local needle="$1" id
+  for id in $role_required; do
+    [[ "$id" == "$needle" ]] && return 0
+  done
+  return 1
+}
+
+_any_required_parent_has_addons() {
+  local id ppath addons
+  for id in $role_required; do
+    ppath=$(manifest_path_for "$id" 2>/dev/null)
+    [[ -z $ppath ]] && continue
+    addons=$(manifest_get_field "$ppath" "II_OPTIONAL_GROUP")
+    [[ -n $addons ]] && return 0
+  done
+  return 1
+}
+
+_any_optional_parent_has_addons() {
   local id ppath addons
   for id in $selected_parents; do
+    _id_in_required "$id" && continue
     ppath=$(manifest_path_for "$id" 2>/dev/null)
     [[ -z $ppath ]] && continue
     addons=$(manifest_get_field "$ppath" "II_OPTIONAL_GROUP")
@@ -174,26 +210,37 @@ _role_uses_custom_flow() {
 # include packages or confirm — those come AFTER edit_config in the
 # new flow (features → addons → edit_config → packages → confirm).
 prev_selection_stage() {
-  if _any_parent_has_addons; then
+  if _any_optional_parent_has_addons; then
     echo "pick_addons"
   elif _role_uses_custom_flow; then
     echo "custom_features"
-  elif [[ -n $role_optional ]]; then
+  elif [[ -n $role_default || -n $role_optional ]]; then
     echo "pick_optional"
+  elif _any_required_parent_has_addons; then
+    echo "pick_addons_required"
   elif [[ -n $role_required ]]; then
     echo "show_required"
   else
     echo "pick_role"
   fi
 }
-# What pick_addons rewinds to (the same logic as prev_selection_stage but
-# without considering pick_addons itself).
+# What pick_addons (non-required parents) rewinds to.
 _pre_addons_stage() {
   if _role_uses_custom_flow; then
     echo "custom_features"
-  elif [[ -n $role_optional ]]; then
+  elif [[ -n $role_default || -n $role_optional ]]; then
     echo "pick_optional"
+  elif _any_required_parent_has_addons; then
+    echo "pick_addons_required"
   elif [[ -n $role_required ]]; then
+    echo "show_required"
+  else
+    echo "pick_role"
+  fi
+}
+# What pick_addons_required rewinds to.
+_pre_addons_required_stage() {
+  if [[ -n $role_required ]]; then
     echo "show_required"
   else
     echo "pick_role"
@@ -301,11 +348,11 @@ while true; do
       selected="${features_selected//\"/}"
       selected=$(echo "$selected" | tr -s ' ' | sed 's/^ //; s/ $//')
       selected_parents="$selected"
-      if _any_parent_has_addons; then
-        stage="pick_addons"
-      else
-        stage="edit_config"
-      fi
+      # Always route through pick_addons. When no parent has children,
+      # pick_addons is a no-op render-wise but its trailing merge folds
+      # any addons_picked entries (set in pick_addons_required for role
+      # flows) into the final $selected list.
+      stage="pick_addons"
       ;;
 
     show_required)
@@ -315,14 +362,68 @@ while true; do
       rc=$?
       case $rc in
         0)
-          if [[ -n $role_default || -n $role_optional ]]; then
-            stage="pick_optional"
-          else
-            stage="merge_role"
-          fi
+          # Always route to pick_addons_required next; that stage will
+          # auto-advance if no required parent declares II_OPTIONAL_GROUP.
+          stage="pick_addons_required"
           ;;
         1|255) stage="pick_role" ;;          # BACK or ESC → role picker
       esac
+      ;;
+
+    pick_addons_required)
+      log_info "Rendering required-feature add-on sub-menus."
+      # Fire a sub-menu for each REQUIRED parent that declares
+      # II_OPTIONAL_GROUP. Mode dispatches the same way as the regular
+      # pick_addons stage: "exclusive" → radiolist, default → checklist.
+      # Picks land in addons_picked[parent_id] and are merged into the
+      # final $selected at the end of the (later) pick_addons stage.
+      _rewind=0
+      _had_work=0
+      for parent_id in $role_required; do
+        ppath=$(manifest_path_for "$parent_id" 2>/dev/null)
+        [[ -z $ppath ]] && continue
+        pchildren=$(manifest_get_field "$ppath" "II_OPTIONAL_GROUP")
+        [[ -z $pchildren ]] && continue
+        ptitle=$(manifest_get_field "$ppath" "II_TITLE")
+        pmode=$(manifest_get_field "$ppath" "II_OPTIONAL_GROUP_MODE")
+        _had_work=1
+
+        if [[ $pmode == "exclusive" ]]; then
+          # shellcheck disable=SC2086
+          picked=$(menu_pick_one_optional "$ptitle" \
+            --previously "${addons_picked[$parent_id]:-}" \
+            $pchildren)
+        else
+          # shellcheck disable=SC2086
+          picked=$(menu_pick_optionals "$ptitle" \
+            --previously "${addons_picked[$parent_id]:-}" \
+            $pchildren)
+        fi
+        rc=$?
+        case $rc in
+          0)     addons_picked[$parent_id]="${picked//\"/}" ;;
+          1|255) _rewind=1; break ;;
+          2)     ;;
+        esac
+      done
+
+      if [[ $_rewind -eq 1 ]]; then
+        stage=$(_pre_addons_required_stage)
+        continue
+      fi
+
+      # Forward: pick_optional if the role offers any default/optional
+      # features, otherwise straight to merge_role. (No work needed for
+      # roles whose REQUIRED parents have no II_OPTIONAL_GROUP — this
+      # stage falls through immediately in that case.)
+      if [[ $_had_work -eq 0 ]]; then
+        log_info "No required parents have II_OPTIONAL_GROUP; auto-advancing."
+      fi
+      if [[ -n $role_default || -n $role_optional ]]; then
+        stage="pick_optional"
+      else
+        stage="merge_role"
+      fi
       ;;
 
     pick_optional)
@@ -342,7 +443,13 @@ while true; do
       case $rc in
         0)     stage="merge_role" ;;
         1|255)
-          if [[ -n $role_required ]]; then
+          # BACK from pick_optional rewinds to whichever stage rendered
+          # something just before us: pick_addons_required if any
+          # required parent had a sub-menu, else show_required, else
+          # pick_role for roles with no required tier.
+          if _any_required_parent_has_addons; then
+            stage="pick_addons_required"
+          elif [[ -n $role_required ]]; then
             stage="show_required"
           else
             stage="pick_role"
@@ -360,23 +467,24 @@ while true; do
         exit 0
       fi
       selected_parents="$selected"
-      if _any_parent_has_addons; then
-        stage="pick_addons"
-      else
-        stage="edit_config"
-      fi
+      # Always route through pick_addons. Its trailing merge folds the
+      # required-parent addons (set earlier in pick_addons_required) into
+      # the final $selected list even when no NON-required parent has
+      # children to prompt about.
+      stage="pick_addons"
       ;;
 
     pick_addons)
-      log_info "Rendering add-on sub-menus."
-      # Walk each currently-selected installer; if it declares
-      # II_OPTIONAL_GROUP, surface its add-ons as a sub-menu. Mode is
-      # controlled by II_OPTIONAL_GROUP_MODE on the parent: "exclusive"
-      # renders a radiolist (pick exactly one), default/empty/"multi"
-      # renders a checklist (pick any). User's picks for each parent
-      # are remembered in addons_picked so back-nav re-presents them.
+      log_info "Rendering non-required add-on sub-menus."
+      # Walk each selected_parent that's NOT in role_required and
+      # declares II_OPTIONAL_GROUP. REQUIRED parents already had their
+      # sub-menus in pick_addons_required (which fires earlier, between
+      # show_required and pick_optional) so we skip them here to avoid
+      # asking the same question twice. Mode dispatch matches the
+      # required pass: "exclusive" → radiolist, default → checklist.
       _rewind=0
       for parent_id in $selected_parents; do
+        _id_in_required "$parent_id" && continue
         ppath=$(manifest_path_for "$parent_id" 2>/dev/null)
         [[ -z $ppath ]] && continue
         pchildren=$(manifest_get_field "$ppath" "II_OPTIONAL_GROUP")
