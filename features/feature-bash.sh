@@ -306,8 +306,9 @@ do_install() {
 
   # The new aliases + PS1 only show up in shells that re-source their bashrc.
   # The framework can't reach the user's interactive shell, so register a
-  # note instead — displayed at the very end of the queue.
-  post_install_note "$II_ID" "Run 'exec bash' (or open a new terminal) to pick up the new prompt and aliases."
+  # note instead — displayed at the very end of the queue. Skip after a
+  # reboot: every fresh login post-reboot already picks up the new config.
+  post_install_note_unless_rebooted "$II_ID" "Run 'exec bash' (or open a new terminal) to pick up the new prompt and aliases."
   # Also flag the shell-reload sentinel. If the user is running installicious
   # via the /etc/profile.d/installicious.sh wrapper function, the wrapper
   # exec-bash's their interactive shell at exit so this happens automatically.
@@ -315,7 +316,7 @@ do_install() {
   # invocations.
   post_install_request_shell_reload
   if [[ -n $USER_RC ]]; then
-    post_install_note "$II_ID" "For root's bash config: 'sudo -i' starts a fresh root login."
+    post_install_note_unless_rebooted "$II_ID" "For root's bash config: 'sudo -i' starts a fresh root login."
   fi
 
   log_ok "Bash customizations applied for root${USER_RC:+ and $TARGET_USER}."

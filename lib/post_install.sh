@@ -37,6 +37,7 @@
 _post_install_run_file()        { echo "${PATH_STATE:-state}/post-install-run.sh"; }
 _post_install_run_skip_file()   { echo "${PATH_STATE:-state}/post-install-run-skip-after-reboot.sh"; }
 _post_install_note_file()       { echo "${PATH_STATE:-state}/post-install-notes.txt"; }
+_post_install_note_skip_file()  { echo "${PATH_STATE:-state}/post-install-notes-skip-after-reboot.txt"; }
 _post_install_reload_flag()     { echo "${PATH_STATE:-state}/reload-shell"; }
 _post_install_rebooted_flag()   { echo "${PATH_STATE:-state}/queue-rebooted.flag"; }
 
@@ -146,12 +147,34 @@ post_install_note() {
     || return 1
 }
 
+# post_install_note_unless_rebooted <id> <message>
+# Like post_install_note, but if any reboot occurred during this queue the
+# note is dropped on the floor — the reboot already accomplished what the
+# note would have nudged the user about (fresh shells get new aliases /
+# prompt automatically, ssh-relogin advice is moot, etc.).
+post_install_note_unless_rebooted() {
+  local id="$1"
+  local message="$2"
+  [[ -z $id || -z $message ]] && return 0
+  _post_install_ensure_dir
+  local file line
+  file=$(_post_install_note_skip_file)
+  line="[$id] $message"
+  if [[ -f $file ]] && grep -qFx -- "$line" "$file" 2>/dev/null; then
+    return 0
+  fi
+  echo "$line" | sudo tee -a "$file" >/dev/null 2>&1 \
+    || echo "$line" >> "$file" 2>/dev/null \
+    || return 1
+}
+
 # post_install_apply - run queued commands, then print queued notes, clear.
 post_install_apply() {
-  local cmd_file skip_file note_file rebooted_flag rc=0
+  local cmd_file skip_file note_file note_skip_file rebooted_flag rc=0
   cmd_file=$(_post_install_run_file)
   skip_file=$(_post_install_run_skip_file)
   note_file=$(_post_install_note_file)
+  note_skip_file=$(_post_install_note_skip_file)
   rebooted_flag=$(_post_install_rebooted_flag)
 
   local rebooted=0
@@ -205,16 +228,32 @@ post_install_apply() {
     sudo rm -f "$skip_file" 2>/dev/null || rm -f "$skip_file" 2>/dev/null
   fi
 
+  # Merge always-show + reboot-subsumable note files for display. After a
+  # reboot the skip-file's notes are dropped silently (no banner, no
+  # mention); without a reboot they print alongside the regular notes
+  # under the same "Post-install actions you need to take" header.
+  local -a notes_to_show=()
   if [[ -s $note_file ]]; then
+    notes_to_show+=("$note_file")
+  fi
+  if [[ -s $note_skip_file ]]; then
+    if [[ $rebooted -eq 1 ]]; then
+      log_info "Skipping $(wc -l < "$note_skip_file" | tr -d ' ') reboot-subsumed post-install note(s)."
+    else
+      notes_to_show+=("$note_skip_file")
+    fi
+  fi
+  if (( ${#notes_to_show[@]} > 0 )); then
     echo
     echo "============================================================"
     echo "  Post-install actions you need to take"
     echo "============================================================"
-    cat "$note_file"
+    cat "${notes_to_show[@]}"
     echo "============================================================"
     echo
-    sudo rm -f "$note_file" 2>/dev/null || rm -f "$note_file" 2>/dev/null
   fi
+  [[ -f $note_file      ]] && (sudo rm -f "$note_file"      2>/dev/null || rm -f "$note_file"      2>/dev/null)
+  [[ -f $note_skip_file ]] && (sudo rm -f "$note_skip_file" 2>/dev/null || rm -f "$note_skip_file" 2>/dev/null)
 
   # Drop the rebooted flag after we've used it. The next queue starts clean
   # (post_install_clear at the top of scripts/options.sh also clears it).
@@ -228,16 +267,18 @@ post_install_apply() {
 # start of a fresh run so stale entries from a prior interrupted session
 # don't carry over.
 post_install_clear() {
-  local cmd_file note_file reload_flag skip_file rebooted_flag
+  local cmd_file note_file note_skip_file reload_flag skip_file rebooted_flag
   cmd_file=$(_post_install_run_file)
   note_file=$(_post_install_note_file)
+  note_skip_file=$(_post_install_note_skip_file)
   reload_flag=$(_post_install_reload_flag)
   skip_file=$(_post_install_run_skip_file)
   rebooted_flag=$(_post_install_rebooted_flag)
-  [[ -f $cmd_file       ]] && (sudo rm -f "$cmd_file"       2>/dev/null || rm -f "$cmd_file"       2>/dev/null)
-  [[ -f $note_file      ]] && (sudo rm -f "$note_file"      2>/dev/null || rm -f "$note_file"      2>/dev/null)
-  [[ -f $reload_flag    ]] && (sudo rm -f "$reload_flag"    2>/dev/null || rm -f "$reload_flag"    2>/dev/null)
-  [[ -f $skip_file      ]] && (sudo rm -f "$skip_file"      2>/dev/null || rm -f "$skip_file"      2>/dev/null)
-  [[ -f $rebooted_flag  ]] && (sudo rm -f "$rebooted_flag"  2>/dev/null || rm -f "$rebooted_flag"  2>/dev/null)
+  [[ -f $cmd_file        ]] && (sudo rm -f "$cmd_file"        2>/dev/null || rm -f "$cmd_file"        2>/dev/null)
+  [[ -f $note_file       ]] && (sudo rm -f "$note_file"       2>/dev/null || rm -f "$note_file"       2>/dev/null)
+  [[ -f $note_skip_file  ]] && (sudo rm -f "$note_skip_file"  2>/dev/null || rm -f "$note_skip_file"  2>/dev/null)
+  [[ -f $reload_flag     ]] && (sudo rm -f "$reload_flag"     2>/dev/null || rm -f "$reload_flag"     2>/dev/null)
+  [[ -f $skip_file       ]] && (sudo rm -f "$skip_file"       2>/dev/null || rm -f "$skip_file"       2>/dev/null)
+  [[ -f $rebooted_flag   ]] && (sudo rm -f "$rebooted_flag"   2>/dev/null || rm -f "$rebooted_flag"   2>/dev/null)
   return 0
 }

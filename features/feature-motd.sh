@@ -173,8 +173,10 @@ fi
 EOF
 
   # ---- restart ssh so PrintMotd/PrintLastLog take effect ----
-  # Defer to end-of-queue: the user may be SSH'd in right now.
-  post_install_run "sudo systemctl restart ssh" \
+  # Defer to end-of-queue: the user may be SSH'd in right now. A reboot
+  # restarts sshd anyway, so skip this command if a reboot occurred
+  # during the queue.
+  post_install_run_unless_rebooted "sudo systemctl restart ssh" \
     "Restart sshd so MOTD changes take effect on next login."
 
   # ---- seed the IP-results file by running the cron once now ----
@@ -228,7 +230,8 @@ do_uninstall() {
   fi
 
   # ---- restart ssh so the reverted config takes effect ----
-  post_install_run "sudo systemctl restart ssh" \
+  # Reboot-subsumed: skip if a reboot happened during this queue.
+  post_install_run_unless_rebooted "sudo systemctl restart ssh" \
     "Restart sshd to apply the reverted PrintMotd / PrintLastLog settings."
 
   status_mark_uninstalled "$II_ID"
