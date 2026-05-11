@@ -100,6 +100,62 @@ source lib/state.sh  2>/dev/null || true
 source lib/apt.sh    2>/dev/null || true
 source lib/manifest.sh 2>/dev/null || true
 
+# Non-interactive CLI mode: `installicious --uninstall <id> [<id>...]`.
+# Skips the menu / scheduler entirely and dispatches each <id> straight
+# to its installer's --uninstall path. Equivalent to the manual
+# `cd /etc/installicious && sudo bash features/feature-X.sh --uninstall`
+# dance, just without the cd-and-resolve-path-per-id hassle.
+# Returns 0 if all uninstalls succeeded, non-zero otherwise.
+if [[ "${1:-}" == "--uninstall" ]]; then
+  shift
+  if [[ $# -eq 0 ]]; then
+    echo "Usage: $(basename "$0") --uninstall <id> [<id>...]" >&2
+    echo "  <id> matches an II_ID from features/ or packages/." >&2
+    echo "  Multiple ids are uninstalled in the order given." >&2
+    exit 2
+  fi
+  if ! declare -F manifest_path_for >/dev/null; then
+    echo "FAIL: lib/manifest.sh did not load; cannot resolve installer paths." >&2
+    exit 1
+  fi
+
+  declare -i overall_rc=0
+  declare -a _ok=() _fail=() _missing=()
+  for _id in "$@"; do
+    _path=$(manifest_path_for "$_id" 2>/dev/null)
+    if [[ -z $_path || ! -f $_path ]]; then
+      echo -e "[ \e[0;31mFAIL\e[0m ] '$_id' — no installer found under features/ or packages/."
+      _missing+=("$_id")
+      overall_rc=1
+      continue
+    fi
+    echo
+    echo "============================================================"
+    echo "  Uninstalling $_id  ($(basename "$_path"))"
+    echo "============================================================"
+    bash "$_path" --uninstall
+    _rc=$?
+    if [[ $_rc -ne 0 ]]; then
+      echo "  (exit $_rc)"
+      _fail+=("$_id")
+      overall_rc=$_rc
+    else
+      _ok+=("$_id")
+    fi
+  done
+
+  echo
+  echo "============================================================"
+  echo "  Uninstall Summary"
+  echo "============================================================"
+  [[ ${#_ok[@]}      -gt 0 ]] && printf "  \e[0;32mUninstalled\e[0m: %s\n" "${_ok[*]}"
+  [[ ${#_fail[@]}    -gt 0 ]] && printf "  \e[0;31mFailed\e[0m: %s\n"      "${_fail[*]}"
+  [[ ${#_missing[@]} -gt 0 ]] && printf "  \e[0;33mNot found\e[0m: %s\n"   "${_missing[*]}"
+  echo "============================================================"
+  echo
+  exit $overall_rc
+fi
+
 # Make sure the logging directory variable can be found.
 if [[ -z $PATH_LOGS ]]; then
   echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Unable to find a value for the logging directory in the configuration $FILE_CONFIG_INSTALLICIOUS."
