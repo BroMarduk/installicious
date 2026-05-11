@@ -25,7 +25,7 @@
 II_ID="motd"
 II_TITLE="Login Message of the Day (MOTD)"
 II_CATEGORY="feature"
-II_VERSION="3"
+II_VERSION="4"
 II_DEPS=""
 II_REQUIRES_REBOOT="never"
 II_DEFAULT_SELECTED="on"
@@ -161,7 +161,7 @@ do_install() {
 
   # ---- /etc/profile: append the width-aware launcher (managed block) ----
   #
-  # Two guards on the block:
+  # Three guards on the block:
   #
   #   [ -t 1 ]    — stdout must be a TTY. LightDM / GDM / XDM source
   #                 /etc/profile when authenticating a desktop user but
@@ -175,13 +175,23 @@ do_install() {
   #                 A direct `ssh user@host` login leaves it empty and
   #                 the MOTD shows. A `sudo -i` after login sets it,
   #                 and we skip so the banner doesn't appear twice.
+  #
+  # The block ITSELF is POSIX-compatible shell, because /etc/profile is
+  # parsed by /bin/sh (dash on Debian/Pi OS) for non-bash session init
+  # contexts. Bash-only syntax like `read <<<` or `\${var::-1}` makes
+  # dash fail at PARSE time before any guard runs, which kills the X
+  # session and produces the same login-loop symptom as the TTY-less
+  # stty error. So:
+  #   - assign with $(...) instead of `read <<<`
+  #   - strip last char with \${var%?} instead of \${var::-1}
+  #   - use [ ] not [[ ]] for the integer compare
   log_info "Appending MOTD launcher block to $PROFILE_FILE."
   block_ensure "$PROFILE_FILE" "$PROFILE_BLOCK_START" "$PROFILE_BLOCK_END" <<EOF
 # Installicious — show the right MOTD based on terminal width.
 if [ -t 1 ] && [ -z "\$SUDO_USER" ]; then
-  read screenWidth <<< \$(stty -a | awk 'NR==1 { print \$7 }')
-  intWidth=\${screenWidth::-1}
-  if [[ \$intWidth -gt $MOTD_SMALL_SIZE ]]; then
+  screenWidth=\$(stty -a 2>/dev/null | awk 'NR==1 { print \$7 }')
+  intWidth=\${screenWidth%?}
+  if [ -n "\$intWidth" ] && [ "\$intWidth" -gt $MOTD_SMALL_SIZE ] 2>/dev/null; then
     $MOTD_DIR/motd.sh
   else
     $MOTD_DIR/motd-small.sh
