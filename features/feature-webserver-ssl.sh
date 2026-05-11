@@ -24,11 +24,15 @@
 #              Backend coverage (independent of challenge method):
 #                nginx     - certbot installs via --installer nginx (full)
 #                apache    - certbot installs via --installer apache (full)
-#                lighttpd  - certbot has no official lighttpd plugin;
-#                            the cert is obtained via certonly (HTTP or
-#                            DNS challenge as chosen) and a manual
-#                            lighttpd config recipe is printed for the
-#                            user. Returns rc=2.
+#                lighttpd  - certbot has no official lighttpd plugin,
+#                            so we obtain the cert via certonly and
+#                            then drop a managed
+#                            /etc/lighttpd/conf-available/99-
+#                            installicious-ssl.conf that loads
+#                            mod_openssl, binds :443 with the cert
+#                            files, and redirects :80 -> :443. Enabled
+#                            via a symlink in conf-enabled/. lighttpd
+#                            -t validates before reload.
 #                caddy     - never reached (not in caddy's
 #                            II_OPTIONAL_GROUP). Defensive skip.
 #
@@ -46,7 +50,7 @@
 II_ID="webserver-ssl"
 II_TITLE="HTTPS / SSL (Let's Encrypt)"
 II_CATEGORY="feature"
-II_VERSION="2"
+II_VERSION="3"
 II_DEPS=""
 II_REQUIRES_REBOOT="never"
 II_DEFAULT_SELECTED="off"
@@ -70,6 +74,8 @@ WEBSERVER_SSL_CF_TOKEN="${WEBSERVER_SSL_CF_TOKEN:-}"
 WEBSERVER_DOC_ROOT="${WEBSERVER_DOC_ROOT:-/var/www/html}"
 
 CLOUDFLARE_CREDS_FILE="${PATH_STATE:-/etc/installicious/state}/cloudflare.ini"
+LIGHTTPD_SSL_CONF_AVAILABLE="/etc/lighttpd/conf-available/99-installicious-ssl.conf"
+LIGHTTPD_SSL_CONF_ENABLED="/etc/lighttpd/conf-enabled/99-installicious-ssl.conf"
 
 MODE="install"
 while [[ $# -gt 0 ]]; do
@@ -230,20 +236,55 @@ _run_cert_lighttpd_certonly() {
   return ${PIPESTATUS[0]}
 }
 
-_print_lighttpd_manual_recipe() {
-  cat >&2 <<EOF
-[ WARN ] HTTPS for lighttpd requires manual config in addition to the
-         cert that was just obtained. certbot has no official lighttpd
-         plugin, so the next step is yours:
+# Write the managed lighttpd SSL config file under conf-available/ and
+# enable it via a symlink in conf-enabled/. The config loads mod_openssl,
+# binds :443 with the Let's Encrypt cert paths, and redirects HTTP to
+# HTTPS. Caller should run `lighttpd -t` after this and reload only on
+# success (so a bad render doesn't kill the live server).
+_write_lighttpd_ssl_config() {
+  local tmp
+  tmp=$(mktemp) || return 1
+  cat > "$tmp" <<LIGHTY_EOF
+# Managed by installicious feature-webserver-ssl. Regenerated whenever
+# WEBSERVER_SERVER_NAME / WEBSERVER_SSL_* keys change.
 
-           sudo lighty-enable-mod ssl
+server.modules += ( "mod_openssl" )
 
-         then edit /etc/lighttpd/conf-available/10-ssl.conf:
-           ssl.pemfile = "/etc/letsencrypt/live/$WEBSERVER_SERVER_NAME/fullchain.pem"
-           ssl.privkey  = "/etc/letsencrypt/live/$WEBSERVER_SERVER_NAME/privkey.pem"
+\$SERVER["socket"] == ":443" {
+    ssl.engine               = "enable"
+    ssl.pemfile              = "/etc/letsencrypt/live/${WEBSERVER_SERVER_NAME}/fullchain.pem"
+    ssl.privkey              = "/etc/letsencrypt/live/${WEBSERVER_SERVER_NAME}/privkey.pem"
+    ssl.openssl.ssl-conf-cmd = ("MinProtocol" => "TLSv1.2")
+}
 
-         and reload:  sudo systemctl reload lighttpd
-EOF
+# HTTP -> HTTPS redirect. Let's Encrypt's HTTP-01 challenge follows
+# the redirect to the same hostname, so renewal still works under
+# WEBSERVER_SSL_METHOD="http". For dns-cloudflare, no HTTP challenge
+# fires at all.
+\$HTTP["scheme"] == "http" {
+    \$HTTP["host"] =~ ".*" {
+        url.redirect = (".*" => "https://%0\$0")
+    }
+}
+LIGHTY_EOF
+  sudo install -m 0644 "$tmp" "$LIGHTTPD_SSL_CONF_AVAILABLE" || { rm -f "$tmp"; return 1; }
+  rm -f "$tmp"
+
+  sudo mkdir -p "$(dirname "$LIGHTTPD_SSL_CONF_ENABLED")" || return 1
+  if [[ ! -L $LIGHTTPD_SSL_CONF_ENABLED ]]; then
+    sudo ln -s "../conf-available/99-installicious-ssl.conf" \
+      "$LIGHTTPD_SSL_CONF_ENABLED" || return 1
+  fi
+  return 0
+}
+
+_remove_lighttpd_ssl_config() {
+  if [[ -L $LIGHTTPD_SSL_CONF_ENABLED ]]; then
+    sudo rm -f "$LIGHTTPD_SSL_CONF_ENABLED"
+  fi
+  if [[ -f $LIGHTTPD_SSL_CONF_AVAILABLE ]]; then
+    sudo rm -f "$LIGHTTPD_SSL_CONF_AVAILABLE"
+  fi
 }
 
 do_install() {
@@ -334,26 +375,35 @@ do_install() {
       _run_cert_lighttpd_certonly
       rc=$?
       if [[ $rc -eq 0 ]]; then
-        _print_lighttpd_manual_recipe
-        rc=2  # cert obtained but server config still pending — surface as soft-fail.
+        log_info "Writing managed lighttpd SSL config."
+        if ! _write_lighttpd_ssl_config; then
+          log_fail "Failed to write lighttpd SSL config."
+          status_mark_failed "$II_ID" "lighttpd ssl config render failed"
+          return 1
+        fi
+        if ! sudo lighttpd -t -f /etc/lighttpd/lighttpd.conf 2>&1 | tee -a "$FILE_LOG_INSTALLER"; then
+          log_warn "lighttpd -t rejected SSL config; reverting."
+          _remove_lighttpd_ssl_config
+          status_mark_failed "$II_ID" "lighttpd -t rejected SSL config"
+          return 1
+        fi
+        log_info "Reloading lighttpd."
+        sudo systemctl reload lighttpd 2>/dev/null \
+          || sudo systemctl restart lighttpd \
+          || log_warn "lighttpd reload/restart returned non-zero."
       fi
       ;;
   esac
 
-  if [[ $rc -ne 0 && $rc -ne 2 ]]; then
+  if [[ $rc -ne 0 ]]; then
     status_mark_failed "$II_ID" "$backend SSL setup failed (code $rc)"
     echo -e "[ \e[0;31mFAIL\e[0m ] HTTPS setup did not complete for $backend (rc=$rc)."
     return $rc
   fi
 
   status_mark_complete "$II_ID" "$II_VERSION" "$FILE_CONFIG_WEBSERVER"
-  if [[ $rc -eq 2 ]]; then
-    log_warn "Cert obtained for $WEBSERVER_SERVER_NAME but manual lighttpd config still required (see recipe above)."
-    echo -e "[ \e[0;33mWARN\e[0m ] Cert obtained — finish the lighttpd config manually per the recipe above."
-  else
-    log_ok "HTTPS configured for $backend on $WEBSERVER_SERVER_NAME via $WEBSERVER_SSL_METHOD."
-    echo -e "[  \e[0;32mOK\e[0m  ] Installicious successfully configured HTTPS for $backend ($WEBSERVER_SSL_METHOD)."
-  fi
+  log_ok "HTTPS configured for $backend on $WEBSERVER_SERVER_NAME via $WEBSERVER_SSL_METHOD."
+  echo -e "[  \e[0;32mOK\e[0m  ] Installicious successfully configured HTTPS for $backend ($WEBSERVER_SSL_METHOD)."
   return 0
 }
 
@@ -374,9 +424,16 @@ do_uninstall() {
   # certbot leaves cert files under /etc/letsencrypt; intentionally not
   # deleting them on uninstall (the user may want to re-use the cert
   # later, and Let's Encrypt rate-limits issuance). Revert only what we
-  # added: the apt packages (iff we installed them) and the Cloudflare
-  # credentials file (a secret — definitely don't leave it behind).
+  # added: the apt packages (iff we installed them), the Cloudflare
+  # credentials file (a secret — definitely don't leave it behind),
+  # and our managed lighttpd SSL config + symlink.
   _remove_cf_credentials
+
+  if [[ -f $LIGHTTPD_SSL_CONF_AVAILABLE || -L $LIGHTTPD_SSL_CONF_ENABLED ]]; then
+    log_info "Removing managed lighttpd SSL config."
+    _remove_lighttpd_ssl_config
+    sudo systemctl reload lighttpd 2>/dev/null || true
+  fi
 
   if apt_is_installed python3-certbot-dns-cloudflare; then
     installer_apt_revert "$STATUS_FILE" python3-certbot-dns-cloudflare
