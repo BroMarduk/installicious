@@ -37,7 +37,7 @@
 II_ID="caddy"
 II_TITLE="Caddy"
 II_CATEGORY="feature"
-II_VERSION="2"
+II_VERSION="3"
 II_DEPS=""
 II_REQUIRES_REBOOT="never"
 II_DEFAULT_SELECTED="off"
@@ -46,10 +46,12 @@ II_RESTRICT_TO_ROLES="webserver weewx"
 II_OPTIONAL_GROUP="webserver-under-construction"
 # Caddy has its own built-in ACME client and HTTP policy controls, so
 # webserver-ssl is deliberately NOT in this group. CADDY_HTTP_POLICY
-# below (an II_EDITABLE_CONFIG key declared here, not on webserver-ssl)
-# mirrors the WEBSERVER_SSL_HTTP_POLICY values for parity with the
-# other backends but plugs into Caddy's own auto-HTTPS pipeline.
-II_EDITABLE_CONFIG="CADDY_HTTP_POLICY CADDY_ACME_EMAIL"
+# mirrors the WEBSERVER_SSL_HTTP_POLICY values for parity but plugs
+# into Caddy's own auto-HTTPS pipeline. WEBSERVER_SSL_EMAIL is the
+# same email used by certbot for the other backends; Caddy reuses it
+# for its ACME account (LE doesn't care which client supplied it).
+# Optional for Caddy — if blank, Caddy registers anonymously.
+II_EDITABLE_CONFIG="CADDY_HTTP_POLICY WEBSERVER_SSL_EMAIL"
 # === II_MANIFEST_END ===
 
 source config/installicious.config || exit 1
@@ -65,7 +67,7 @@ FILE_CONFIG_WEBSERVER="${PATH_CONFIG:-config}/webserver.config"
 state_apply_menu_overrides
 WEBSERVER_DOC_ROOT="${WEBSERVER_DOC_ROOT:-/var/www/html}"
 CADDY_HTTP_POLICY="${CADDY_HTTP_POLICY:-redirect-all}"
-CADDY_ACME_EMAIL="${CADDY_ACME_EMAIL:-}"
+WEBSERVER_SSL_EMAIL="${WEBSERVER_SSL_EMAIL:-}"
 if [[ -z ${WEBSERVER_SERVER_NAME:-} ]]; then
   WEBSERVER_SERVER_NAME=$(hostname -f 2>/dev/null)
   [[ -z $WEBSERVER_SERVER_NAME || $WEBSERVER_SERVER_NAME == "(none)" ]] && WEBSERVER_SERVER_NAME=$(hostname 2>/dev/null)
@@ -96,36 +98,70 @@ STATUS_FILE=$(status_file_for "$II_ID")
 write_caddyfile() {
   local tmp
   tmp=$(mktemp) || return 1
+
+  # Caddy's `email` global directive is optional. When WEBSERVER_SSL_EMAIL
+  # is non-empty we render an empty global block with just an "email"
+  # line; when blank we omit the global block entirely so Caddy uses
+  # anonymous ACME registration. (The "auto_https disable_redirects"
+  # directive for deny-http needs its own block regardless — see below.)
+  local global_email_line=""
+  [[ -n $WEBSERVER_SSL_EMAIL ]] && global_email_line="email ${WEBSERVER_SSL_EMAIL}"
+
   case "$CADDY_HTTP_POLICY" in
     redirect-name)
-      cat > "$tmp" <<CADDY_EOF
+      {
+        cat <<CADDY_EOF
 # Managed by installicious feature-caddy. Edit CADDY_HTTP_POLICY /
-# WEBSERVER_SERVER_NAME / CADDY_ACME_EMAIL via the config editor and
-# re-run; this file is regenerated.
+# WEBSERVER_SERVER_NAME / WEBSERVER_SSL_EMAIL via the config editor
+# and re-run; this file is regenerated.
 #
 # Policy: redirect-name (Caddy default — only the named site redirects).
+CADDY_EOF
+        if [[ -n $global_email_line ]]; then
+          cat <<CADDY_EOF
 
 {
-    email ${CADDY_ACME_EMAIL}
+    ${global_email_line}
 }
+CADDY_EOF
+        fi
+        cat <<CADDY_EOF
 
 ${WEBSERVER_SERVER_NAME} {
     root * ${WEBSERVER_DOC_ROOT}
     file_server
 }
+
+# Catch-all :443 server with an internal (self-signed) cert so LAN
+# IP / non-domain HTTPS requests load with a cert-name warning rather
+# than failing with ERR_SSL_PROTOCOL_ERROR. Mirrors nginx's
+# "listen 443 ssl default_server" behavior.
+:443 {
+    tls internal
+    root * ${WEBSERVER_DOC_ROOT}
+    file_server
+}
 CADDY_EOF
+      } > "$tmp"
       ;;
     redirect-all)
-      cat > "$tmp" <<CADDY_EOF
+      {
+        cat <<CADDY_EOF
 # Managed by installicious feature-caddy. Edit CADDY_HTTP_POLICY /
-# WEBSERVER_SERVER_NAME / CADDY_ACME_EMAIL via the config editor and
-# re-run; this file is regenerated.
+# WEBSERVER_SERVER_NAME / WEBSERVER_SSL_EMAIL via the config editor
+# and re-run; this file is regenerated.
 #
 # Policy: redirect-all (every HTTP request -> HTTPS).
+CADDY_EOF
+        if [[ -n $global_email_line ]]; then
+          cat <<CADDY_EOF
 
 {
-    email ${CADDY_ACME_EMAIL}
+    ${global_email_line}
 }
+CADDY_EOF
+        fi
+        cat <<CADDY_EOF
 
 ${WEBSERVER_SERVER_NAME} {
     root * ${WEBSERVER_DOC_ROOT}
@@ -139,19 +175,37 @@ ${WEBSERVER_SERVER_NAME} {
 http:// {
     redir https://{host}{uri} 301
 }
+
+# Catch-all :443 server with an internal (self-signed) cert. Without
+# this, an IP-by-HTTPS hit (post-redirect) produces ERR_SSL_PROTOCOL_
+# ERROR because Caddy refuses the TLS handshake when SNI doesn't match
+# the named site. The internal cert lets the page load with a cert-
+# name warning instead — same UX as nginx/apache.
+:443 {
+    tls internal
+    root * ${WEBSERVER_DOC_ROOT}
+    file_server
+}
 CADDY_EOF
+      } > "$tmp"
       ;;
     deny-http)
-      cat > "$tmp" <<CADDY_EOF
+      # deny-http needs auto_https disable_redirects in the global block;
+      # combine with the optional email line so the block is always
+      # emitted in this policy.
+      {
+        cat <<CADDY_EOF
 # Managed by installicious feature-caddy. Edit CADDY_HTTP_POLICY /
-# WEBSERVER_SERVER_NAME / CADDY_ACME_EMAIL via the config editor and
-# re-run; this file is regenerated.
+# WEBSERVER_SERVER_NAME / WEBSERVER_SSL_EMAIL via the config editor
+# and re-run; this file is regenerated.
 #
 # Policy: deny-http (HTTP closed except for ACME challenge files).
 
 {
-    email ${CADDY_ACME_EMAIL}
     auto_https disable_redirects
+CADDY_EOF
+        [[ -n $global_email_line ]] && echo "    ${global_email_line}"
+        cat <<CADDY_EOF
 }
 
 ${WEBSERVER_SERVER_NAME} {
@@ -169,7 +223,17 @@ http:// {
         respond 444
     }
 }
+
+# Catch-all :443 with an internal cert so LAN IP / non-domain HTTPS
+# requests load with a cert-name warning instead of an SSL protocol
+# error.
+:443 {
+    tls internal
+    root * ${WEBSERVER_DOC_ROOT}
+    file_server
+}
 CADDY_EOF
+      } > "$tmp"
       ;;
     *)
       rm -f "$tmp"
@@ -199,12 +263,8 @@ do_install() {
       return 2
       ;;
   esac
-  if [[ -z $CADDY_ACME_EMAIL ]]; then
-    log_fail "CADDY_ACME_EMAIL is empty."
-    status_mark_failed "$II_ID" "ACME email missing"
-    echo -e "[ \e[0;31mFAIL\e[0m ] Caddy needs CADDY_ACME_EMAIL for Let's Encrypt registration."
-    echo -e "         Re-run installicious and set it in the configuration editor."
-    return 2
+  if [[ -z $WEBSERVER_SSL_EMAIL ]]; then
+    log_warn "WEBSERVER_SSL_EMAIL is empty; Caddy will register with Let's Encrypt anonymously (no renewal reminders)."
   fi
 
   log_info "Ensuring apt package: $II_APT_PACKAGES"

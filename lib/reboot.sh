@@ -87,12 +87,26 @@ request_reboot() {
   fi
 
   # Schedule the reboot. Don't sleep here — let the caller exit cleanly first
-  # so process-tree state is sane when shutdown runs.
-  if command -v shutdown >/dev/null 2>&1; then
-    sudo shutdown -r now &
+  # so process-tree state is sane when reboot runs. We deliberately prefer
+  # `systemctl --no-wall reboot` over `shutdown -r now`: the legacy shutdown
+  # path triggers three separate wall broadcasts on systemd Debian (one from
+  # the shutdown binary, one from systemd-logind's session-end, one from
+  # PAM's logout). --no-wall mutes systemd's; the single line we echo below
+  # is the only user-visible reboot announcement we want.
+  echo
+  echo "============================================================"
+  echo "  Reboot triggered: ${reason}"
+  echo "  Queue will resume automatically after the system comes back."
+  echo "============================================================"
+  echo
+  if command -v systemctl >/dev/null 2>&1; then
+    sudo systemctl --no-wall reboot &
+    disown 2>/dev/null || true
+  elif command -v shutdown >/dev/null 2>&1; then
+    sudo shutdown -r now --no-wall &
     disown 2>/dev/null || true
   else
-    echo "request_reboot: shutdown not available; user must reboot manually" >&2
+    echo "request_reboot: neither systemctl nor shutdown available; user must reboot manually" >&2
   fi
 
   return 0
