@@ -40,6 +40,7 @@ _post_install_note_file()       { echo "${PATH_STATE:-state}/post-install-notes.
 _post_install_note_skip_file()  { echo "${PATH_STATE:-state}/post-install-notes-skip-after-reboot.txt"; }
 _post_install_reload_flag()     { echo "${PATH_STATE:-state}/reload-shell"; }
 _post_install_rebooted_flag()   { echo "${PATH_STATE:-state}/queue-rebooted.flag"; }
+_post_install_attempted_file()  { echo "${PATH_STATE:-state}/queue-attempted.list"; }
 
 _post_install_ensure_dir() {
   local dir="${PATH_STATE:-state}"
@@ -168,6 +169,118 @@ post_install_note_unless_rebooted() {
     || return 1
 }
 
+# post_install_record_attempted <id...>
+# Called by the scheduler at the start of the queue run. Writes the
+# space-separated ID list (one per line) to a state file so
+# post_install_print_queue_summary can reconstruct the queue at end-of-run.
+# Survives a reboot, since the file lives under $PATH_STATE alongside the
+# other reboot-resilient state. Replaces any prior contents — only one
+# attempted-set per run.
+post_install_record_attempted() {
+  [[ $# -eq 0 ]] && return 0
+  _post_install_ensure_dir
+  local file
+  file=$(_post_install_attempted_file)
+  local payload
+  payload=$(printf '%s\n' "$@" | grep -v '^$')
+  echo "$payload" | sudo tee "$file" >/dev/null 2>&1 \
+    || echo "$payload" > "$file" 2>/dev/null \
+    || return 1
+}
+
+# post_install_print_queue_summary
+# Reads the attempted-file written by post_install_record_attempted, looks
+# up each ID's status_state + II_TITLE, prints a colored Succeeded /
+# Failed / Interrupted line per ID, then a tally. Drops the file after
+# printing. No-op if the file doesn't exist (e.g. pre-flight validation
+# refused the queue before scheduler_run_queue ever ran).
+post_install_print_queue_summary() {
+  local file
+  file=$(_post_install_attempted_file)
+  [[ -s $file ]] || return 0
+
+  local -a ids=()
+  mapfile -t ids < "$file"
+
+  # Filter empty entries.
+  local -a clean_ids=()
+  local id
+  for id in "${ids[@]}"; do
+    [[ -n $id ]] && clean_ids+=("$id")
+  done
+  if [[ ${#clean_ids[@]} -eq 0 ]]; then
+    sudo rm -f "$file" 2>/dev/null || rm -f "$file" 2>/dev/null
+    return 0
+  fi
+
+  # First pass: compute the widest title for clean column alignment.
+  local path title max_title=0
+  declare -A titles=()
+  for id in "${clean_ids[@]}"; do
+    path=$(manifest_path_for "$id" 2>/dev/null)
+    title=""
+    [[ -n $path ]] && title=$(manifest_get_field "$path" "II_TITLE")
+    [[ -z $title ]] && title="$id"
+    titles[$id]="$title"
+    (( ${#title} > max_title )) && max_title=${#title}
+  done
+
+  echo
+  echo "============================================================"
+  echo "  Queue Summary"
+  echo "============================================================"
+
+  local n_total=0 n_succ=0 n_fail=0 n_other=0 state
+  for id in "${clean_ids[@]}"; do
+    n_total=$((n_total + 1))
+    title="${titles[$id]}"
+    state=$(status_state "$id" 2>/dev/null)
+    case "$state" in
+      completed)
+        n_succ=$((n_succ + 1))
+        printf "  %-${max_title}s : \e[0;32mSucceeded\e[0m\n" "$title"
+        ;;
+      failed)
+        n_fail=$((n_fail + 1))
+        printf "  %-${max_title}s : \e[0;31mFailed\e[0m\n" "$title"
+        ;;
+      started)
+        # status_mark_started without a matching complete/fail — the
+        # installer crashed or was killed mid-run. Surface as
+        # Interrupted (yellow).
+        n_other=$((n_other + 1))
+        printf "  %-${max_title}s : \e[0;33mInterrupted\e[0m\n" "$title"
+        ;;
+      uninstalled|"")
+        # Either never recorded (skipped via status_should_skip with no
+        # prior state) or explicitly uninstalled — neither is meaningful
+        # in an install-queue summary, but show as Skipped to keep the
+        # row count honest.
+        n_other=$((n_other + 1))
+        printf "  %-${max_title}s : Skipped\n" "$title"
+        ;;
+      *)
+        n_other=$((n_other + 1))
+        printf "  %-${max_title}s : %s\n" "$title" "$state"
+        ;;
+    esac
+  done
+
+  echo "  ----------------------------------------------------------"
+  local -a parts=()
+  parts+=("$n_total ran")
+  [[ $n_succ  -gt 0 ]] && parts+=("$(printf '\e[0;32m%d succeeded\e[0m' "$n_succ")")
+  [[ $n_fail  -gt 0 ]] && parts+=("$(printf '\e[0;31m%d failed\e[0m'    "$n_fail")")
+  [[ $n_other -gt 0 ]] && parts+=("$(printf '\e[0;33m%d other\e[0m'     "$n_other")")
+  local tally
+  tally=$(IFS=', '; echo "${parts[*]}")
+  echo "  $tally"
+  echo "============================================================"
+  echo
+
+  sudo rm -f "$file" 2>/dev/null || rm -f "$file" 2>/dev/null
+}
+
 # post_install_apply - run queued commands, then print queued notes, clear.
 post_install_apply() {
   local cmd_file skip_file note_file note_skip_file rebooted_flag rc=0
@@ -259,6 +372,12 @@ post_install_apply() {
   # (post_install_clear at the top of scripts/options.sh also clears it).
   [[ -f $rebooted_flag ]] && (sudo rm -f "$rebooted_flag" 2>/dev/null || rm -f "$rebooted_flag" 2>/dev/null)
 
+  # Per-installer Succeeded / Failed summary based on each ID's status_state.
+  # The attempted-file was written by scheduler_run_queue and survives a
+  # reboot, so this works equally well from options.sh (queue completed
+  # in one go) and resume.sh (queue completed across a reboot).
+  post_install_print_queue_summary
+
   return $rc
 }
 
@@ -267,18 +386,20 @@ post_install_apply() {
 # start of a fresh run so stale entries from a prior interrupted session
 # don't carry over.
 post_install_clear() {
-  local cmd_file note_file note_skip_file reload_flag skip_file rebooted_flag
+  local cmd_file note_file note_skip_file reload_flag skip_file rebooted_flag attempted_file
   cmd_file=$(_post_install_run_file)
   note_file=$(_post_install_note_file)
   note_skip_file=$(_post_install_note_skip_file)
   reload_flag=$(_post_install_reload_flag)
   skip_file=$(_post_install_run_skip_file)
   rebooted_flag=$(_post_install_rebooted_flag)
+  attempted_file=$(_post_install_attempted_file)
   [[ -f $cmd_file        ]] && (sudo rm -f "$cmd_file"        2>/dev/null || rm -f "$cmd_file"        2>/dev/null)
   [[ -f $note_file       ]] && (sudo rm -f "$note_file"       2>/dev/null || rm -f "$note_file"       2>/dev/null)
   [[ -f $note_skip_file  ]] && (sudo rm -f "$note_skip_file"  2>/dev/null || rm -f "$note_skip_file"  2>/dev/null)
   [[ -f $reload_flag     ]] && (sudo rm -f "$reload_flag"     2>/dev/null || rm -f "$reload_flag"     2>/dev/null)
   [[ -f $skip_file       ]] && (sudo rm -f "$skip_file"       2>/dev/null || rm -f "$skip_file"       2>/dev/null)
   [[ -f $rebooted_flag   ]] && (sudo rm -f "$rebooted_flag"   2>/dev/null || rm -f "$rebooted_flag"   2>/dev/null)
+  [[ -f $attempted_file  ]] && (sudo rm -f "$attempted_file"  2>/dev/null || rm -f "$attempted_file"  2>/dev/null)
   return 0
 }

@@ -156,6 +156,15 @@ scheduler_run_queue() {
     state_save "${ids[*]}" "$cursor" "" ""
   fi
 
+  # Record the attempted ID set so post_install_print_queue_summary can
+  # render a Succeeded/Failed/Interrupted line per item at end-of-run.
+  # Only writes on the FIRST entry (cursor=0); a resume re-enters here
+  # with the same id list, so the file is already correct. Safe either
+  # way since the file is replaced, not appended, on each call.
+  if declare -F post_install_record_attempted >/dev/null; then
+    post_install_record_attempted "${ids[@]}"
+  fi
+
   local i id path rc overall_rc=0
   for ((i=cursor; i<total; i++)); do
     id="${ids[i]}"
