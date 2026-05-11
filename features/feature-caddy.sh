@@ -37,7 +37,7 @@
 II_ID="caddy"
 II_TITLE="Caddy"
 II_CATEGORY="feature"
-II_VERSION="6"
+II_VERSION="7"
 II_DEPS=""
 II_REQUIRES_REBOOT="never"
 II_DEFAULT_SELECTED="off"
@@ -252,25 +252,34 @@ CADDY_EOF
       } > "$tmp"
       ;;
     deny-http)
-      # deny-http needs auto_https disable_redirects in the global block;
-      # combine with the optional email line so the block is always
-      # emitted in this policy.
       {
         cat <<CADDY_EOF
 # Managed by installicious feature-caddy. Edit CADDY_HTTP_POLICY /
 # WEBSERVER_SERVER_NAME / WEBSERVER_SSL_EMAIL via the config editor
 # and re-run; this file is regenerated.
 #
-# Policy: deny-http (HTTP closed except for ACME challenge files).
+# Policy: deny-http (HTTP closed for ALL hosts, including the canonical
+# one, except for the ACME challenge path used by renewals).
+#
+# Implementation note: the named site is pinned to https:// so Caddy
+# doesn't grab the :80 listener for it. With auto_https disable_redirects
+# alone, the named site still claims :80 (just without a redirect
+# handler) and takes precedence over our http:// catch-all, leaving the
+# canonical host effectively served on HTTP instead of denied. Using the
+# explicit https:// prefix keeps the :443 + cert behavior but releases
+# :80 entirely to the catch-all below.
+CADDY_EOF
+        if [[ -n $global_email_line ]]; then
+          cat <<CADDY_EOF
 
 {
-    auto_https disable_redirects
-CADDY_EOF
-        [[ -n $global_email_line ]] && echo "    ${global_email_line}"
-        cat <<CADDY_EOF
+    ${global_email_line}
 }
+CADDY_EOF
+        fi
+        cat <<CADDY_EOF
 
-${WEBSERVER_SERVER_NAME} {
+https://${WEBSERVER_SERVER_NAME} {
     root * ${WEBSERVER_DOC_ROOT}
     file_server
 }
@@ -282,7 +291,9 @@ http:// {
         file_server
     }
     handle {
-        respond 444
+        respond 444 {
+            close
+        }
     }
 }
 
