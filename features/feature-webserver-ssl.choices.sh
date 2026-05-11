@@ -9,3 +9,9 @@ _choices_WEBSERVER_SSL_METHOD() {
   printf 'http\tHTTP-01 (default; needs port 80 reachable)\n'
   printf 'dns-cloudflare\tDNS-01 via Cloudflare API (proxy can stay on)\n'
 }
+
+_choices_WEBSERVER_SSL_HTTP_POLICY() {
+  printf 'redirect-all\tRedirect every HTTP request to HTTPS (default)\n'
+  printf 'redirect-name\tRedirect only when Host matches the domain; LAN IP keeps HTTP\n'
+  printf 'deny-http\tBlock all :80 traffic except Let'\''s Encrypt challenge\n'
+}
