@@ -29,7 +29,7 @@
 II_ID="locale"
 II_TITLE="Set Localizations (US Default)"
 II_CATEGORY="feature"
-II_VERSION="1"
+II_VERSION="2"
 II_DEPS=""
 II_REQUIRES_REBOOT="never"
 II_DEFAULT_SELECTED="on"
@@ -135,6 +135,63 @@ _apply_keyboard_model() {
   fi
 }
 
+_cleanup_stale_locale_vars() {
+  # Belt-and-suspenders for /etc/default/locale after raspi-config has
+  # done its do_change_locale work. Two known footguns we correct here:
+  #
+  # 1. RPi Imager's "Apply OS customisation" sometimes writes
+  #    LC_ALL=en_US (without ".UTF-8") and LANGUAGE=en_US directly to
+  #    /etc/default/locale. raspi-config's do_change_locale only writes
+  #    the LANG line, so a stale LC_ALL inherited from the Imager keeps
+  #    overriding our LANG on every login and produces a wall of
+  #    "Cannot set LC_*" warnings (the locale named "en_US" without a
+  #    charmap suffix is rarely generated). We strip those vars if they
+  #    look like Imager artifacts (don't match LOCALE_LANG, no
+  #    ".charmap" or ":fallback" structure) so the user's intentional
+  #    LANGUAGE="en_US:en" or LC_ALL=$LOCALE_LANG stays put.
+  #
+  # 2. Some raspi-config versions leave LANG commented out if the
+  #    second `update-locale LANG=$NEW` call fails after the
+  #    `update-locale --reset LANG` succeeded. We re-set it explicitly.
+  #
+  # All update-locale calls run under env LC_ALL=C LANG=C (_RC_ENV) so
+  # perl's "Cannot set LC_*" fallback noise doesn't bubble up.
+  [[ -z $LOCALE_LANG ]] && return 0
+  local file="/etc/default/locale"
+  [[ -f $file ]] || return 0
+
+  local current_lc_all current_language
+  current_lc_all=$(grep '^LC_ALL=' "$file" 2>/dev/null | sed 's/^LC_ALL=//' | tr -d '"')
+  current_language=$(grep '^LANGUAGE=' "$file" 2>/dev/null | sed 's/^LANGUAGE=//' | tr -d '"')
+
+  local -a reset_keys=()
+  # Reset LC_ALL when it's set but doesn't match the requested LANG.
+  # (LC_ALL == LOCALE_LANG is harmless; a deliberate override.)
+  if [[ -n $current_lc_all && $current_lc_all != "$LOCALE_LANG" ]]; then
+    log_info "Stale LC_ALL='$current_lc_all' in $file (doesn't match LANG='$LOCALE_LANG'); clearing."
+    reset_keys+=(LC_ALL)
+  fi
+  # Reset LANGUAGE when it looks bare (no .charmap, no :fallback chain).
+  # Imager artifacts like LANGUAGE=en_US trip this; legitimate values
+  # like LANGUAGE=en_US:en or LANGUAGE=en_US.UTF-8 don't.
+  if [[ -n $current_language && $current_language != *.* && $current_language != *:* ]]; then
+    log_info "Stale LANGUAGE='$current_language' in $file (no charmap or fallback); clearing."
+    reset_keys+=(LANGUAGE)
+  fi
+
+  if (( ${#reset_keys[@]} > 0 )); then
+    sudo "${_RC_ENV[@]}" update-locale --reset "${reset_keys[@]}" 2>/dev/null \
+      || log_warn "update-locale --reset ${reset_keys[*]} returned non-zero; continuing."
+  fi
+
+  # Ensure LANG line is present (not commented or missing entirely).
+  if ! grep -q '^LANG=' "$file" 2>/dev/null; then
+    log_info "LANG line missing or commented in $file; setting LANG=$LOCALE_LANG."
+    sudo "${_RC_ENV[@]}" update-locale "LANG=$LOCALE_LANG" 2>/dev/null \
+      || log_warn "update-locale LANG=$LOCALE_LANG returned non-zero; continuing."
+  fi
+}
+
 _apply_wifi_country() {
   [[ -z $LOCALE_WIFI_COUNTRY ]] && { log_info "LOCALE_WIFI_COUNTRY blank; preserving system default."; return 0; }
   log_info "Setting WiFi country to $LOCALE_WIFI_COUNTRY."
@@ -163,6 +220,7 @@ do_install() {
   fi
 
   _apply_locale
+  _cleanup_stale_locale_vars
   _apply_timezone
   _apply_keyboard_layout
   _apply_keyboard_model
