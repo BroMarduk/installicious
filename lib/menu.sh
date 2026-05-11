@@ -506,7 +506,7 @@ menu_edit_config() {
     local -a sorted_keys
     mapfile -t sorted_keys < <(printf '%s\n' "${!current[@]}" | sort)
     for key in "${sorted_keys[@]}"; do
-      items+=("$key" "[${key_label[$key]}] ${current[$key]}")
+      items+=("$key" "${current[$key]}")
     done
 
     choice=$(whiptail --title "Edit Configuration" \
@@ -553,13 +553,13 @@ menu_edit_config() {
         fi
         choice_items+=("$cval" "$clabel")
       done
-      new_val=$(whiptail --title "$choice [${key_label[$choice]}]" \
+      new_val=$(whiptail --title "$choice" \
         --default-item "${current[$choice]}" \
         --menu "Select a value for $choice:" 20 80 12 \
         "${choice_items[@]}" \
         3>&1 1>&2 2>&3)
     else
-      new_val=$(whiptail --title "$choice [${key_label[$choice]}]" \
+      new_val=$(whiptail --title "$choice" \
         --inputbox "Enter new value for $choice:" \
         10 70 "${current[$choice]}" \
         3>&1 1>&2 2>&3)

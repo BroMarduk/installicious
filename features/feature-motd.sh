@@ -25,7 +25,7 @@
 II_ID="motd"
 II_TITLE="Login Message of the Day (MOTD)"
 II_CATEGORY="feature"
-II_VERSION="1"
+II_VERSION="2"
 II_DEPS=""
 II_REQUIRES_REBOOT="never"
 II_DEFAULT_SELECTED="on"
@@ -160,15 +160,23 @@ do_install() {
   disable_pam_lastlog
 
   # ---- /etc/profile: append the width-aware launcher (managed block) ----
+  #
+  # Skip the MOTD entirely when this login is a `sudo -i` (or any other
+  # sudo session): SUDO_USER is set by sudo regardless of the -i flag,
+  # while a direct `ssh user@host` or `ssh root@host` login leaves it
+  # empty. Without this guard the banner shows again on every `sudo -i`
+  # after the user already saw it logging in.
   log_info "Appending MOTD launcher block to $PROFILE_FILE."
   block_ensure "$PROFILE_FILE" "$PROFILE_BLOCK_START" "$PROFILE_BLOCK_END" <<EOF
 # Installicious — show the right MOTD based on terminal width.
-read screenWidth <<< \$(stty -a | awk 'NR==1 { print \$7 }')
-intWidth=\${screenWidth::-1}
-if [[ \$intWidth -gt $MOTD_SMALL_SIZE ]]; then
-  $MOTD_DIR/motd.sh
-else
-  $MOTD_DIR/motd-small.sh
+if [[ -z \$SUDO_USER ]]; then
+  read screenWidth <<< \$(stty -a | awk 'NR==1 { print \$7 }')
+  intWidth=\${screenWidth::-1}
+  if [[ \$intWidth -gt $MOTD_SMALL_SIZE ]]; then
+    $MOTD_DIR/motd.sh
+  else
+    $MOTD_DIR/motd-small.sh
+  fi
 fi
 EOF
 

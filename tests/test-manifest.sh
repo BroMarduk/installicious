@@ -213,7 +213,7 @@ caddy_children=$(manifest_optional_children_of caddy features packages)
 chkeq "nginx's optional children"    "$nginx_children"    "webserver-under-construction webserver-ssl"
 chkeq "apache's optional children"   "$apache_children"   "webserver-under-construction webserver-ssl"
 chkeq "lighttpd's optional children" "$lighttpd_children" "webserver-under-construction webserver-ssl"
-chkeq "caddy's optional children"    "$caddy_children"    "webserver-under-construction"
+chkeq "caddy's optional children"    "$caddy_children"    "webserver-under-construction webserver-ssl"
 
 # under-construction is a hidden child (of all four backends).
 manifest_is_hidden_child webserver-under-construction features packages; chkrc "under-construction is hidden child" $? 0

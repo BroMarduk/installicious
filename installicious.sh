@@ -28,29 +28,29 @@ if [[ $EUID -ne 0 ]]; then
   exit 1
 fi
 
-# ---- Strip likely-broken locale env inherited from the SSH session ----
+# ---- Force C locale for the installicious run ----
 #
-# Some clients (notably Windows OpenSSH + Imager-flashed Pis) push bare
-# locale names like LC_ALL=en_US that don't have a .charmap suffix and
-# aren't generated on the Pi. Every Python / perl subprocess we spawn
-# then emits "Cannot set LC_*" warnings until the locale tooling falls
-# back to C. feature-locale already cleans /etc/default/locale on disk,
-# but our CURRENT process's inherited env still points at the bad value
-# and gets inherited by every child we exec.
+# Whatever LANG / LC_ALL / LANGUAGE the calling shell pushed at us
+# (SSH client, Imager defaults, /etc/default/locale leftovers) gets
+# replaced with C so every subprocess we spawn has a clean env. This
+# is the same trick lib/apt.sh and feature-locale.sh's _RC_ENV use
+# for their child processes, just generalized to the whole run.
 #
-# Drop LC_ALL / LANGUAGE if they look bare (no `.charmap`, no
-# `:fallback` chain). Empty, C, POSIX, C.UTF-8, en_US.UTF-8, en_US:en
-# all stay; en_US (the typical Imager artifact) gets unset.
-case "${LC_ALL:-}" in
-  ''|C|POSIX|C.*) ;;
-  *.*|*:*) ;;
-  *) unset LC_ALL ;;
-esac
-case "${LANGUAGE:-}" in
-  ''|C|POSIX) ;;
-  *.*|*:*) ;;
-  *) unset LANGUAGE ;;
-esac
+# Why force, not just strip-if-broken: locale tooling (perl, python)
+# emits "Setting locale failed / Cannot set LC_*" warnings on every
+# subprocess invocation when the inherited locale isn't generated on
+# the Pi (e.g. LANG=en_GB.UTF-8 inherited from the SSH client when
+# the Pi's only generated locale is en_US.UTF-8). Forcing C makes
+# the warnings unconditionally go away regardless of how many
+# locales the Pi has installed.
+#
+# The user's interactive shell post-install isn't affected — we only
+# rewrite OUR process env. Final system-locale state is owned by
+# feature-locale via /etc/default/locale, which the next login picks
+# up cleanly.
+export LANG=C
+export LC_ALL=C
+unset LANGUAGE
 
 # Load the installicious version string from the repo-root VERSION file.
 # Bumped on every commit (last digit is a per-check-in counter — see the

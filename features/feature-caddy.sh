@@ -24,9 +24,13 @@ II_REQUIRES_REBOOT="never"
 II_DEFAULT_SELECTED="off"
 II_APT_PACKAGES="caddy"
 II_RESTRICT_TO_ROLES="webserver weewx"
-# Caddy auto-handles HTTPS, so webserver-ssl is deliberately excluded
-# from this backend's optional sub-menu (no manual cert flow needed).
-II_OPTIONAL_GROUP="webserver-under-construction"
+# Caddy has built-in auto-HTTPS, but the user may still want to control
+# the HTTP-side policy (redirect-all / redirect-name / deny-http). When
+# webserver-ssl is selected for Caddy, certbot is skipped — instead we
+# write a Caddyfile that uses Caddy's built-in ACME client plus the
+# user's chosen HTTP policy. WEBSERVER_SSL_METHOD is informational only
+# for Caddy (the vanilla apt build doesn't include DNS plugins).
+II_OPTIONAL_GROUP="webserver-under-construction webserver-ssl"
 # === II_MANIFEST_END ===
 
 source config/installicious.config || exit 1

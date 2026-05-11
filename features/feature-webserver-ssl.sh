@@ -92,6 +92,7 @@ LIGHTTPD_SSL_CONF_ENABLED="/etc/lighttpd/conf-enabled/99-installicious-ssl.conf"
 NGINX_DEFAULT_SITE="/etc/nginx/sites-available/default"
 APACHE_PORTS_CONF="/etc/apache2/ports.conf"
 APACHE_DEFAULT_VHOST="/etc/apache2/sites-available/000-default.conf"
+CADDYFILE="/etc/caddy/Caddyfile"
 
 # Suppress python3-cloudflare 2.20.x PendingDeprecationWarning that the
 # certbot-dns-cloudflare plugin triggers; cert issuance is unaffected.
@@ -473,6 +474,85 @@ _remove_lighttpd_ssl_config() {
   fi
 }
 
+# Caddy uses its own built-in ACME client (no certbot involvement), so
+# for Caddy we just write the Caddyfile per policy and let Caddy handle
+# cert issuance + renewal. The vanilla apt-packaged caddy doesn't
+# include DNS plugins, so dns-cloudflare for Caddy degrades to HTTP-01.
+_write_caddy_site_config() {
+  local tmp
+  tmp=$(mktemp) || return 1
+  case "$WEBSERVER_SSL_HTTP_POLICY" in
+    redirect-name)
+      cat > "$tmp" <<CADDY_EOF
+# Managed by installicious feature-webserver-ssl.
+# Policy: redirect-name (Caddy default — only the named site redirects).
+
+{
+    email ${WEBSERVER_SSL_EMAIL}
+}
+
+${WEBSERVER_SERVER_NAME} {
+    root * ${WEBSERVER_DOC_ROOT}
+    file_server
+}
+CADDY_EOF
+      ;;
+    redirect-all)
+      cat > "$tmp" <<CADDY_EOF
+# Managed by installicious feature-webserver-ssl.
+# Policy: redirect-all (every HTTP request -> HTTPS).
+
+{
+    email ${WEBSERVER_SSL_EMAIL}
+}
+
+${WEBSERVER_SERVER_NAME} {
+    root * ${WEBSERVER_DOC_ROOT}
+    file_server
+}
+
+# Catch any unmatched :80 request (other Host headers, LAN IP, etc.)
+# and 301 to HTTPS so the policy is consistent across all clients.
+# Caddy still serves the named site's ACME challenge under its
+# auto-HTTPS handler before this block evaluates.
+http:// {
+    redir https://{host}{uri} 301
+}
+CADDY_EOF
+      ;;
+    deny-http)
+      cat > "$tmp" <<CADDY_EOF
+# Managed by installicious feature-webserver-ssl.
+# Policy: deny-http (HTTP closed except for ACME challenge files).
+
+{
+    email ${WEBSERVER_SSL_EMAIL}
+    auto_https disable_redirects
+}
+
+${WEBSERVER_SERVER_NAME} {
+    root * ${WEBSERVER_DOC_ROOT}
+    file_server
+}
+
+http:// {
+    @acme path /.well-known/acme-challenge/*
+    handle @acme {
+        root * ${WEBSERVER_DOC_ROOT}
+        file_server
+    }
+    handle {
+        respond 444
+    }
+}
+CADDY_EOF
+      ;;
+  esac
+  sudo install -m 0644 "$tmp" "$CADDYFILE" || { rm -f "$tmp"; return 1; }
+  rm -f "$tmp"
+  return 0
+}
+
 # Common cert issuance step shared by all backends. Sets up apt deps,
 # CF credentials (if needed), and runs `certbot certonly` to obtain
 # the cert into /etc/letsencrypt/live/$WEBSERVER_SERVER_NAME/. Returns
@@ -490,10 +570,17 @@ _obtain_cert() {
 
   _build_certonly_args || return 1
   log_info "Running certbot ${_CERTONLY_ARGS[*]} (method=$WEBSERVER_SSL_METHOD, domain=$WEBSERVER_SERVER_NAME)."
+  # Filter out the python3-cloudflare 2.20.x PendingDeprecationWarning
+  # block. It's emitted as a plain print() in the cloudflare library
+  # (not via warnings.warn()), so PYTHONWARNINGS=ignore can't suppress
+  # it — sed strips the multi-line block from stderr instead. The
+  # block starts at the ':PendingDeprecationWarning:' marker and ends
+  # at the '  self.cf = CloudFlare' source line.
   sudo "${_CERTBOT_ENV[@]}" certbot "${_CERTONLY_ARGS[@]}" \
     -d "$WEBSERVER_SERVER_NAME" \
     -m "$WEBSERVER_SSL_EMAIL" \
     --agree-tos --no-eff-email --non-interactive --keep-until-expiring 2>&1 \
+    | sed '/PendingDeprecationWarning:$/,/^  self\.cf = CloudFlare/d' \
     | tee -a "$FILE_LOG_INSTALLER"
   return ${PIPESTATUS[0]}
 }
@@ -558,10 +645,38 @@ do_install() {
   }
   log_info "Detected backend: $backend"
 
+  # ---- Caddy gets its own path: skip certbot, write Caddyfile, reload ----
   if [[ $backend == "caddy" ]]; then
-    log_warn "Caddy backend detected - Caddy auto-handles HTTPS; nothing to do."
-    echo -e "[  \e[0;32mOK\e[0m  ] Caddy already auto-handles HTTPS - no manual SSL setup needed."
+    if [[ $WEBSERVER_SSL_METHOD == "dns-cloudflare" ]]; then
+      log_warn "Caddy has built-in ACME but the apt-packaged caddy does not include the cloudflare DNS plugin."
+      log_warn "WEBSERVER_SSL_METHOD=dns-cloudflare is informational only on Caddy; Caddy will use HTTP-01."
+      log_warn "If your domain is behind a Cloudflare proxy, temporarily disable the proxy for the first issuance,"
+      log_warn "or build a custom caddy binary that includes caddy-dns/cloudflare."
+    fi
+
+    if [[ -z $(backup_latest "$II_ID") ]]; then
+      log_info "Backing up pre-SSL Caddyfile under '$II_ID' snapshot."
+      backup_create "$II_ID" "$CADDYFILE" >/dev/null || log_warn "backup_create failed; continuing."
+    fi
+
+    log_info "Writing managed Caddyfile (policy=$WEBSERVER_SSL_HTTP_POLICY)."
+    if ! _write_caddy_site_config; then
+      status_mark_failed "$II_ID" "Caddyfile render failed"
+      return 1
+    fi
+    if ! sudo caddy validate --config "$CADDYFILE" --adapter caddyfile 2>&1 | tee -a "$FILE_LOG_INSTALLER"; then
+      log_warn "caddy validate rejected SSL config; restoring backup."
+      backup_restore_latest "$II_ID" "$CADDYFILE" || log_warn "Backup restore failed."
+      status_mark_failed "$II_ID" "caddy validate rejected SSL config"
+      return 1
+    fi
+    log_info "Reloading caddy."
+    sudo systemctl reload caddy 2>/dev/null || sudo systemctl restart caddy \
+      || log_warn "caddy reload/restart returned non-zero."
+
     status_mark_complete "$II_ID" "$II_VERSION" "$FILE_CONFIG_WEBSERVER"
+    log_ok "HTTPS configured for caddy on $WEBSERVER_SERVER_NAME (policy=$WEBSERVER_SSL_HTTP_POLICY)."
+    echo -e "[  \e[0;32mOK\e[0m  ] Installicious successfully configured HTTPS for caddy ($WEBSERVER_SSL_HTTP_POLICY)."
     return 0
   fi
 
@@ -667,7 +782,7 @@ do_uninstall() {
   if [[ -n $(backup_latest "$II_ID") ]]; then
     log_info "Restoring pre-SSL site config from snapshot."
     backup_restore_or_remove "$II_ID" \
-      "$NGINX_DEFAULT_SITE" "$APACHE_DEFAULT_VHOST" "$APACHE_PORTS_CONF" \
+      "$NGINX_DEFAULT_SITE" "$APACHE_DEFAULT_VHOST" "$APACHE_PORTS_CONF" "$CADDYFILE" \
       || log_warn "Site config restore returned non-zero."
   fi
   _remove_lighttpd_ssl_config
@@ -676,6 +791,7 @@ do_uninstall() {
   if   apt_is_installed nginx;    then sudo systemctl reload nginx    2>/dev/null || true
   elif apt_is_installed apache2;  then sudo systemctl reload apache2  2>/dev/null || true
   elif apt_is_installed lighttpd; then sudo systemctl reload lighttpd 2>/dev/null || true
+  elif apt_is_installed caddy;    then sudo systemctl reload caddy    2>/dev/null || true
   fi
 
   # certbot leaves cert files under /etc/letsencrypt; preserved on
