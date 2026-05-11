@@ -230,7 +230,7 @@ post_install_print_queue_summary() {
   echo "  Queue Summary"
   echo "============================================================"
 
-  local n_total=0 n_succ=0 n_fail=0 n_other=0 state
+  local n_total=0 n_succ=0 n_fail=0 n_interrupted=0 n_skipped=0 state
   for id in "${clean_ids[@]}"; do
     n_total=$((n_total + 1))
     title="${titles[$id]}"
@@ -248,33 +248,59 @@ post_install_print_queue_summary() {
         # status_mark_started without a matching complete/fail — the
         # installer crashed or was killed mid-run. Surface as
         # Interrupted (yellow).
-        n_other=$((n_other + 1))
+        n_interrupted=$((n_interrupted + 1))
         printf "  %-${max_title}s : \e[0;33mInterrupted\e[0m\n" "$title"
         ;;
       uninstalled|"")
         # Either never recorded (skipped via status_should_skip with no
-        # prior state) or explicitly uninstalled — neither is meaningful
-        # in an install-queue summary, but show as Skipped to keep the
-        # row count honest.
-        n_other=$((n_other + 1))
-        printf "  %-${max_title}s : Skipped\n" "$title"
+        # prior state) or explicitly uninstalled — surface as Skipped
+        # in cyan so the user can tell at a glance which features the
+        # scheduler short-circuited.
+        n_skipped=$((n_skipped + 1))
+        printf "  %-${max_title}s : \e[0;36mSkipped\e[0m\n" "$title"
         ;;
       *)
-        n_other=$((n_other + 1))
+        n_skipped=$((n_skipped + 1))
         printf "  %-${max_title}s : %s\n" "$title" "$state"
         ;;
     esac
   done
 
   echo "  ----------------------------------------------------------"
-  local -a parts=()
-  parts+=("$n_total ran")
-  [[ $n_succ  -gt 0 ]] && parts+=("$(printf '\e[0;32m%d succeeded\e[0m' "$n_succ")")
-  [[ $n_fail  -gt 0 ]] && parts+=("$(printf '\e[0;31m%d failed\e[0m'    "$n_fail")")
-  [[ $n_other -gt 0 ]] && parts+=("$(printf '\e[0;33m%d other\e[0m'     "$n_other")")
-  local tally
-  tally=$(IFS=', '; echo "${parts[*]}")
+  # Tally line. Manual join (bash IFS multichar separators only use the
+  # first character, so IFS=', ' would only join with ',').
+  local tally="$n_total ran"
+  [[ $n_succ        -gt 0 ]] && tally+=", $(printf '\e[0;32m%d succeeded\e[0m'   "$n_succ")"
+  [[ $n_fail        -gt 0 ]] && tally+=", $(printf '\e[0;31m%d failed\e[0m'      "$n_fail")"
+  [[ $n_interrupted -gt 0 ]] && tally+=", $(printf '\e[0;33m%d interrupted\e[0m' "$n_interrupted")"
+  [[ $n_skipped     -gt 0 ]] && tally+=", $(printf '\e[0;36m%d skipped\e[0m'     "$n_skipped")"
   echo "  $tally"
+
+  # If a reboot subsumed some post-install commands or notes, the apply
+  # step left their files in place for us to summarize here. List them
+  # in cyan so the user can see exactly what didn't run.
+  local skip_cmd_file skip_note_file
+  skip_cmd_file=$(_post_install_run_skip_file)
+  skip_note_file=$(_post_install_note_skip_file)
+  if [[ -s $skip_cmd_file ]]; then
+    echo "  ----------------------------------------------------------"
+    echo "  Post-install commands skipped (reboot covered them):"
+    while IFS= read -r _line; do
+      [[ -z $_line ]] && continue
+      printf "    \e[0;36m> %s\e[0m\n" "$_line"
+    done < "$skip_cmd_file"
+    sudo rm -f "$skip_cmd_file" 2>/dev/null || rm -f "$skip_cmd_file" 2>/dev/null
+  fi
+  if [[ -s $skip_note_file ]]; then
+    echo "  ----------------------------------------------------------"
+    echo "  Post-install notes skipped (reboot covered them):"
+    while IFS= read -r _line; do
+      [[ -z $_line ]] && continue
+      printf "    \e[0;36m%s\e[0m\n" "$_line"
+    done < "$skip_note_file"
+    sudo rm -f "$skip_note_file" 2>/dev/null || rm -f "$skip_note_file" 2>/dev/null
+  fi
+
   echo "============================================================"
   echo
 
@@ -314,13 +340,11 @@ post_install_apply() {
 
   if [[ -s $skip_file ]]; then
     if [[ $rebooted -eq 1 ]]; then
-      local skipped
-      skipped=$(wc -l < "$skip_file" 2>/dev/null | tr -d ' ')
-      echo
-      echo "============================================================"
-      echo "  Skipping ${skipped} reboot-subsumed post-install command(s)"
-      echo "  (a reboot during this queue already covered them)"
-      echo "============================================================"
+      # Don't run, don't even announce — the queue summary printer
+      # will list each skipped command in cyan after the per-installer
+      # table. Leave skip_file in place for it to read; the summary
+      # printer will rm -f after consuming.
+      :
     else
       echo
       echo "============================================================"
@@ -337,24 +361,19 @@ post_install_apply() {
         fi
       done < "$skip_file"
       echo "============================================================"
+      sudo rm -f "$skip_file" 2>/dev/null || rm -f "$skip_file" 2>/dev/null
     fi
-    sudo rm -f "$skip_file" 2>/dev/null || rm -f "$skip_file" 2>/dev/null
   fi
 
   # Merge always-show + reboot-subsumable note files for display. After a
-  # reboot the skip-file's notes are dropped silently (no banner, no
-  # mention); without a reboot they print alongside the regular notes
-  # under the same "Post-install actions you need to take" header.
+  # reboot the skip-file's notes are deferred to the queue summary
+  # printer (which lists them in cyan as "skipped"); without a reboot
+  # they print alongside the regular notes under the same "Post-install
+  # actions you need to take" header.
   local -a notes_to_show=()
-  if [[ -s $note_file ]]; then
-    notes_to_show+=("$note_file")
-  fi
-  if [[ -s $note_skip_file ]]; then
-    if [[ $rebooted -eq 1 ]]; then
-      log_info "Skipping $(wc -l < "$note_skip_file" | tr -d ' ') reboot-subsumed post-install note(s)."
-    else
-      notes_to_show+=("$note_skip_file")
-    fi
+  [[ -s $note_file ]] && notes_to_show+=("$note_file")
+  if [[ -s $note_skip_file && $rebooted -eq 0 ]]; then
+    notes_to_show+=("$note_skip_file")
   fi
   if (( ${#notes_to_show[@]} > 0 )); then
     echo
@@ -365,8 +384,13 @@ post_install_apply() {
     echo "============================================================"
     echo
   fi
-  [[ -f $note_file      ]] && (sudo rm -f "$note_file"      2>/dev/null || rm -f "$note_file"      2>/dev/null)
-  [[ -f $note_skip_file ]] && (sudo rm -f "$note_skip_file" 2>/dev/null || rm -f "$note_skip_file" 2>/dev/null)
+  # Always clean up the always-show note file. The skip-note file gets
+  # cleaned up by the queue summary printer when rebooted, otherwise
+  # cleaned up here.
+  [[ -f $note_file ]] && (sudo rm -f "$note_file" 2>/dev/null || rm -f "$note_file" 2>/dev/null)
+  if [[ -f $note_skip_file && $rebooted -eq 0 ]]; then
+    sudo rm -f "$note_skip_file" 2>/dev/null || rm -f "$note_skip_file" 2>/dev/null
+  fi
 
   # Drop the rebooted flag after we've used it. The next queue starts clean
   # (post_install_clear at the top of scripts/options.sh also clears it).

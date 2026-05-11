@@ -28,6 +28,30 @@ if [[ $EUID -ne 0 ]]; then
   exit 1
 fi
 
+# ---- Strip likely-broken locale env inherited from the SSH session ----
+#
+# Some clients (notably Windows OpenSSH + Imager-flashed Pis) push bare
+# locale names like LC_ALL=en_US that don't have a .charmap suffix and
+# aren't generated on the Pi. Every Python / perl subprocess we spawn
+# then emits "Cannot set LC_*" warnings until the locale tooling falls
+# back to C. feature-locale already cleans /etc/default/locale on disk,
+# but our CURRENT process's inherited env still points at the bad value
+# and gets inherited by every child we exec.
+#
+# Drop LC_ALL / LANGUAGE if they look bare (no `.charmap`, no
+# `:fallback` chain). Empty, C, POSIX, C.UTF-8, en_US.UTF-8, en_US:en
+# all stay; en_US (the typical Imager artifact) gets unset.
+case "${LC_ALL:-}" in
+  ''|C|POSIX|C.*) ;;
+  *.*|*:*) ;;
+  *) unset LC_ALL ;;
+esac
+case "${LANGUAGE:-}" in
+  ''|C|POSIX) ;;
+  *.*|*:*) ;;
+  *) unset LANGUAGE ;;
+esac
+
 # Load the installicious version string from the repo-root VERSION file.
 # Bumped on every commit (last digit is a per-check-in counter — see the
 # "version bump" memory note). Falls back to "unknown" if the file is

@@ -77,6 +77,13 @@ CLOUDFLARE_CREDS_FILE="${PATH_STATE:-/etc/installicious/state}/cloudflare.ini"
 LIGHTTPD_SSL_CONF_AVAILABLE="/etc/lighttpd/conf-available/99-installicious-ssl.conf"
 LIGHTTPD_SSL_CONF_ENABLED="/etc/lighttpd/conf-enabled/99-installicious-ssl.conf"
 
+# Suppress the noisy PendingDeprecationWarning that python3-cloudflare 2.20.x
+# emits from inside certbot-dns-cloudflare. The wrapper is harmless for
+# non-DNS challenges (certbot doesn't import the cloudflare module unless
+# the dns-cloudflare plugin is invoked), so we apply it to every certbot
+# call for simplicity. The cert still issues either way.
+_CERTBOT_ENV=(env PYTHONWARNINGS=ignore::PendingDeprecationWarning)
+
 MODE="install"
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -207,7 +214,7 @@ _run_cert_nginx_or_apache() {
   esac
 
   log_info "Running certbot for $backend ($WEBSERVER_SSL_METHOD) — domain $WEBSERVER_SERVER_NAME."
-  sudo certbot "${args[@]}" \
+  sudo "${_CERTBOT_ENV[@]}" certbot "${args[@]}" \
     -d "$WEBSERVER_SERVER_NAME" \
     -m "$WEBSERVER_SSL_EMAIL" \
     --agree-tos --no-eff-email --non-interactive \
@@ -229,7 +236,7 @@ _run_cert_lighttpd_certonly() {
   esac
 
   log_info "Running certbot certonly for lighttpd ($WEBSERVER_SSL_METHOD) — domain $WEBSERVER_SERVER_NAME."
-  sudo certbot "${args[@]}" \
+  sudo "${_CERTBOT_ENV[@]}" certbot "${args[@]}" \
     -d "$WEBSERVER_SERVER_NAME" \
     -m "$WEBSERVER_SSL_EMAIL" \
     --agree-tos --no-eff-email --non-interactive --keep-until-expiring 2>&1 | tee -a "$FILE_LOG_INSTALLER"
