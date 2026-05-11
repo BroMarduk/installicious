@@ -25,7 +25,7 @@
 II_ID="motd"
 II_TITLE="Login Message of the Day (MOTD)"
 II_CATEGORY="feature"
-II_VERSION="4"
+II_VERSION="5"
 II_DEPS=""
 II_REQUIRES_REBOOT="never"
 II_DEFAULT_SELECTED="on"
@@ -54,6 +54,7 @@ SSHD_CONFIG="/etc/ssh/sshd_config"
 PAM_LOGIN="/etc/pam.d/login"
 PROFILE_FILE="/etc/profile"
 DYNAMIC_MOTD="/etc/update-motd.d/10-uname"
+STATIC_MOTD="/etc/motd"
 PROFILE_BLOCK_START="# ----- Installicious motd (managed) -----"
 PROFILE_BLOCK_END="# ----- END Installicious motd -----"
 
@@ -129,7 +130,7 @@ do_install() {
 
   # ---- backup the system files we'll touch (lib/backup.sh skips missing) ----
   local snap
-  snap=$(backup_create "$II_ID" "$PROFILE_FILE" "$SSHD_CONFIG" "$PAM_LOGIN" "$DYNAMIC_MOTD") \
+  snap=$(backup_create "$II_ID" "$PROFILE_FILE" "$SSHD_CONFIG" "$PAM_LOGIN" "$DYNAMIC_MOTD" "$STATIC_MOTD") \
     || { log_fail "Could not create backup snapshot."; status_mark_failed "$II_ID" "backup_create failed"; return 1; }
   log_info "Backup snapshot: $snap."
 
@@ -150,6 +151,24 @@ do_install() {
   if [[ -e $DYNAMIC_MOTD ]]; then
     log_info "Removing dynamic motd $DYNAMIC_MOTD."
     sudo rm -f "$DYNAMIC_MOTD"
+  fi
+
+  # ---- silence the static /etc/motd ----
+  # /etc/pam.d/sshd calls pam_motd twice on login — once for the dynamic
+  # /run/motd.dynamic (regenerated from /etc/update-motd.d/, which we
+  # just emptied) and once for the static /etc/motd. With sshd's
+  # PrintMotd=no set above, the SSH daemon itself stops printing it,
+  # but pam_motd still does and the user sees the original banner
+  # flash on every login before our profile launcher takes over.
+  # Truncating /etc/motd to empty silences that second pam_motd call
+  # without removing the file (some tools expect it to exist). The
+  # backup snapshot above captured the original contents, so
+  # --uninstall restores it.
+  if [[ -e $STATIC_MOTD ]]; then
+    log_info "Truncating static $STATIC_MOTD so pam_motd has nothing to flash."
+    sudo truncate -s 0 "$STATIC_MOTD" 2>/dev/null \
+      || sudo sh -c ": > '$STATIC_MOTD'" \
+      || log_warn "Could not truncate $STATIC_MOTD; the original banner may still flash on login."
   fi
 
   # ---- ssh: stop printing the system motd and last-login banner ----
@@ -239,7 +258,7 @@ do_uninstall() {
 
   # ---- restore system files from backup ----
   if backup_restore_or_remove "$II_ID" \
-       "$PROFILE_FILE" "$SSHD_CONFIG" "$PAM_LOGIN" "$DYNAMIC_MOTD"; then
+       "$PROFILE_FILE" "$SSHD_CONFIG" "$PAM_LOGIN" "$DYNAMIC_MOTD" "$STATIC_MOTD"; then
     log_info "System files restored from backup."
   else
     log_warn "No backup snapshot found; falling back to managed-block strip."
