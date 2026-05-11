@@ -1,36 +1,55 @@
 #!/bin/bash
 
 # Module:      Caddy web server
-# Description: Installs caddy and writes /etc/caddy/Caddyfile from the
-#              common WEBSERVER_* knobs. Distro default Caddyfile is
-#              snapshotted before edits; --uninstall restores it and
-#              apt-removes the package if installicious installed it.
+# Description: Installs caddy and writes /etc/caddy/Caddyfile based on
+#              the user's chosen CADDY_HTTP_POLICY (mirrors the
+#              WEBSERVER_SSL_HTTP_POLICY values used by nginx / apache /
+#              lighttpd, but plugs into Caddy's own built-in ACME
+#              client instead of certbot — no python3-certbot-* deps,
+#              no DNS plugin gymnastics, just Caddy doing its thing).
 #
-#              Caddy ships with auto-HTTPS on; for v1 we keep things
-#              simple and bind plain HTTP on the configured port. SSL
-#              setup (Let's Encrypt or local CA) is a follow-up feature.
+#              CADDY_HTTP_POLICY values:
+#                "redirect-all"  (default) every HTTP request -> HTTPS
+#                "redirect-name" only Host==WEBSERVER_SERVER_NAME
+#                                redirects; other Hosts keep plain
+#                                HTTP (Caddy's default behavior)
+#                "deny-http"     :80 closes for everything except the
+#                                ACME challenge path
 #
-#              Hidden behind II_RESTRICT_TO_ROLES so it only surfaces in
-#              the webserver / weewx role flows via feature-webserver's
+#              Caddy auto-issues a Let's Encrypt cert when the
+#              configured site name is a real public domain reachable
+#              from the internet. For non-public names (e.g. the Pi's
+#              hostname.local), Caddy falls back to its local CA so
+#              the site still serves HTTPS — convenient for LAN
+#              testing without a real domain.
+#
+#              CADDY_ACME_EMAIL is the registration address Caddy
+#              gives Let's Encrypt for renewal reminders. Required.
+#
+#              Distro default Caddyfile is snapshotted before edits;
+#              --uninstall restores it and apt-removes the package if
+#              installicious installed it. Hidden behind
+#              II_RESTRICT_TO_ROLES so it only surfaces in the
+#              webserver / weewx role flows via feature-webserver's
 #              radio sub-menu.
 
 # === II_MANIFEST_BEGIN ===
 II_ID="caddy"
 II_TITLE="Caddy"
 II_CATEGORY="feature"
-II_VERSION="1"
+II_VERSION="2"
 II_DEPS=""
 II_REQUIRES_REBOOT="never"
 II_DEFAULT_SELECTED="off"
 II_APT_PACKAGES="caddy"
 II_RESTRICT_TO_ROLES="webserver weewx"
-# Caddy has built-in auto-HTTPS, but the user may still want to control
-# the HTTP-side policy (redirect-all / redirect-name / deny-http). When
-# webserver-ssl is selected for Caddy, certbot is skipped — instead we
-# write a Caddyfile that uses Caddy's built-in ACME client plus the
-# user's chosen HTTP policy. WEBSERVER_SSL_METHOD is informational only
-# for Caddy (the vanilla apt build doesn't include DNS plugins).
-II_OPTIONAL_GROUP="webserver-under-construction webserver-ssl"
+II_OPTIONAL_GROUP="webserver-under-construction"
+# Caddy has its own built-in ACME client and HTTP policy controls, so
+# webserver-ssl is deliberately NOT in this group. CADDY_HTTP_POLICY
+# below (an II_EDITABLE_CONFIG key declared here, not on webserver-ssl)
+# mirrors the WEBSERVER_SSL_HTTP_POLICY values for parity with the
+# other backends but plugs into Caddy's own auto-HTTPS pipeline.
+II_EDITABLE_CONFIG="CADDY_HTTP_POLICY CADDY_ACME_EMAIL"
 # === II_MANIFEST_END ===
 
 source config/installicious.config || exit 1
@@ -45,7 +64,8 @@ FILE_CONFIG_WEBSERVER="${PATH_CONFIG:-config}/webserver.config"
 [[ -f $FILE_CONFIG_WEBSERVER ]] && source "$FILE_CONFIG_WEBSERVER"
 state_apply_menu_overrides
 WEBSERVER_DOC_ROOT="${WEBSERVER_DOC_ROOT:-/var/www/html}"
-WEBSERVER_PORT="${WEBSERVER_PORT:-80}"
+CADDY_HTTP_POLICY="${CADDY_HTTP_POLICY:-redirect-all}"
+CADDY_ACME_EMAIL="${CADDY_ACME_EMAIL:-}"
 if [[ -z ${WEBSERVER_SERVER_NAME:-} ]]; then
   WEBSERVER_SERVER_NAME=$(hostname -f 2>/dev/null)
   [[ -z $WEBSERVER_SERVER_NAME || $WEBSERVER_SERVER_NAME == "(none)" ]] && WEBSERVER_SERVER_NAME=$(hostname 2>/dev/null)
@@ -76,25 +96,87 @@ STATUS_FILE=$(status_file_for "$II_ID")
 write_caddyfile() {
   local tmp
   tmp=$(mktemp) || return 1
-  # If the user kept the default port 80, use ":80" so Caddy binds the
-  # well-known port without the auto-HTTPS pipeline. For non-80, use
-  # explicit hostname:port so the rule still matches.
-  local site
-  if [[ "$WEBSERVER_PORT" == "80" ]]; then
-    site="http://${WEBSERVER_SERVER_NAME}, :80"
-  else
-    site="http://${WEBSERVER_SERVER_NAME}:${WEBSERVER_PORT}"
-  fi
-  cat > "$tmp" <<CADDY_EOF
-# Managed by installicious feature-caddy.
-# Edit WEBSERVER_DOC_ROOT / WEBSERVER_SERVER_NAME / WEBSERVER_PORT via
-# the installicious config editor and re-run; this file is regenerated.
+  case "$CADDY_HTTP_POLICY" in
+    redirect-name)
+      cat > "$tmp" <<CADDY_EOF
+# Managed by installicious feature-caddy. Edit CADDY_HTTP_POLICY /
+# WEBSERVER_SERVER_NAME / CADDY_ACME_EMAIL via the config editor and
+# re-run; this file is regenerated.
+#
+# Policy: redirect-name (Caddy default — only the named site redirects).
 
-${site} {
+{
+    email ${CADDY_ACME_EMAIL}
+}
+
+${WEBSERVER_SERVER_NAME} {
     root * ${WEBSERVER_DOC_ROOT}
     file_server
 }
 CADDY_EOF
+      ;;
+    redirect-all)
+      cat > "$tmp" <<CADDY_EOF
+# Managed by installicious feature-caddy. Edit CADDY_HTTP_POLICY /
+# WEBSERVER_SERVER_NAME / CADDY_ACME_EMAIL via the config editor and
+# re-run; this file is regenerated.
+#
+# Policy: redirect-all (every HTTP request -> HTTPS).
+
+{
+    email ${CADDY_ACME_EMAIL}
+}
+
+${WEBSERVER_SERVER_NAME} {
+    root * ${WEBSERVER_DOC_ROOT}
+    file_server
+}
+
+# Catch any unmatched :80 request (other Host headers, LAN IP, etc.)
+# and 301 to HTTPS so the policy is consistent across all clients.
+# Caddy's auto-HTTPS still serves the named site's ACME challenge
+# before this block evaluates.
+http:// {
+    redir https://{host}{uri} 301
+}
+CADDY_EOF
+      ;;
+    deny-http)
+      cat > "$tmp" <<CADDY_EOF
+# Managed by installicious feature-caddy. Edit CADDY_HTTP_POLICY /
+# WEBSERVER_SERVER_NAME / CADDY_ACME_EMAIL via the config editor and
+# re-run; this file is regenerated.
+#
+# Policy: deny-http (HTTP closed except for ACME challenge files).
+
+{
+    email ${CADDY_ACME_EMAIL}
+    auto_https disable_redirects
+}
+
+${WEBSERVER_SERVER_NAME} {
+    root * ${WEBSERVER_DOC_ROOT}
+    file_server
+}
+
+http:// {
+    @acme path /.well-known/acme-challenge/*
+    handle @acme {
+        root * ${WEBSERVER_DOC_ROOT}
+        file_server
+    }
+    handle {
+        respond 444
+    }
+}
+CADDY_EOF
+      ;;
+    *)
+      rm -f "$tmp"
+      log_fail "Unknown CADDY_HTTP_POLICY: '$CADDY_HTTP_POLICY'."
+      return 1
+      ;;
+  esac
   sudo install -m 0644 "$tmp" "$CADDYFILE" || { rm -f "$tmp"; return 1; }
   rm -f "$tmp"
   return 0
@@ -106,6 +188,24 @@ do_install() {
     return 0
   fi
   status_mark_started "$II_ID"
+
+  # ---- config sanity ----
+  case "$CADDY_HTTP_POLICY" in
+    redirect-all|redirect-name|deny-http) ;;
+    *)
+      log_fail "Unknown CADDY_HTTP_POLICY: '$CADDY_HTTP_POLICY'."
+      status_mark_failed "$II_ID" "unknown HTTP policy"
+      echo -e "[ \e[0;31mFAIL\e[0m ] CADDY_HTTP_POLICY must be 'redirect-all', 'redirect-name', or 'deny-http'."
+      return 2
+      ;;
+  esac
+  if [[ -z $CADDY_ACME_EMAIL ]]; then
+    log_fail "CADDY_ACME_EMAIL is empty."
+    status_mark_failed "$II_ID" "ACME email missing"
+    echo -e "[ \e[0;31mFAIL\e[0m ] Caddy needs CADDY_ACME_EMAIL for Let's Encrypt registration."
+    echo -e "         Re-run installicious and set it in the configuration editor."
+    return 2
+  fi
 
   log_info "Ensuring apt package: $II_APT_PACKAGES"
   # shellcheck disable=SC2086
@@ -122,7 +222,7 @@ do_install() {
     backup_create "$II_ID" "$CADDYFILE" >/dev/null || log_warn "backup_create failed; continuing."
   fi
 
-  log_info "Writing Caddyfile (port=$WEBSERVER_PORT root=$WEBSERVER_DOC_ROOT server_name=$WEBSERVER_SERVER_NAME)."
+  log_info "Writing Caddyfile (policy=$CADDY_HTTP_POLICY root=$WEBSERVER_DOC_ROOT server_name=$WEBSERVER_SERVER_NAME)."
   if ! write_caddyfile; then
     status_mark_failed "$II_ID" "Caddyfile render failed"
     echo -e "[ \e[0;31mFAIL\e[0m ] Installicious could not render the Caddyfile."
