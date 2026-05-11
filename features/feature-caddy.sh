@@ -37,7 +37,7 @@
 II_ID="caddy"
 II_TITLE="Caddy"
 II_CATEGORY="feature"
-II_VERSION="4"
+II_VERSION="5"
 II_DEPS=""
 II_REQUIRES_REBOOT="never"
 II_DEFAULT_SELECTED="off"
@@ -75,6 +75,8 @@ if [[ -z ${WEBSERVER_SERVER_NAME:-} ]]; then
 fi
 
 CADDYFILE="/etc/caddy/Caddyfile"
+CADDY_FALLBACK_CERT="${PATH_STATE:-/etc/installicious/state}/caddy-fallback.crt"
+CADDY_FALLBACK_KEY="${PATH_STATE:-/etc/installicious/state}/caddy-fallback.key"
 
 MODE="install"
 while [[ $# -gt 0 ]]; do
@@ -94,6 +96,50 @@ fi
 log_init "$II_TITLE" "$FILE_LOG_INSTALLER"
 
 STATUS_FILE=$(status_file_for "$II_ID")
+
+# Generate a self-signed fallback cert for $WEBSERVER_SERVER_NAME under
+# $PATH_STATE so the Caddyfile's :443 catch-all has something concrete to
+# present when an HTTPS request arrives with a non-matching SNI (e.g. the
+# user typed https://192.168.2.12). Without this, Caddy refuses the TLS
+# handshake entirely and the browser shows ERR_SSL_PROTOCOL_ERROR.
+#
+# Why a real cert file and not `tls internal`: Caddy's internal CA needs
+# a concrete hostname to issue a cert FOR, and a bare `:443` site has no
+# hostname for it to anchor on. Pointing `tls` at an explicit
+# cert/key pair works because Caddy just presents the cert for any SNI
+# arriving on that listener — same trick nginx uses with
+# `listen 443 ssl default_server`.
+#
+# Regenerated on every install so the CN tracks WEBSERVER_SERVER_NAME.
+_ensure_fallback_cert() {
+  local dir
+  dir=$(dirname "$CADDY_FALLBACK_CERT")
+  sudo mkdir -p "$dir" || return 1
+
+  log_info "Generating self-signed fallback cert for unmatched-SNI HTTPS (CN=$WEBSERVER_SERVER_NAME)."
+  if ! sudo openssl req -x509 -newkey rsa:2048 -nodes \
+       -keyout "$CADDY_FALLBACK_KEY" \
+       -out    "$CADDY_FALLBACK_CERT" \
+       -days   3650 \
+       -subj   "/CN=${WEBSERVER_SERVER_NAME}" \
+       -addext "subjectAltName=DNS:${WEBSERVER_SERVER_NAME}" \
+       >/dev/null 2>>"$FILE_LOG_INSTALLER"; then
+    log_fail "openssl failed to generate fallback cert."
+    return 1
+  fi
+
+  # The caddy apt package creates a `caddy` system user that the service
+  # runs as. The cert + key need to be readable by it.
+  sudo chown caddy:caddy "$CADDY_FALLBACK_CERT" "$CADDY_FALLBACK_KEY" 2>/dev/null || true
+  sudo chmod 0644 "$CADDY_FALLBACK_CERT" 2>/dev/null || true
+  sudo chmod 0640 "$CADDY_FALLBACK_KEY"  2>/dev/null || true
+  return 0
+}
+
+_remove_fallback_cert() {
+  [[ -f $CADDY_FALLBACK_CERT ]] && sudo rm -f "$CADDY_FALLBACK_CERT"
+  [[ -f $CADDY_FALLBACK_KEY  ]] && sudo rm -f "$CADDY_FALLBACK_KEY"
+}
 
 write_caddyfile() {
   local tmp
@@ -116,14 +162,6 @@ write_caddyfile() {
 # and re-run; this file is regenerated.
 #
 # Policy: redirect-name (Caddy default — only the named site redirects).
-#
-# Note on Caddy + non-domain HTTPS: Caddy doesn't natively serve
-# content for SNI that doesn't match a configured site (every
-# attempted ":443 catch-all" pattern we tried either had no cert or
-# silently merged with the named site). LAN-IP-by-HTTPS will therefore
-# get ERR_SSL_PROTOCOL_ERROR. If that matters for you, point your
-# LAN DNS / hosts file at WEBSERVER_SERVER_NAME so users hit the
-# canonical name instead of the IP.
 CADDY_EOF
         if [[ -n $global_email_line ]]; then
           cat <<CADDY_EOF
@@ -136,6 +174,16 @@ CADDY_EOF
         cat <<CADDY_EOF
 
 ${WEBSERVER_SERVER_NAME} {
+    root * ${WEBSERVER_DOC_ROOT}
+    file_server
+}
+
+# :443 catch-all for unmatched SNI (LAN IP / other Host). Presents the
+# self-signed fallback cert (CN=${WEBSERVER_SERVER_NAME}); browser
+# shows a cert-name warning but the page loads after click-through.
+# Same UX nginx/apache deliver with their default_server :443 blocks.
+:443 {
+    tls ${CADDY_FALLBACK_CERT} ${CADDY_FALLBACK_KEY}
     root * ${WEBSERVER_DOC_ROOT}
     file_server
 }
@@ -149,15 +197,7 @@ CADDY_EOF
 # WEBSERVER_SERVER_NAME / WEBSERVER_SSL_EMAIL via the config editor
 # and re-run; this file is regenerated.
 #
-# Policy: redirect-all (every HTTP request -> https://canonical-name).
-#
-# The :80 catch-all redirects to https://WEBSERVER_SERVER_NAME, NOT
-# to https://{incoming-host}. Caddy can't serve a TLS handshake for
-# arbitrary SNI (LAN IP, wrong Host) without baking in cert paths
-# we don't reliably know yet, so redirecting straight to the
-# canonical domain avoids the dead-end ERR_SSL_PROTOCOL_ERROR. Users
-# accessing by IP need WEBSERVER_SERVER_NAME to resolve to a
-# reachable IP (LAN DNS, hosts file, or public DNS routed home).
+# Policy: redirect-all (every HTTP request -> HTTPS).
 CADDY_EOF
         if [[ -n $global_email_line ]]; then
           cat <<CADDY_EOF
@@ -174,8 +214,19 @@ ${WEBSERVER_SERVER_NAME} {
     file_server
 }
 
+# Catch any unmatched :80 request and 301 to HTTPS on the incoming host.
+# The :443 catch-all below presents the self-signed fallback cert so the
+# resulting HTTPS connection actually completes (with a cert-name warning
+# the user can click through), instead of falling into ERR_SSL_PROTOCOL_
+# ERROR.
 http:// {
-    redir https://${WEBSERVER_SERVER_NAME}{uri} 301
+    redir https://{host}{uri} 301
+}
+
+:443 {
+    tls ${CADDY_FALLBACK_CERT} ${CADDY_FALLBACK_KEY}
+    root * ${WEBSERVER_DOC_ROOT}
+    file_server
 }
 CADDY_EOF
       } > "$tmp"
@@ -213,6 +264,15 @@ http:// {
     handle {
         respond 444
     }
+}
+
+# :443 catch-all for unmatched SNI — same self-signed fallback as the
+# other policies (cert-name warning, page loads). deny-http only closes
+# plain HTTP; it doesn't make HTTPS-by-IP fail.
+:443 {
+    tls ${CADDY_FALLBACK_CERT} ${CADDY_FALLBACK_KEY}
+    root * ${WEBSERVER_DOC_ROOT}
+    file_server
 }
 CADDY_EOF
       } > "$tmp"
@@ -264,6 +324,15 @@ do_install() {
     backup_create "$II_ID" "$CADDYFILE" >/dev/null || log_warn "backup_create failed; continuing."
   fi
 
+  # Generate the self-signed fallback cert used by the :443 catch-all.
+  # Must exist before Caddy validates / loads the Caddyfile because the
+  # config references the cert + key files directly.
+  if ! _ensure_fallback_cert; then
+    status_mark_failed "$II_ID" "fallback cert generation failed"
+    echo -e "[ \e[0;31mFAIL\e[0m ] Installicious could not generate the Caddy fallback cert."
+    return 1
+  fi
+
   log_info "Writing Caddyfile (policy=$CADDY_HTTP_POLICY root=$WEBSERVER_DOC_ROOT server_name=$WEBSERVER_SERVER_NAME)."
   if ! write_caddyfile; then
     status_mark_failed "$II_ID" "Caddyfile render failed"
@@ -308,6 +377,9 @@ do_uninstall() {
     backup_restore_or_remove "$II_ID" "$CADDYFILE" \
       || log_warn "Caddyfile restore returned non-zero."
   fi
+
+  # Remove the self-signed fallback cert + key we generated.
+  _remove_fallback_cert
 
   # shellcheck disable=SC2086
   installer_apt_revert "$STATUS_FILE" $II_APT_PACKAGES
