@@ -37,7 +37,7 @@
 II_ID="caddy"
 II_TITLE="Caddy"
 II_CATEGORY="feature"
-II_VERSION="5"
+II_VERSION="6"
 II_DEPS=""
 II_REQUIRES_REBOOT="never"
 II_DEFAULT_SELECTED="off"
@@ -161,7 +161,16 @@ write_caddyfile() {
 # WEBSERVER_SERVER_NAME / WEBSERVER_SSL_EMAIL via the config editor
 # and re-run; this file is regenerated.
 #
-# Policy: redirect-name (Caddy default — only the named site redirects).
+# Policy: redirect-name (only the canonical host redirects; other
+# hosts on :80 serve plain HTTP).
+#
+# IMPORTANT: Caddy's auto-HTTPS by default creates a :80 server that
+# redirects ALL hosts to :443 — that would effectively turn this
+# policy into redirect-all. We override that by writing an explicit
+# http:// block below with a @canonical matcher, so only requests
+# whose Host header matches WEBSERVER_SERVER_NAME redirect. Caddy
+# still inserts its ACME challenge handler at the top of our explicit
+# route, so HTTP-01 renewals keep working.
 CADDY_EOF
         if [[ -n $global_email_line ]]; then
           cat <<CADDY_EOF
@@ -176,6 +185,17 @@ CADDY_EOF
 ${WEBSERVER_SERVER_NAME} {
     root * ${WEBSERVER_DOC_ROOT}
     file_server
+}
+
+http:// {
+    @canonical host ${WEBSERVER_SERVER_NAME}
+    handle @canonical {
+        redir https://{host}{uri} 301
+    }
+    handle {
+        root * ${WEBSERVER_DOC_ROOT}
+        file_server
+    }
 }
 
 # :443 catch-all for unmatched SNI (LAN IP / other Host). Presents the
