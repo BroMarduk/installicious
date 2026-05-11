@@ -25,7 +25,7 @@
 II_ID="motd"
 II_TITLE="Login Message of the Day (MOTD)"
 II_CATEGORY="feature"
-II_VERSION="2"
+II_VERSION="3"
 II_DEPS=""
 II_REQUIRES_REBOOT="never"
 II_DEFAULT_SELECTED="on"
@@ -161,15 +161,24 @@ do_install() {
 
   # ---- /etc/profile: append the width-aware launcher (managed block) ----
   #
-  # Skip the MOTD entirely when this login is a `sudo -i` (or any other
-  # sudo session): SUDO_USER is set by sudo regardless of the -i flag,
-  # while a direct `ssh user@host` or `ssh root@host` login leaves it
-  # empty. Without this guard the banner shows again on every `sudo -i`
-  # after the user already saw it logging in.
+  # Two guards on the block:
+  #
+  #   [ -t 1 ]    — stdout must be a TTY. LightDM / GDM / XDM source
+  #                 /etc/profile when authenticating a desktop user but
+  #                 there's no controlling terminal; stty -a errors out
+  #                 and the X session fails to start (the desktop drops
+  #                 you back to the login screen in a loop). Same guard
+  #                 is needed for any systemd service or cron job that
+  #                 ends up sourcing /etc/profile.
+  #
+  #   [ -z \$SUDO_USER ] — SUDO_USER is set by sudo regardless of -i.
+  #                 A direct `ssh user@host` login leaves it empty and
+  #                 the MOTD shows. A `sudo -i` after login sets it,
+  #                 and we skip so the banner doesn't appear twice.
   log_info "Appending MOTD launcher block to $PROFILE_FILE."
   block_ensure "$PROFILE_FILE" "$PROFILE_BLOCK_START" "$PROFILE_BLOCK_END" <<EOF
 # Installicious — show the right MOTD based on terminal width.
-if [[ -z \$SUDO_USER ]]; then
+if [ -t 1 ] && [ -z "\$SUDO_USER" ]; then
   read screenWidth <<< \$(stty -a | awk 'NR==1 { print \$7 }')
   intWidth=\${screenWidth::-1}
   if [[ \$intWidth -gt $MOTD_SMALL_SIZE ]]; then
