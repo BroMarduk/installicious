@@ -37,7 +37,7 @@
 II_ID="caddy"
 II_TITLE="Caddy"
 II_CATEGORY="feature"
-II_VERSION="3"
+II_VERSION="4"
 II_DEPS=""
 II_REQUIRES_REBOOT="never"
 II_DEFAULT_SELECTED="off"
@@ -116,6 +116,14 @@ write_caddyfile() {
 # and re-run; this file is regenerated.
 #
 # Policy: redirect-name (Caddy default — only the named site redirects).
+#
+# Note on Caddy + non-domain HTTPS: Caddy doesn't natively serve
+# content for SNI that doesn't match a configured site (every
+# attempted ":443 catch-all" pattern we tried either had no cert or
+# silently merged with the named site). LAN-IP-by-HTTPS will therefore
+# get ERR_SSL_PROTOCOL_ERROR. If that matters for you, point your
+# LAN DNS / hosts file at WEBSERVER_SERVER_NAME so users hit the
+# canonical name instead of the IP.
 CADDY_EOF
         if [[ -n $global_email_line ]]; then
           cat <<CADDY_EOF
@@ -128,16 +136,6 @@ CADDY_EOF
         cat <<CADDY_EOF
 
 ${WEBSERVER_SERVER_NAME} {
-    root * ${WEBSERVER_DOC_ROOT}
-    file_server
-}
-
-# Catch-all :443 server with an internal (self-signed) cert so LAN
-# IP / non-domain HTTPS requests load with a cert-name warning rather
-# than failing with ERR_SSL_PROTOCOL_ERROR. Mirrors nginx's
-# "listen 443 ssl default_server" behavior.
-:443 {
-    tls internal
     root * ${WEBSERVER_DOC_ROOT}
     file_server
 }
@@ -151,7 +149,15 @@ CADDY_EOF
 # WEBSERVER_SERVER_NAME / WEBSERVER_SSL_EMAIL via the config editor
 # and re-run; this file is regenerated.
 #
-# Policy: redirect-all (every HTTP request -> HTTPS).
+# Policy: redirect-all (every HTTP request -> https://canonical-name).
+#
+# The :80 catch-all redirects to https://WEBSERVER_SERVER_NAME, NOT
+# to https://{incoming-host}. Caddy can't serve a TLS handshake for
+# arbitrary SNI (LAN IP, wrong Host) without baking in cert paths
+# we don't reliably know yet, so redirecting straight to the
+# canonical domain avoids the dead-end ERR_SSL_PROTOCOL_ERROR. Users
+# accessing by IP need WEBSERVER_SERVER_NAME to resolve to a
+# reachable IP (LAN DNS, hosts file, or public DNS routed home).
 CADDY_EOF
         if [[ -n $global_email_line ]]; then
           cat <<CADDY_EOF
@@ -168,23 +174,8 @@ ${WEBSERVER_SERVER_NAME} {
     file_server
 }
 
-# Catch any unmatched :80 request (other Host headers, LAN IP, etc.)
-# and 301 to HTTPS so the policy is consistent across all clients.
-# Caddy's auto-HTTPS still serves the named site's ACME challenge
-# before this block evaluates.
 http:// {
-    redir https://{host}{uri} 301
-}
-
-# Catch-all :443 server with an internal (self-signed) cert. Without
-# this, an IP-by-HTTPS hit (post-redirect) produces ERR_SSL_PROTOCOL_
-# ERROR because Caddy refuses the TLS handshake when SNI doesn't match
-# the named site. The internal cert lets the page load with a cert-
-# name warning instead — same UX as nginx/apache.
-:443 {
-    tls internal
-    root * ${WEBSERVER_DOC_ROOT}
-    file_server
+    redir https://${WEBSERVER_SERVER_NAME}{uri} 301
 }
 CADDY_EOF
       } > "$tmp"
@@ -222,15 +213,6 @@ http:// {
     handle {
         respond 444
     }
-}
-
-# Catch-all :443 with an internal cert so LAN IP / non-domain HTTPS
-# requests load with a cert-name warning instead of an SSL protocol
-# error.
-:443 {
-    tls internal
-    root * ${WEBSERVER_DOC_ROOT}
-    file_server
 }
 CADDY_EOF
       } > "$tmp"
