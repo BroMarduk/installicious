@@ -48,6 +48,23 @@ _installicious_show_resume_transcript() {
       # tail --pid exits when the watched process exits; -n +1 starts from
       # the top so we see anything we missed.
       tail -n +1 -f --pid="$mainpid" "$transcript" 2>/dev/null
+
+      # tail --pid has a known race: when MainPID (the bash running
+      # resume.sh) exits, tail may bail before tee finishes flushing
+      # the final lines (in our case the Queue Summary block) into
+      # the transcript file. Without this fallback the user sees the
+      # whole resume except its summary, and the marker file below
+      # then suppresses any replay on subsequent logins.
+      #
+      # Sleep briefly to let the tee subprocess drain, then re-print
+      # the Queue Summary section unconditionally. Duplicates a few
+      # lines in the common no-race case (acceptable), guarantees
+      # the summary is visible in the racy case.
+      sleep 0.3
+      if grep -q '^  Queue Summary$' "$transcript" 2>/dev/null; then
+        echo
+        awk '/^  Queue Summary$/{flag=1} flag' "$transcript" 2>/dev/null
+      fi
       echo
       touch "$marker" 2>/dev/null
       return 0
