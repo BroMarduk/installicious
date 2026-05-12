@@ -8,6 +8,26 @@ EXIT_REBOOT=255
 RESUME_UNIT_SRC="resources/installicious-resume.service"
 RESUME_UNIT_DEST="/etc/systemd/system/installicious-resume.service"
 
+# Resolve the script's own directory and cd there. The script uses
+# relative paths for config / lib / features / packages (e.g.
+# `source config/installicious.config`, `bash features/...`), so it
+# must run with cwd == its install dir. Without this cd the script
+# is brittle:
+#   - The /etc/profile.d/installicious wrapper invokes
+#     `sudo bash /etc/installicious/installicious.sh "$@"` from the
+#     user's cwd (typically $HOME), which makes `config/installicious.
+#     config` a relative-to-$HOME path that doesn't exist.
+#   - The systemd resume unit invokes us from / (or whichever
+#     WorkingDirectory it inherits), same problem.
+#   - Tests / one-off invocations from anywhere except /etc/installicious
+#     would also hit this.
+# Mirrors the same `cd "$SCRIPT_DIR"` setup.sh already does.
+INSTALLICIOUS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$INSTALLICIOUS_DIR" || {
+  echo "FAIL: cannot cd into installicious directory '$INSTALLICIOUS_DIR'." >&2
+  exit 1
+}
+
 # Privilege check. Installicious edits /etc, /boot, /var, manages systemd
 # units, runs raspi-config, etc. — all of which require root. Fail fast with
 # a clear message rather than letting the user discover the missing
