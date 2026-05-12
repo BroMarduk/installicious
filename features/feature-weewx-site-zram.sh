@@ -25,7 +25,7 @@
 #              volatile by definition so the unmount is lossless.
 
 # === II_MANIFEST_BEGIN ===
-II_ID="weewx-site-ramdisk"
+II_ID="weewx-site-zram"
 II_TITLE="WeeWX site on tmpfs (with boot loading page)"
 II_CATEGORY="feature"
 II_VERSION="1"
@@ -54,7 +54,7 @@ LOADING_RESOURCE="${PATH_RESOURCES:-resources}/weewx-loading.html"
 UNIT_NAME="weewx-loading-page.service"
 UNIT_FILE="/etc/systemd/system/${UNIT_NAME}"
 FSTAB="/etc/fstab"
-FSTAB_TAG="# installicious: weewx-site-ramdisk"
+FSTAB_TAG="# installicious: weewx-site-zram"
 
 MODE="install"
 while [[ $# -gt 0 ]]; do
@@ -90,7 +90,7 @@ weewx_mount_unit_name() {
 
 do_install() {
   if status_should_skip "$II_ID" "$II_VERSION" "$FILE_CONFIG_WEEWX"; then
-    log_info "weewx-site-ramdisk already installed at recorded version + config. Skipping."
+    log_info "weewx-site-zram already installed at recorded version + config. Skipping."
     return 0
   fi
   status_mark_started "$II_ID"
@@ -173,7 +173,7 @@ UNIT_EOF
   fi
 
   status_mark_complete "$II_ID" "$II_VERSION" "$FILE_CONFIG_WEEWX"
-  log_ok "weewx-site-ramdisk installed."
+  log_ok "weewx-site-zram installed."
   echo -e "[  \e[0;32mOK\e[0m  ] WeeWX site is now on tmpfs at $WEEWX_WEB_DIR."
   return 0
 }
@@ -181,12 +181,12 @@ UNIT_EOF
 do_uninstall() {
   case "$(status_state "$II_ID")" in
     uninstalled)
-      log_info "weewx-site-ramdisk already uninstalled."
-      echo -e "[  \e[0;32mOK\e[0m  ] weewx-site-ramdisk is already uninstalled."
+      log_info "weewx-site-zram already uninstalled."
+      echo -e "[  \e[0;32mOK\e[0m  ] weewx-site-zram is already uninstalled."
       return 0
       ;;
     "")
-      log_warn "No install record for weewx-site-ramdisk; nothing to revert."
+      log_warn "No install record for weewx-site-zram; nothing to revert."
       status_mark_uninstalled "$II_ID"
       return 0
       ;;
@@ -224,8 +224,8 @@ do_uninstall() {
   sudo systemctl daemon-reload
 
   status_mark_uninstalled "$II_ID"
-  log_ok "weewx-site-ramdisk uninstalled."
-  echo -e "[  \e[0;32mOK\e[0m  ] weewx-site-ramdisk uninstalled (tmpfs removed, fstab restored)."
+  log_ok "weewx-site-zram uninstalled."
+  echo -e "[  \e[0;32mOK\e[0m  ] weewx-site-zram uninstalled (tmpfs removed, fstab restored)."
   return 0
 }
 

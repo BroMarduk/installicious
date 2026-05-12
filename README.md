@@ -194,9 +194,9 @@ role; the role also makes `webserver` required and pulls in `skyfield`
 
 | ID                         | Title                                          | Default | Reboot      |
 |---|---|---|---|
-| `weewx-webroot`            | WeeWX as default web root                      | off*    | never       |
-| `weewx-site-ramdisk`       | WeeWX site on tmpfs (with boot loading page)   | off*    | conditional |
-| `weewx-database-ramdisk`   | WeeWX database on zram (validated snapshots)   | off*    | conditional |
+| `weewx-webroot`         | WeeWX as default web root                      | off*    | never       |
+| `weewx-site-zram`       | WeeWX site on tmpfs (with boot loading page)   | off*    | conditional |
+| `weewx-database-zram`   | WeeWX database on zram (validated snapshots)   | off*    | conditional |
 
 *`II_DEFAULT_SELECTED="off"` at the feature level — but the WeeWx role's
 `ROLE_FEATURES_DEFAULT` checks all three on by default for that role.
@@ -210,7 +210,7 @@ role; the role also makes `webserver` required and pulls in `skyfield`
   `/etc/apache2/sites-available/000-default.conf`,
   `/etc/lighttpd/lighttpd.conf`, or `/etc/caddy/Caddyfile`). Uninstall
   restores the pre-install config from snapshot.
-- **weewx-site-ramdisk** — mounts `$WEEWX_WEB_DIR` on tmpfs sized by
+- **weewx-site-zram** — mounts `$WEEWX_WEB_DIR` on tmpfs sized by
   `$WEEWX_TMPFS_SIZE` (default 128M) so WeeWX's ~5-minute report
   regeneration stops hammering the SD card. Drops
   `resources/weewx-loading.html` into `/usr/local/share/weewx-ramdisk/`
@@ -219,10 +219,12 @@ role; the role also makes `webserver` required and pulls in `skyfield`
   already regenerated a real `index.html`. Editable:
   `WEEWX_WEB_DIR`, `WEEWX_TMPFS_SIZE`. Uninstall removes the unit, the
   share dir, the fstab entry, and unmounts.
-- **weewx-database-ramdisk** — moves `/var/lib/weewx` to a dedicated
+- **weewx-database-zram** — moves `/var/lib/weewx` to a dedicated
   zram-backed ext4 device with validated snapshots:
   - On install, sizes the zram at `1.5x` current DB size (floor 256M,
     rounded to 128M) and picks `zstd` on Pi 4/5, `lz4` on older.
+    Set `WEEWX_DB_ZRAM_SIZE` (e.g. `"1024M"`) to pin the size manually
+    when you know the DB is about to grow.
   - Boot: walks the rotation (`weewx.sdb`, `.1`, `.2`, …) until one
     passes `PRAGMA quick_check`; refuses to start if none validate
     rather than hand WeeWX a corrupt DB.
@@ -232,7 +234,8 @@ role; the role also makes `webserver` required and pulls in `skyfield`
   - Drop-in on `weewx.service` ties its lifecycle to the ramdisk
     service so the user can't restart the ramdisk out from under a
     running WeeWX.
-  - Editable: `WEEWX_DB_DIR`, `WEEWX_DB_HDD_DIR`, `WEEWX_DB_ROTATIONS`.
+  - Editable: `WEEWX_DB_DIR`, `WEEWX_DB_HDD_DIR`, `WEEWX_DB_ROTATIONS`,
+    `WEEWX_DB_ZRAM_SIZE` (empty = auto-compute).
 
 Still freestanding under `scripts/` (not yet first-class features):
 `weewx-onedrive-backup.sh`, `weewx-nginx-ssl.sh` (cert issuance is now

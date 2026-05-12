@@ -138,16 +138,18 @@ done
 
 # WeeWx role is populated. Spot-check the canonical tier shape: REQUIRED
 # contains pkupd + the webserver parent (which triggers the radio sub-menu);
-# locale lives in DEFAULT so the user can deselect it; the rest of DEFAULT is
-# the MOTD bundle + skyfield + the three weewx-* wrappers (webroot pin,
-# site tmpfs, db zram); OPTIONAL is Pi-tuning toggles.
+# DEFAULT lists the three weewx-* wrappers FIRST (so the user sees the
+# heavy weewx decisions before the general toggles) then locale/bash/motd/
+# skyfield; OPTIONAL is Pi-tuning toggles. motd-weather and motd-updates
+# are intentionally absent — both are hidden children of motd and would
+# duplicate on the menu screens if listed at the role tier level.
 weewx_path=$(role_path_for weewx roles)
 weewx_req=$(role_get_field "$weewx_path" ROLE_FEATURES_REQUIRED)
 weewx_def=$(role_get_field "$weewx_path" ROLE_FEATURES_DEFAULT)
 weewx_opt=$(role_get_field "$weewx_path" ROLE_FEATURES_OPTIONAL)
 chkeq "weewx required" "$weewx_req" "pkupd webserver"
-chkeq "weewx default"  "$weewx_def" "locale bash motd skyfield motd-weather weewx-webroot weewx-site-ramdisk weewx-database-ramdisk"
-chkeq "weewx optional" "$weewx_opt" "rconf compressed-swap ram-logging motd-updates"
+chkeq "weewx default"  "$weewx_def" "weewx-webroot weewx-site-zram weewx-database-zram locale bash motd skyfield"
+chkeq "weewx optional" "$weewx_opt" "rconf compressed-swap ram-logging"
 
 # Webserver role is the second populated role. REQUIRED includes the
 # webserver parent feature (so the apache/nginx/lighttpd/caddy radio
