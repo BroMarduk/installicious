@@ -6,4 +6,4 @@ logs/
 
 # Editor / tooling — local-only.
 .vscode/
-.claude/settings.local.json
+.claude/
