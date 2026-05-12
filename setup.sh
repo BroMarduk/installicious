@@ -101,9 +101,23 @@ if [[ -f "$WRAPPER_SRC" ]]; then
   fi
 fi
 
-echo "[setup] Setup complete. Running $DEST/installicious.sh"
-cd "$DEST"
-# We're already root (setup.sh was invoked via sudo). Re-sudo would overwrite
-# $SUDO_USER to "root", which would lose track of the real user that
-# install-bash and friends need to configure dotfiles for.
-bash "$DEST/installicious.sh"
+# Only auto-launch installicious if we have a real interactive terminal
+# attached. Without a TTY (cron job, remote provisioning script piped
+# through ssh, CI runner re-syncing on every deploy), the whiptail menu
+# would hang invisibly waiting on user input. In that case just print a
+# clear next-step pointer and exit cleanly — setup.sh's primary job is
+# to install the files, the menu launch is a convenience for the
+# interactive bootstrap case.
+if [ -t 0 ] && [ -t 1 ]; then
+  echo "[setup] Setup complete. Launching $DEST/installicious.sh ..."
+  cd "$DEST"
+  # We're already root (setup.sh was invoked via sudo). Re-sudo would
+  # overwrite $SUDO_USER to "root", which would lose track of the real
+  # user that install-bash and friends need to configure dotfiles for.
+  bash "$DEST/installicious.sh"
+else
+  echo "[setup] Setup complete (non-interactive — not auto-launching the menu)."
+  echo "[setup] To open the menu, run one of:"
+  echo "[setup]   installicious                    (uses the shell wrapper; new shell required)"
+  echo "[setup]   sudo bash $DEST/installicious.sh (direct, any shell)"
+fi
