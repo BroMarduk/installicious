@@ -1,30 +1,34 @@
 #!/bin/bash
 
 # Module:      Web Server - Under Construction landing page
-# Description: Drops resources/html-under-construction.html in place as
-#              the chosen backend's index.html so visitors hit a polite
-#              "we're working on it" page until the real site is
-#              deployed.
+# Description: Drops one of the resources/html-index-*.html templates in
+#              place as the chosen backend's index.html so visitors hit a
+#              polite "we're working on it" page until the real site is
+#              deployed. The user picks which template via the
+#              WEBSERVER_UC_TEMPLATE config key — see the choices file
+#              for the radio (auto-discovered from resources/).
 #
 #              Hidden child of nginx / apache / lighttpd / caddy via
 #              their II_OPTIONAL_GROUP, so it only surfaces in the
 #              sub-menu that fires AFTER the radio backend pick. Backend-
 #              agnostic — just writes WEBSERVER_DOC_ROOT/index.html.
 #
-#              The HTML template lives under resources/ so swapping in a
-#              different design is just an edit of one file; no shell
-#              changes needed. Symmetric uninstall restores whatever
-#              index.html the distro shipped (snapshotted via lib/backup
-#              the first time we touch the file).
+#              The HTML templates live under resources/ so swapping in a
+#              different design is just dropping a new
+#              html-index-<slug>.html file there; no shell changes
+#              needed. Symmetric uninstall restores whatever index.html
+#              the distro shipped (snapshotted via lib/backup the first
+#              time we touch the file).
 
 # === II_MANIFEST_BEGIN ===
 II_ID="webserver-under-construction"
 II_TITLE="Under Construction landing page"
 II_CATEGORY="feature"
-II_VERSION="1"
+II_VERSION="2"
 II_DEPS=""
 II_REQUIRES_REBOOT="never"
 II_DEFAULT_SELECTED="off"
+II_EDITABLE_CONFIG="WEBSERVER_UC_TEMPLATE"
 # === II_MANIFEST_END ===
 
 source config/installicious.config || exit 1
@@ -37,8 +41,9 @@ FILE_CONFIG_WEBSERVER="${PATH_CONFIG:-config}/webserver.config"
 [[ -f $FILE_CONFIG_WEBSERVER ]] && source "$FILE_CONFIG_WEBSERVER"
 state_apply_menu_overrides
 WEBSERVER_DOC_ROOT="${WEBSERVER_DOC_ROOT:-/var/www/html}"
+WEBSERVER_UC_TEMPLATE="${WEBSERVER_UC_TEMPLATE:-midnight-editor}"
 
-UC_SRC="${PATH_RESOURCES:-resources}/html-under-construction.html"
+UC_SRC="${PATH_RESOURCES:-resources}/html-index-${WEBSERVER_UC_TEMPLATE}.html"
 UC_DEST="${WEBSERVER_DOC_ROOT}/index.html"
 
 MODE="install"

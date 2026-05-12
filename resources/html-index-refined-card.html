@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Under Construction</title>
+  <style>
+    :root { --bg:#f4efe7; --card:#fffaf2; --ink:#2d261f; --muted:#766b5f; --gold:#a8793d; }
+    * { box-sizing:border-box; }
+    html, body { height:100%; }
+    body { margin:0; font-family:Georgia, 'Times New Roman', serif; background:var(--bg); color:var(--ink); }
+    .page { min-height:100%; display:flex; align-items:center; justify-content:center; padding:32px; }
+    .card { width:min(720px, 100%); text-align:center; background:var(--card); border:1px solid rgba(168,121,61,.35); border-radius:28px; padding:64px 56px; box-shadow:0 24px 65px rgba(58,44,28,.16); }
+    .mark { width:66px; height:66px; margin:0 auto 32px; border:1px solid var(--gold); border-radius:50%; display:grid; place-items:center; color:var(--gold); font-size:30px; }
+    .eyebrow { margin:0 0 22px; font-family:Arial, Helvetica, sans-serif; color:var(--gold); font-size:13px; font-weight:700; letter-spacing:.18em; text-transform:uppercase; }
+    h1 { margin:0; font-size:clamp(38px, 6vw, 64px); line-height:1.08; font-weight:400; letter-spacing:-.035em; }
+    p { margin:26px auto 0; max-width:560px; color:var(--muted); font-size:20px; line-height:1.55; }
+    .rule { width:116px; height:1px; background:var(--gold); margin:38px auto 0; }
+    @media (max-width:600px) { .card { padding:44px 30px; } p { font-size:18px; } }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="card" aria-label="Under construction notice">
+      <div class="mark">◆</div>
+      <p class="eyebrow">Under construction</p>
+      <h1>A refined<br>experience is<br>on the way.</h1>
+      <p>We’re making a few thoughtful improvements and will return with something cleaner, calmer, and easier to use.</p>
+      <div class="rule"></div>
+    </section>
+  </main>
+</body>
+</html>
