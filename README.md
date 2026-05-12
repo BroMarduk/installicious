@@ -113,6 +113,9 @@ change actually requires one).
 - **motd-weather** — adds a current-conditions block. Requires a free
   API key — set `MOTD_WEATHER_API_KEY` and `MOTD_WEATHER_LOC_CODE` in
   the config editor before installing or the install will fail-stop.
+  `MOTD_WEATHER_ZIP_CODE` (default `05255`) is the label shown next to
+  "Weather" in the banner — cosmetic only, separate from the
+  AccuWeather location key.
 - **motd-updates** — adds an "N updates available" line, refreshed by
   cron. Hidden child of `motd` (auto-pulled when `motd` is selected if
   you tick it in the MOTD optional sub-screen).

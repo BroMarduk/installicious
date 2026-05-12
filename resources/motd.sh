@@ -216,7 +216,7 @@ if [[ -n "$throttle_status" ]]; then
   weatherLineLabel="Throttled    "
   weatherLineValue="$throttle_status"
 else
-  weatherLineLabel="Weather 05255"
+  weatherLineLabel="Weather %%MOTD_WEATHER_ZIP_CODE%%"
   weatherLineValue="$weatherDisplay"
 fi
 

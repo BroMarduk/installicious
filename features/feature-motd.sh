@@ -25,7 +25,7 @@
 II_ID="motd"
 II_TITLE="Login Message of the Day (MOTD)"
 II_CATEGORY="feature"
-II_VERSION="6"
+II_VERSION="7"
 II_DEPS=""
 II_REQUIRES_REBOOT="never"
 II_DEFAULT_SELECTED="on"
@@ -47,6 +47,7 @@ state_apply_menu_overrides
 MOTD_NAME="${MOTD_NAME:-dannet}"
 MOTD_IP_URL="${MOTD_IP_URL:-https://api.ipify.org}"
 MOTD_SMALL_SIZE="${MOTD_SMALL_SIZE:-79}"
+MOTD_WEATHER_ZIP_CODE="${MOTD_WEATHER_ZIP_CODE:-05255}"
 
 MOTD_DIR="/etc/motd.d/$MOTD_NAME"
 CRON_DAILY_IP="/etc/cron.daily/motd-current-ip"
@@ -91,6 +92,7 @@ render_resource() {
   # not as a sed token in any rendered file.
   sed -e "s|%%MOTD_NAME%%|${MOTD_NAME}|g" \
       -e "s|%%MOTD_IP_URL%%|${MOTD_IP_URL}|g" \
+      -e "s|%%MOTD_WEATHER_ZIP_CODE%%|${MOTD_WEATHER_ZIP_CODE}|g" \
       "$src" > "$tmp" || { rm -f "$tmp"; return 1; }
   sudo install -m 0755 "$tmp" "$dest" || { rm -f "$tmp"; return 1; }
   rm -f "$tmp"
