@@ -25,7 +25,7 @@
 II_ID="motd"
 II_TITLE="Login Message of the Day (MOTD)"
 II_CATEGORY="feature"
-II_VERSION="7"
+II_VERSION="8"
 II_DEPS=""
 II_REQUIRES_REBOOT="never"
 II_DEFAULT_SELECTED="on"

@@ -147,7 +147,7 @@ fi
 WEATHER_CRON="/etc/cron.hourly/motd-current-weather"
 throttle_status=""
 
-if [[ ! -x "$WEATHER_CRON" ]]; then
+if [[ ! -e "$WEATHER_CRON" ]]; then
   if command -v vcgencmd >/dev/null 2>&1; then
     throttle_raw=$(vcgencmd get_throttled 2>/dev/null | cut -d= -f2)
     if [[ "$throttle_raw" == "0x0" ]]; then
