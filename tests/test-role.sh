@@ -139,13 +139,14 @@ done
 # WeeWx role is populated. Spot-check the canonical tier shape: REQUIRED
 # contains pkupd + the webserver parent (which triggers the radio sub-menu);
 # locale lives in DEFAULT so the user can deselect it; the rest of DEFAULT is
-# the MOTD bundle + skyfield; OPTIONAL is Pi-tuning toggles.
+# the MOTD bundle + skyfield + the three weewx-* wrappers (webroot pin,
+# site tmpfs, db zram); OPTIONAL is Pi-tuning toggles.
 weewx_path=$(role_path_for weewx roles)
 weewx_req=$(role_get_field "$weewx_path" ROLE_FEATURES_REQUIRED)
 weewx_def=$(role_get_field "$weewx_path" ROLE_FEATURES_DEFAULT)
 weewx_opt=$(role_get_field "$weewx_path" ROLE_FEATURES_OPTIONAL)
 chkeq "weewx required" "$weewx_req" "pkupd webserver"
-chkeq "weewx default"  "$weewx_def" "locale bash motd skyfield motd-weather"
+chkeq "weewx default"  "$weewx_def" "locale bash motd skyfield motd-weather weewx-webroot weewx-site-ramdisk weewx-database-ramdisk"
 chkeq "weewx optional" "$weewx_opt" "rconf compressed-swap ram-logging motd-updates"
 
 # Webserver role is the second populated role. REQUIRED includes the

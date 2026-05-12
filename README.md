@@ -8,11 +8,6 @@ Supported OS releases: Debian / Raspberry Pi OS **Bookworm** and **Trixie**
 (Forky / Duke kept forward-compat in code, but not yet validated). Bullseye
 and earlier are not supported.
 
-> The **WeeWx** role is a work in progress. Its features (currently the
-> `skyfield` extension, with `weewx-nginx` / `weewx-database-ramdisk` /
-> `weewx-onedrive-backup` wrappers pending) are intentionally omitted from
-> this README until the role is finished.
-
 ---
 
 ## Quick start
@@ -56,7 +51,7 @@ no matter what TTY / SSH session you come back on.
 |---|---|---|
 | `custom`        | Custom             | Bypass the role list; pick features individually.          |
 | `webserver`     | Web Server         | Pick exactly one of apache / nginx / lighttpd / caddy.     |
-| `weewx`         | WeeWx              | **WIP** — see note above.                                  |
+| `weewx`         | WeeWx              | Weather-station Pi. Requires `webserver`; defaults include MOTD bundle + skyfield + tmpfs/zram wrappers. |
 | `homeassistant` | Home Assistant     | Stub.                                                      |
 | `mediaserver`   | Media Server       | Stub.                                                      |
 | `pihole`        | Pi-Hole            | Stub.                                                      |
@@ -190,6 +185,60 @@ cert warning rather than `ERR_SSL_PROTOCOL_ERROR`.
 The exact per-backend × per-policy × per-URL behavior is documented
 separately in [docs/webserver-ssl-policy-matrix.md](docs/webserver-ssl-policy-matrix.md).
 
+### WeeWx
+
+WeeWx-role-only features (hidden in the Custom flow via
+`II_RESTRICT_TO_ROLES="weewx"`). All three are default-on under the WeeWx
+role; the role also makes `webserver` required and pulls in `skyfield`
+(which transitively installs the `weewx` apt package).
+
+| ID                         | Title                                          | Default | Reboot      |
+|---|---|---|---|
+| `weewx-webroot`            | WeeWX as default web root                      | off*    | never       |
+| `weewx-site-ramdisk`       | WeeWX site on tmpfs (with boot loading page)   | off*    | conditional |
+| `weewx-database-ramdisk`   | WeeWX database on zram (validated snapshots)   | off*    | conditional |
+
+*`II_DEFAULT_SELECTED="off"` at the feature level — but the WeeWx role's
+`ROLE_FEATURES_DEFAULT` checks all three on by default for that role.
+
+- **weewx-webroot** — repoints the active webserver backend's default
+  site at `$WEEWX_WEB_DIR` (default `/var/www/html/weewx`) so visitors
+  hit the WeeWX page at `/` instead of the backend's stock welcome page.
+  Backend-agnostic; active backend is detected via the status registry
+  at install time, and the right config file is patched in place
+  (`/etc/nginx/sites-available/default`,
+  `/etc/apache2/sites-available/000-default.conf`,
+  `/etc/lighttpd/lighttpd.conf`, or `/etc/caddy/Caddyfile`). Uninstall
+  restores the pre-install config from snapshot.
+- **weewx-site-ramdisk** — mounts `$WEEWX_WEB_DIR` on tmpfs sized by
+  `$WEEWX_TMPFS_SIZE` (default 128M) so WeeWX's ~5-minute report
+  regeneration stops hammering the SD card. Drops
+  `resources/weewx-loading.html` into `/usr/local/share/weewx-ramdisk/`
+  as the master copy, and installs a systemd oneshot that copies it
+  onto the (volatile) tmpfs on every boot — but only if WeeWX hasn't
+  already regenerated a real `index.html`. Editable:
+  `WEEWX_WEB_DIR`, `WEEWX_TMPFS_SIZE`. Uninstall removes the unit, the
+  share dir, the fstab entry, and unmounts.
+- **weewx-database-ramdisk** — moves `/var/lib/weewx` to a dedicated
+  zram-backed ext4 device with validated snapshots:
+  - On install, sizes the zram at `1.5x` current DB size (floor 256M,
+    rounded to 128M) and picks `zstd` on Pi 4/5, `lz4` on older.
+  - Boot: walks the rotation (`weewx.sdb`, `.1`, `.2`, …) until one
+    passes `PRAGMA quick_check`; refuses to start if none validate
+    rather than hand WeeWX a corrupt DB.
+  - Hourly + clean-shutdown: `quick_check` the live DB, then
+    `sqlite3 .backup` to a `.tmp`, `PRAGMA integrity_check` the result,
+    rotate, atomic mv. Discards the backup if either check fails.
+  - Drop-in on `weewx.service` ties its lifecycle to the ramdisk
+    service so the user can't restart the ramdisk out from under a
+    running WeeWX.
+  - Editable: `WEEWX_DB_DIR`, `WEEWX_DB_HDD_DIR`, `WEEWX_DB_ROTATIONS`.
+
+Still freestanding under `scripts/` (not yet first-class features):
+`weewx-onedrive-backup.sh`, `weewx-nginx-ssl.sh` (cert issuance is now
+covered by `feature-webserver-ssl` — only the WeeWX-specific config
+glue remains).
+
 ---
 
 ## Config files
@@ -197,10 +246,10 @@ separately in [docs/webserver-ssl-policy-matrix.md](docs/webserver-ssl-policy-ma
 Static defaults live in `config/`:
 
 - `installicious.config` — paths and global toggles.
-- `motd.config`, `webserver.config`, `locale.config`, etc. — per-feature
-  defaults. Editable keys named in each feature's `II_EDITABLE_CONFIG`
-  surface in the in-menu **Edit Configuration** screen and are persisted
-  to `/etc/installicious/state/menu-config.sh`.
+- `motd.config`, `webserver.config`, `weewx.config`, `locale.config`,
+  etc. — per-feature defaults. Editable keys named in each feature's
+  `II_EDITABLE_CONFIG` surface in the in-menu **Edit Configuration**
+  screen and are persisted to `/etc/installicious/state/menu-config.sh`.
 
 Runtime state lives under `/etc/installicious/`:
 
