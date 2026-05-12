@@ -51,29 +51,62 @@ _role_default_dir() {
 }
 
 # role_extract <file> -> echo the manifest block content (between sentinels).
+# Thin wrapper around _role_read_block_into; kept for test compatibility.
 role_extract() {
-  local file="$1"
-  [[ -f $file ]] || return 0
-  awk '
-    /^# === II_ROLE_BEGIN ===/ {flag=1; next}
-    /^# === II_ROLE_END ===/   {flag=0}
-    flag                        {print}
-  ' "$file"
+  local _b
+  _role_read_block_into "$1" _b
+  [[ -n $_b ]] && printf '%s' "$_b"
+}
+
+# _role_read_block_into <file> <out-varname>
+# Bash-native replacement for the old `awk` extraction. Sets the named
+# variable in the caller's scope to the role block content. Mirrors
+# _manifest_read_block_into; avoids both awk and $() so first-time role
+# reads aren't dominated by fork/exec on Windows Bash.
+_role_read_block_into() {
+  local _file="$1" _out="$2"
+  if [[ ! -f $_file ]]; then
+    printf -v "$_out" '%s' ""
+    return 0
+  fi
+  local _line _in=0 _result=""
+  while IFS= read -r _line; do
+    case $_line in
+      "# === II_ROLE_BEGIN ==="*) _in=1; continue;;
+      "# === II_ROLE_END ==="*)   _in=0; continue;;
+    esac
+    (( _in )) && _result+="$_line"$'\n'
+  done < "$_file"
+  printf -v "$_out" '%s' "$_result"
+}
+
+# _role_parse_field <block> <field> <out-varname>
+# Same KEY="value" text parser as the manifest side. Roles only declare
+# a tiny set of well-typed string fields, so eval is overkill.
+_role_parse_field() {
+  local _block="$1" _field="$2" _out="$3"
+  local _line _value=""
+  while IFS= read -r _line; do
+    if [[ $_line == "${_field}="* ]]; then
+      _value=${_line#"${_field}"=}
+      if [[ ${_value:0:1} == '"' && ${_value: -1} == '"' ]]; then
+        _value=${_value:1:${#_value}-2}
+      fi
+      break
+    fi
+  done <<<"$_block"
+  printf -v "$_out" '%s' "$_value"
 }
 
 # role_get_field <file> <field> -> echo single field value.
-# Sourced in a subshell to avoid polluting the caller's environment.
 role_get_field() {
   local file="$1"
   local field="$2"
-  local block
-  block=$(role_extract "$file")
+  local block value
+  _role_read_block_into "$file" block
   [[ -z $block ]] && return 0
-  (
-    # shellcheck disable=SC2086
-    eval "$block"
-    echo "${!field}"
-  )
+  _role_parse_field "$block" "$field" value
+  printf '%s\n' "$value"
 }
 
 # role_list_files [<dir>] -> list role-script paths.
@@ -87,12 +120,16 @@ role_list_files() {
 }
 
 # role_list_ids [<dir>] -> list IDs of roles that have a valid manifest.
+# Inlined to skip the `id=$(role_get_field ...)` subshell per file (same
+# rationale as manifest_list_ids).
 role_list_ids() {
   local dir="${1:-$(_role_default_dir)}"
-  local f id
+  local f block id
   while IFS= read -r f; do
-    id=$(role_get_field "$f" "ROLE_ID")
-    [[ -n $id ]] && echo "$id"
+    _role_read_block_into "$f" block
+    [[ -z $block ]] && continue
+    _role_parse_field "$block" "ROLE_ID" id
+    [[ -n $id ]] && printf '%s\n' "$id"
   done < <(role_list_files "$dir")
 }
 
@@ -100,9 +137,11 @@ role_list_ids() {
 role_path_for() {
   local id="$1"
   local dir="${2:-$(_role_default_dir)}"
-  local f manifest_id
+  local f block manifest_id
   while IFS= read -r f; do
-    manifest_id=$(role_get_field "$f" "ROLE_ID")
+    _role_read_block_into "$f" block
+    [[ -z $block ]] && continue
+    _role_parse_field "$block" "ROLE_ID" manifest_id
     if [[ $manifest_id == "$id" ]]; then
       echo "$f"
       return 0

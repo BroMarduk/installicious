@@ -123,18 +123,9 @@ _manifest_registry_load() {
     for f in "$d"/feature-*.sh "$d"/package-*.sh; do
       [[ -f $f ]] || continue
       _MANIFEST_FILES+=("$f")
-      block=$(awk '
-        /^# === II_MANIFEST_BEGIN ===/ {flag=1; next}
-        /^# === II_MANIFEST_END ===/   {flag=0}
-        flag                            {print}
-      ' "$f")
+      _manifest_read_block_into "$f" block
       [[ -z $block ]] && continue
-      _MANIFEST_BLOCK[$f]="$block"
-      id=$(
-        # shellcheck disable=SC2086
-        eval "$block"
-        echo "$II_ID"
-      )
+      _manifest_parse_field "$block" "II_ID" id
       [[ -z $id ]] && continue
       _MANIFEST_IDS+=("$id")
       _MANIFEST_PATH[$id]="$f"
@@ -144,25 +135,65 @@ _manifest_registry_load() {
   _MANIFEST_LOADED_FROM="$current_dirs"
 }
 
-# manifest_extract <file> -> echo the manifest block content (between sentinels).
-# Output is empty if the file lacks the sentinels.
-manifest_extract() {
-  local file="$1"
-  if [[ -n ${_MANIFEST_BLOCK[$file]:-} ]]; then
-    printf '%s\n' "${_MANIFEST_BLOCK[$file]}"
+# _manifest_read_block_into <file> <out-varname>
+# Bash-native replacement for the old `block=$(awk ...)` pattern. Sets the
+# named variable in the caller's scope to the manifest block content
+# (lines between the BEGIN/END sentinels), or to "" if the file lacks
+# them. Caches into _MANIFEST_BLOCK on first hit. Avoids both awk and
+# the wrapping $() — on Windows Bash where fork+exec is ~100ms each, the
+# combined savings are ~6x on hot paths like the registry load.
+_manifest_read_block_into() {
+  local _file="$1" _out="$2"
+  if [[ -n ${_MANIFEST_BLOCK[$_file]:-} ]]; then
+    printf -v "$_out" '%s' "${_MANIFEST_BLOCK[$_file]}"
     return 0
   fi
-  [[ -f $file ]] || return 0
-  local block
-  block=$(awk '
-    /^# === II_MANIFEST_BEGIN ===/ {flag=1; next}
-    /^# === II_MANIFEST_END ===/   {flag=0}
-    flag                            {print}
-  ' "$file")
-  if [[ -n $block ]]; then
-    _MANIFEST_BLOCK[$file]="$block"
-    printf '%s\n' "$block"
+  if [[ ! -f $_file ]]; then
+    printf -v "$_out" '%s' ""
+    return 0
   fi
+  local _line _in=0 _result=""
+  while IFS= read -r _line; do
+    case $_line in
+      "# === II_MANIFEST_BEGIN ==="*) _in=1; continue;;
+      "# === II_MANIFEST_END ==="*)   _in=0; continue;;
+    esac
+    (( _in )) && _result+="$_line"$'\n'
+  done < "$_file"
+  [[ -n $_result ]] && _MANIFEST_BLOCK[$_file]="$_result"
+  printf -v "$_out" '%s' "$_result"
+}
+
+# _manifest_parse_field <block> <field> <out-varname>
+# Bash-native replacement for the old `value=$(eval "$block"; echo
+# "${!field}")` subshell pattern. Walks the block text looking for a line
+# starting with "<field>=" and strips wrapping double quotes from the
+# value. Manifests are spec'd to be static `KEY="value"` lines so a
+# literal text parser is enough — and it's an order of magnitude faster
+# than evaluating + reflecting through ${!field} in a subshell.
+_manifest_parse_field() {
+  local _block="$1" _field="$2" _out="$3"
+  local _line _value=""
+  while IFS= read -r _line; do
+    if [[ $_line == "${_field}="* ]]; then
+      _value=${_line#"${_field}"=}
+      if [[ ${_value:0:1} == '"' && ${_value: -1} == '"' ]]; then
+        _value=${_value:1:${#_value}-2}
+      fi
+      break
+    fi
+  done <<<"$_block"
+  printf -v "$_out" '%s' "$_value"
+}
+
+# manifest_extract <file> -> echo the manifest block content (between sentinels).
+# Output is empty if the file lacks the sentinels. Thin wrapper around the
+# faster _manifest_read_block_into helper; kept as the public API since
+# callers in the test suite use `$(manifest_extract ...)`.
+manifest_extract() {
+  local _b
+  _manifest_read_block_into "$1" _b
+  [[ -n $_b ]] && printf '%s' "$_b"
 }
 
 # manifest_get_field <file> <field> -> echo the value of a single manifest field.
@@ -177,18 +208,13 @@ manifest_get_field() {
     return 0
   fi
   local block
-  if [[ -n ${_MANIFEST_BLOCK[$file]:-} ]]; then
-    block="${_MANIFEST_BLOCK[$file]}"
-  else
-    block=$(manifest_extract "$file")
-    [[ -z $block ]] && return 0
+  _manifest_read_block_into "$file" block
+  if [[ -z $block ]]; then
+    _MANIFEST_FIELDS[$cache_key]=""
+    return 0
   fi
   local value
-  value=$(
-    # shellcheck disable=SC2086
-    eval "$block"
-    echo "${!field}"
-  )
+  _manifest_parse_field "$block" "$field" value
   _MANIFEST_FIELDS[$cache_key]="$value"
   printf '%s\n' "$value"
 }
@@ -217,10 +243,20 @@ manifest_list_ids() {
     [[ ${#_MANIFEST_IDS[@]} -gt 0 ]] && printf '%s\n' "${_MANIFEST_IDS[@]}"
     return 0
   fi
-  local f id
+  # Inlined cache+parse (same rationale as manifest_path_for): avoid a
+  # fork-per-file from `id=$(manifest_get_field ...)`.
+  local f cache_key id block
   while IFS= read -r f; do
-    id=$(manifest_get_field "$f" "II_ID")
-    [[ -n $id ]] && echo "$id"
+    cache_key="$f|II_ID"
+    if [[ -n ${_MANIFEST_FIELDS[$cache_key]+set} ]]; then
+      id="${_MANIFEST_FIELDS[$cache_key]}"
+    else
+      _manifest_read_block_into "$f" block
+      [[ -z $block ]] && continue
+      _manifest_parse_field "$block" "II_ID" id
+      _MANIFEST_FIELDS[$cache_key]="$id"
+    fi
+    [[ -n $id ]] && printf '%s\n' "$id"
   done < <(manifest_list_files "$@")
 }
 
@@ -238,9 +274,22 @@ manifest_path_for() {
     fi
     return 1
   fi
-  local f manifest_id
+  # Inlined cache+parse instead of calling `$(manifest_get_field ...)` per
+  # file — the inner $() is a subshell fork, and on Windows Bash a
+  # fork-per-file in this hot path made test-manifest's post-Test-7 loop
+  # take minutes. Reading directly through the printf-v helpers keeps the
+  # whole iteration in-shell.
+  local f cache_key manifest_id block
   while IFS= read -r f; do
-    manifest_id=$(manifest_get_field "$f" "II_ID")
+    cache_key="$f|II_ID"
+    if [[ -n ${_MANIFEST_FIELDS[$cache_key]+set} ]]; then
+      manifest_id="${_MANIFEST_FIELDS[$cache_key]}"
+    else
+      _manifest_read_block_into "$f" block
+      [[ -z $block ]] && continue
+      _manifest_parse_field "$block" "II_ID" manifest_id
+      _MANIFEST_FIELDS[$cache_key]="$manifest_id"
+    fi
     if [[ $manifest_id == "$id" ]]; then
       echo "$f"
       return 0
