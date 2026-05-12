@@ -105,7 +105,11 @@ change actually requires one).
   Wayland desktop logins keep working. The original `/etc/motd` is
   backed up and truncated so it doesn't flash before the new banner.
   Editable: `MOTD_NAME`, `MOTD_IP_URL`, `MOTD_SMALL_SIZE` (column
-  threshold below which the small variant is used).
+  threshold below which the small variant is used). The weather row
+  auto-swaps to a `vcgencmd get_throttled` status line when the
+  `motd-weather` add-on isn't installed — so a station Pi without the
+  weather add-on shows under-voltage / thermal-throttle state instead
+  of an empty "None" row.
 - **motd-weather** — adds a current-conditions block. Requires a free
   API key — set `MOTD_WEATHER_API_KEY` and `MOTD_WEATHER_LOC_CODE` in
   the config editor before installing or the install will fail-stop.

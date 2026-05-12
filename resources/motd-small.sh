@@ -139,6 +139,36 @@ else
 fi
 
 ###############################################################################
+# Throttle status (replaces the WX line when motd-weather isn't installed)
+###############################################################################
+# Same signal-source as motd.sh: motd-weather drops the hourly cron; absence
+# of the cron file means the weather add-on is uninstalled, so show throttle
+# state in its place.
+WEATHER_CRON="/etc/cron.hourly/motd-current-weather"
+throttle_status=""
+
+if [[ ! -x "$WEATHER_CRON" ]]; then
+  if command -v vcgencmd >/dev/null 2>&1; then
+    throttle_raw=$(vcgencmd get_throttled 2>/dev/null | cut -d= -f2)
+    if [[ "$throttle_raw" == "0x0" ]]; then
+      throttle_status="OK"
+    else
+      throttle_status="${throttle_raw:-?} - Check Power"
+    fi
+  else
+    throttle_status="Unavailable"
+  fi
+fi
+
+if [[ -n "$throttle_status" ]]; then
+  weatherLineLabel="Throt "
+  weatherLineValue="$throttle_status"
+else
+  weatherLineLabel="WX    "
+  weatherLineValue="$weatherDisplay"
+fi
+
+###############################################################################
 # Temperature
 ###############################################################################
 cpuTemp0=$(cat /sys/class/thermal/thermal_zone0/temp)
@@ -187,5 +217,5 @@ $(tput setaf 1)Disk   :$(tput setaf 2) $(df -h ~ | awk 'NR==2 { printf "Total: %
 $(tput setaf 1)Memory :$(tput setaf 2) $(free -m | awk 'NR==2 { printf "Used: %sMB, Free: %sMB",$3,$4; }') ($(ps ax | wc -l | tr -d " ") Processes)
 $(tput setaf 1)Temp   :$(tput setaf 2) $temperatureOutput
 $(tput setaf 1)IPs    :$(tput setaf 2) Int: $ipInternal Ext: $ipExternal
-$(tput setaf 1)WX     :$(tput setaf 2) $weatherDisplay
+$(tput setaf 1)$weatherLineLabel :$(tput setaf 2) $weatherLineValue
 $(tput sgr0)"

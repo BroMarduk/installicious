@@ -189,6 +189,38 @@ if [[ -f "$WEATHER_FILE" ]]; then
 fi
 
 ###############################################################################
+# Throttle status (replaces the Weather line when motd-weather isn't installed)
+###############################################################################
+# motd-weather installs /etc/cron.hourly/motd-current-weather; we use its
+# presence as the "weather feature is installed" signal. When it's missing,
+# we surface the Pi's throttle/under-voltage state instead — far more useful
+# than a permanently-empty "None" weather row on a station Pi without the
+# weather add-on.
+WEATHER_CRON="/etc/cron.hourly/motd-current-weather"
+throttle_status=""
+
+if [[ ! -x "$WEATHER_CRON" ]]; then
+  if command -v vcgencmd >/dev/null 2>&1; then
+    throttle_raw="$(vcgencmd get_throttled 2>/dev/null | cut -d= -f2)"
+    if [[ "$throttle_raw" == "0x0" ]]; then
+      throttle_status="OK"
+    else
+      throttle_status="${throttle_raw:-?} - Check Power"
+    fi
+  else
+    throttle_status="Unavailable"
+  fi
+fi
+
+if [[ -n "$throttle_status" ]]; then
+  weatherLineLabel="Throttled    "
+  weatherLineValue="$throttle_status"
+else
+  weatherLineLabel="Weather 05255"
+  weatherLineValue="$weatherDisplay"
+fi
+
+###############################################################################
 # Temperature
 ###############################################################################
 cpuTempRaw="$(< /sys/class/thermal/thermal_zone0/temp)"
@@ -239,6 +271,6 @@ $(tput setaf 1)  Load Averages :$(tput setaf 2) $one @ 1m | $five @ 5m | $fiftee
 $(tput setaf 1)  Temperature   :$(tput setaf 2) $temperatureOutput
 $(tput setaf 1)  Internal IP   :$(tput setaf 2) $ipInternal
 $(tput setaf 1)  External IP   :$(tput setaf 2) $ipExternal
-$(tput setaf 1)  Weather 05255 :$(tput setaf 2) $weatherDisplay
+$(tput setaf 1)  $weatherLineLabel :$(tput setaf 2) $weatherLineValue
 $(tput sgr0)"
 
