@@ -12,17 +12,20 @@
 #       weewx-webroot          — repoints the active backend's default
 #                                site at /var/www/html/weewx so visitors
 #                                hit the WeeWX page at "/"
-#       weewx-site-zram        — mounts /var/www/html/weewx on tmpfs and
-#                                installs a boot loading page (named
-#                                -zram for symmetry with the DB wrapper;
-#                                actual backing store is tmpfs since
-#                                the site is just static HTML+PNG)
-#       weewx-database-zram    — moves /var/lib/weewx to a zram-backed
+#       weewx-site-ram         — mounts /var/www/html/weewx on tmpfs and
+#                                installs a boot loading page (tmpfs,
+#                                not zram — the site is just static
+#                                HTML+PNG so compression adds nothing;
+#                                name uses -ram for symmetry with
+#                                feature-ram-logging / weewx-database-ram)
+#       weewx-database-ram     — moves /var/lib/weewx to a zram-backed
 #                                ext4 with validated hourly + shutdown
 #                                snapshots; spares the SD card from
 #                                WeeWX's continuous DB writes
 #   - locale (deselectable), bash, motd
 #   - skyfield (transitively pulls the weewx apt package via its II_DEPS)
+#   - ram-logging — log2ram on a station Pi is a strict win, so it's
+#     default-on under this role (still optional under other roles).
 #
 # motd-weather and motd-updates are intentionally NOT listed here even
 # though both are useful — they're hidden children of motd and surface
@@ -31,8 +34,14 @@
 # sub-screen; default state there comes from each child's own
 # II_DEFAULT_SELECTED.
 #
-# OPTIONAL exposes Pi-tuning toggles (rconf, compressed-swap,
-# ram-logging) — none default-on.
+# OPTIONAL exposes Pi-tuning toggles (rconf, compressed-swap) — neither
+# default-on.
+#
+# ROLE_CONFIG points at config/weewx.config so the in-menu editor sees
+# the shared WEEWX_* defaults (WEB_DIR, TMPFS_SIZE, DB_DIR, DB_HDD_DIR,
+# DB_ROTATIONS, DB_ZRAM_SIZE). Without this, the editor would render
+# blank rows for those keys since no per-feature config/<id>.config
+# files exist for them.
 #
 # Still freestanding under scripts/ (not yet first-class features):
 # weewx-nginx-ssl (subsumed by feature-webserver-ssl for cert issuance —
@@ -43,8 +52,8 @@ ROLE_ID="weewx"
 ROLE_TITLE="WeeWx"
 ROLE_DESCRIPTION="Weather station software + Skyfield extension."
 ROLE_FEATURES_REQUIRED="pkupd webserver"
-ROLE_FEATURES_DEFAULT="weewx-webroot weewx-site-zram weewx-database-zram locale bash motd skyfield"
-ROLE_FEATURES_OPTIONAL="rconf compressed-swap ram-logging"
-ROLE_CONFIG=""
+ROLE_FEATURES_DEFAULT="weewx-webroot weewx-site-ram weewx-database-ram locale bash motd skyfield ram-logging"
+ROLE_FEATURES_OPTIONAL="rconf compressed-swap"
+ROLE_CONFIG="config/weewx.config"
 ROLE_EDITABLE_CONFIG=""
 # === II_ROLE_END ===

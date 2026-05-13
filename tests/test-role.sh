@@ -148,8 +148,8 @@ weewx_req=$(role_get_field "$weewx_path" ROLE_FEATURES_REQUIRED)
 weewx_def=$(role_get_field "$weewx_path" ROLE_FEATURES_DEFAULT)
 weewx_opt=$(role_get_field "$weewx_path" ROLE_FEATURES_OPTIONAL)
 chkeq "weewx required" "$weewx_req" "pkupd webserver"
-chkeq "weewx default"  "$weewx_def" "weewx-webroot weewx-site-zram weewx-database-zram locale bash motd skyfield"
-chkeq "weewx optional" "$weewx_opt" "rconf compressed-swap ram-logging"
+chkeq "weewx default"  "$weewx_def" "weewx-webroot weewx-site-ram weewx-database-ram locale bash motd skyfield ram-logging"
+chkeq "weewx optional" "$weewx_opt" "rconf compressed-swap"
 
 # Webserver role is the second populated role. REQUIRED includes the
 # webserver parent feature (so the apache/nginx/lighttpd/caddy radio

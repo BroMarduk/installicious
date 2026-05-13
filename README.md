@@ -51,7 +51,7 @@ no matter what TTY / SSH session you come back on.
 |---|---|---|
 | `custom`        | Custom             | Bypass the role list; pick features individually.          |
 | `webserver`     | Web Server         | Pick exactly one of apache / nginx / lighttpd / caddy.     |
-| `weewx`         | WeeWx              | Weather-station Pi. Requires `webserver`; defaults include MOTD bundle + skyfield + tmpfs/zram wrappers. |
+| `weewx`         | WeeWx              | Weather-station Pi. Requires `webserver`; defaults include the three weewx-* RAM wrappers, the MOTD bundle, skyfield, and `ram-logging`. |
 | `homeassistant` | Home Assistant     | Stub.                                                      |
 | `mediaserver`   | Media Server       | Stub.                                                      |
 | `pihole`        | Pi-Hole            | Stub.                                                      |
@@ -189,17 +189,24 @@ separately in [docs/webserver-ssl-policy-matrix.md](docs/webserver-ssl-policy-ma
 
 WeeWx-role-only features (hidden in the Custom flow via
 `II_RESTRICT_TO_ROLES="weewx"`). All three are default-on under the WeeWx
-role; the role also makes `webserver` required and pulls in `skyfield`
-(which transitively installs the `weewx` apt package).
+role; the role also makes `webserver` required, pulls in `skyfield`
+(which transitively installs the `weewx` apt package), and pre-checks
+`ram-logging` (log2ram) since a station Pi is a strict win for offloading
+`/var/log` writes to RAM.
 
-| ID                         | Title                                          | Default | Reboot      |
+| ID                      | Title                                            | Default | Reboot      |
 |---|---|---|---|
-| `weewx-webroot`         | WeeWX as default web root                      | off*    | never       |
-| `weewx-site-zram`       | WeeWX site on tmpfs (with boot loading page)   | off*    | conditional |
-| `weewx-database-zram`   | WeeWX database on zram (validated snapshots)   | off*    | conditional |
+| `weewx-webroot`         | WeeWX as default web root                        | off*    | never       |
+| `weewx-site-ram`        | WeeWX site on tmpfs (with boot loading page)     | off*    | conditional |
+| `weewx-database-ram`    | WeeWX database on zram (validated snapshots)     | off*    | conditional |
 
 *`II_DEFAULT_SELECTED="off"` at the feature level — but the WeeWx role's
 `ROLE_FEATURES_DEFAULT` checks all three on by default for that role.
+Naming note: `weewx-site-ram` actually uses **tmpfs** (uncompressed RAM —
+no benefit from compression on tiny static HTML), `weewx-database-ram`
+uses **zram** (compressed RAM block device — meaningful saves on the
+SQLite DB). The `-ram` suffix is uniform with `feature-ram-logging` for
+symmetry; the underlying mechanism differs by file.
 
 - **weewx-webroot** — repoints the active webserver backend's default
   site at `$WEEWX_WEB_DIR` (default `/var/www/html/weewx`) so visitors
@@ -210,7 +217,7 @@ role; the role also makes `webserver` required and pulls in `skyfield`
   `/etc/apache2/sites-available/000-default.conf`,
   `/etc/lighttpd/lighttpd.conf`, or `/etc/caddy/Caddyfile`). Uninstall
   restores the pre-install config from snapshot.
-- **weewx-site-zram** — mounts `$WEEWX_WEB_DIR` on tmpfs sized by
+- **weewx-site-ram** — mounts `$WEEWX_WEB_DIR` on tmpfs sized by
   `$WEEWX_TMPFS_SIZE` (default 128M) so WeeWX's ~5-minute report
   regeneration stops hammering the SD card. Drops
   `resources/weewx-loading.html` into `/usr/local/share/weewx-ramdisk/`
@@ -218,8 +225,12 @@ role; the role also makes `webserver` required and pulls in `skyfield`
   onto the (volatile) tmpfs on every boot — but only if WeeWX hasn't
   already regenerated a real `index.html`. Editable:
   `WEEWX_WEB_DIR`, `WEEWX_TMPFS_SIZE`. Uninstall removes the unit, the
-  share dir, the fstab entry, and unmounts.
-- **weewx-database-zram** — moves `/var/lib/weewx` to a dedicated
+  share dir, the fstab entry, and unmounts. **Conflicts** with
+  `webserver-under-construction` (they fight for
+  `${WEEWX_WEB_DIR}/index.html`); installing `weewx-site-ram` while
+  `webserver-under-construction` is present auto-uninstalls the latter
+  first.
+- **weewx-database-ram** — moves `/var/lib/weewx` to a dedicated
   zram-backed ext4 device with validated snapshots:
   - On install, sizes the zram at `1.5x` current DB size (floor 256M,
     rounded to 128M) and picks `zstd` on Pi 4/5, `lz4` on older.
