@@ -33,6 +33,7 @@ II_DEPS="webserver weewx"
 II_REQUIRES_REBOOT="conditional"
 II_DEFAULT_SELECTED="off"
 II_RESTRICT_TO_ROLES="weewx"
+II_CONFLICTS_WITH="webserver-under-construction"
 II_EDITABLE_CONFIG="WEEWX_WEB_DIR WEEWX_TMPFS_SIZE"
 # === II_MANIFEST_END ===
 

@@ -28,6 +28,14 @@
 #                                     #                   listed children)
 #                                     # Used by webserver to force a single
 #                                     # apache/nginx/lighttpd/caddy choice.
+#   II_CONFLICTS_WITH=""              # space-separated IDs that cannot
+#                                     # coexist with this one in the same
+#                                     # queue. Bidirectional: declaring it on
+#                                     # either side is enough (the menu
+#                                     # checks both directions when filtering).
+#                                     # E.g. weewx-site-ram and
+#                                     # webserver-under-construction both
+#                                     # manage ${WEEWX_WEB_DIR}/index.html.
 #   # === II_MANIFEST_END ===
 #
 # These vars are sourced by the script at runtime AND by the orchestrator
@@ -386,6 +394,46 @@ manifest_is_visible_for_role() {
   local r
   for r in $restrict; do
     [[ "$r" == "$current_role" ]] && return 0
+  done
+  return 1
+}
+
+# manifest_get_conflicts <id> [<dir>...] -> echo space-separated IDs declared
+# in this manifest's II_CONFLICTS_WITH. Empty (and rc=0) if the manifest is
+# missing or the field is unset. Used by menu filters to drop pickable rows
+# that would deadlock with an already-queued feature.
+manifest_get_conflicts() {
+  local id="$1"
+  shift
+  local path
+  path=$(manifest_path_for "$id" "$@")
+  [[ -z $path ]] && return 0
+  manifest_get_field "$path" "II_CONFLICTS_WITH"
+}
+
+# manifest_is_in_conflict_with <candidate_id> <queue_id>... -> rc=0 if any
+# id in <queue_id...> conflicts with <candidate_id>, rc=1 otherwise.
+#
+# Bidirectional: a conflict declared on EITHER side counts. We check both
+# directions so neither side has to know about the other for the gate to
+# fire. A missing manifest is treated as not-in-conflict (callers iterate
+# registry IDs and we don't want a typo to look like a conflict).
+manifest_is_in_conflict_with() {
+  local candidate="$1"
+  shift
+  local cand_conflicts queue_id queue_conflicts c
+  cand_conflicts=$(manifest_get_conflicts "$candidate")
+  for queue_id in "$@"; do
+    [[ -z $queue_id || $queue_id == "$candidate" ]] && continue
+    # Direction 1: candidate's manifest lists queue_id
+    for c in $cand_conflicts; do
+      [[ $c == "$queue_id" ]] && return 0
+    done
+    # Direction 2: queue_id's manifest lists candidate
+    queue_conflicts=$(manifest_get_conflicts "$queue_id")
+    for c in $queue_conflicts; do
+      [[ $c == "$candidate" ]] && return 0
+    done
   done
   return 1
 }

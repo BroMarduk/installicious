@@ -301,5 +301,88 @@ manifest_is_visible_for_role skyfield pihole; chkrc "real skyfield hidden under 
 manifest_is_visible_for_role bash     custom; chkrc "real bash visible under custom"    $? 0
 manifest_is_visible_for_role git      pihole; chkrc "real git visible under pihole"     $? 0
 
+# ===========================================================================
+echo
+echo "=== Test 12: II_CONFLICTS_WITH — bidirectional conflict detection ==="
+# Synthetic conflict pair: A declares conflict with B; B says nothing.
+# The check must fire either way (caller doesn't know which side declared).
+cat > "$TMPDIR/feature-side-a.sh" <<EOF
+#!/bin/bash
+# === II_MANIFEST_BEGIN ===
+II_ID="side-a"
+II_TITLE="Side A"
+II_CATEGORY="feature"
+II_VERSION="1"
+II_DEPS=""
+II_REQUIRES_REBOOT="never"
+II_CONFLICTS_WITH="side-b"
+# === II_MANIFEST_END ===
+EOF
+cat > "$TMPDIR/feature-side-b.sh" <<EOF
+#!/bin/bash
+# === II_MANIFEST_BEGIN ===
+II_ID="side-b"
+II_TITLE="Side B"
+II_CATEGORY="feature"
+II_VERSION="1"
+II_DEPS=""
+II_REQUIRES_REBOOT="never"
+# === II_MANIFEST_END ===
+EOF
+cat > "$TMPDIR/feature-side-c.sh" <<EOF
+#!/bin/bash
+# === II_MANIFEST_BEGIN ===
+II_ID="side-c"
+II_TITLE="Side C"
+II_CATEGORY="feature"
+II_VERSION="1"
+II_DEPS=""
+II_REQUIRES_REBOOT="never"
+# === II_MANIFEST_END ===
+EOF
+
+# Direct-dir-arg form (no registry pollution).
+chkeq "side-a's conflicts"    "$(manifest_get_conflicts side-a "$TMPDIR")" "side-b"
+chkeq "side-b's conflicts"    "$(manifest_get_conflicts side-b "$TMPDIR")" ""
+chkeq "side-c's conflicts"    "$(manifest_get_conflicts side-c "$TMPDIR")" ""
+chkeq "no-such-id conflicts"  "$(manifest_get_conflicts nope    "$TMPDIR")" ""
+
+# manifest_is_in_conflict_with uses the cached registry under the hood — point
+# it at TMPDIR for this block, then point it back at the real tree for the
+# real-tree assertions below.
+PATH_FEATURES="$TMPDIR" PATH_PACKAGES="$TMPDIR"
+_MANIFEST_BLOCK=(); _MANIFEST_FIELDS=(); _MANIFEST_FILES=(); _MANIFEST_IDS=(); _MANIFEST_PATH=(); _MANIFEST_LOADED=0
+_manifest_registry_load
+
+manifest_is_in_conflict_with side-a side-b
+chkrc "A conflicts with B (A declared)" $? 0
+manifest_is_in_conflict_with side-b side-a
+chkrc "B conflicts with A (via A's decl)" $? 0
+manifest_is_in_conflict_with side-c side-a
+chkrc "C does not conflict with A"        $? 1
+manifest_is_in_conflict_with side-a side-c
+chkrc "A does not conflict with C"        $? 1
+# Self never reports as conflict.
+manifest_is_in_conflict_with side-a side-a
+chkrc "self is not a conflict"            $? 1
+# Multi-id queue: matches if ANY queued id conflicts.
+manifest_is_in_conflict_with side-a side-c side-b
+chkrc "A conflicts when B is anywhere in queue" $? 0
+manifest_is_in_conflict_with side-a side-c side-c
+chkrc "A does not conflict on a c-only queue"   $? 1
+
+# Real-tree check: weewx-site-ram and webserver-under-construction declare a
+# mutual conflict via II_CONFLICTS_WITH (they fight for WEEWX_WEB_DIR/index.html).
+PATH_FEATURES="features" PATH_PACKAGES="packages"
+_MANIFEST_BLOCK=(); _MANIFEST_FIELDS=(); _MANIFEST_FILES=(); _MANIFEST_IDS=(); _MANIFEST_PATH=(); _MANIFEST_LOADED=0
+_manifest_registry_load
+
+manifest_is_in_conflict_with weewx-site-ram webserver-under-construction
+chkrc "real site-ram blocked by under-construction" $? 0
+manifest_is_in_conflict_with webserver-under-construction weewx-site-ram
+chkrc "real under-construction blocked by site-ram" $? 0
+manifest_is_in_conflict_with weewx-site-ram motd
+chkrc "real site-ram not in conflict with motd"     $? 1
+
 echo
 echo "=== Done ==="
