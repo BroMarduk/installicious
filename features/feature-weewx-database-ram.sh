@@ -57,7 +57,7 @@ state_apply_menu_overrides
 WEEWX_DB_DIR="${WEEWX_DB_DIR:-/var/lib/weewx}"
 WEEWX_DB_HDD_DIR="${WEEWX_DB_HDD_DIR:-/var/lib/weewx.hdd}"
 WEEWX_DB_ROTATIONS="${WEEWX_DB_ROTATIONS:-5}"
-WEEWX_DB_ZRAM_SIZE="${WEEWX_DB_ZRAM_SIZE:-}"
+WEEWX_DB_ZRAM_SIZE="${WEEWX_DB_ZRAM_SIZE:-AUTO}"
 
 RAMDISK_CONF="/etc/weewx-ramdisk.conf"
 SETUP_BIN="/usr/local/sbin/weewx-ram-setup"
@@ -93,7 +93,8 @@ STATUS_FILE=$(status_file_for "$II_ID")
 # up to 128M, floor 256M. zstd compresses denser but costs more CPU; we
 # only use it on Pi 4-class hardware that can absorb the overhead.
 # WEEWX_DB_ZRAM_SIZE (in config/weewx.config) is the manual override:
-# when non-empty, it wins over the auto-sized value.
+# "AUTO" (case-insensitive) or empty → compute. Anything else (e.g.
+# "1024M") wins over the auto-sized value.
 compute_ram_plan() {
   local pi_model="unknown"
   [[ -r /proc/device-tree/model ]] && pi_model=$(tr -d '\0' < /proc/device-tree/model 2>/dev/null)
@@ -108,7 +109,8 @@ compute_ram_plan() {
   [[ -f $db_path ]] && db_mb=$(( $(stat -c %s "$db_path") / 1024 / 1024 ))
   DETECTED_DB_MB=$db_mb
 
-  if [[ -n $WEEWX_DB_ZRAM_SIZE ]]; then
+  local zram_override="${WEEWX_DB_ZRAM_SIZE^^}"
+  if [[ -n $zram_override && $zram_override != "AUTO" ]]; then
     ZRAM_SIZE="$WEEWX_DB_ZRAM_SIZE"
     ZRAM_SIZE_SOURCE="manual override (WEEWX_DB_ZRAM_SIZE)"
   else

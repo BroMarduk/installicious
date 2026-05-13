@@ -235,7 +235,8 @@ symmetry; the underlying mechanism differs by file.
   - On install, sizes the zram at `1.5x` current DB size (floor 256M,
     rounded to 128M) and picks `zstd` on Pi 4/5, `lz4` on older.
     Set `WEEWX_DB_ZRAM_SIZE` (e.g. `"1024M"`) to pin the size manually
-    when you know the DB is about to grow.
+    when you know the DB is about to grow. Default is `"AUTO"` (or
+    empty — both trigger the compute path).
   - Boot: walks the rotation (`weewx.sdb`, `.1`, `.2`, …) until one
     passes `PRAGMA quick_check`; refuses to start if none validate
     rather than hand WeeWX a corrupt DB.
@@ -246,7 +247,7 @@ symmetry; the underlying mechanism differs by file.
     service so the user can't restart the ramdisk out from under a
     running WeeWX.
   - Editable: `WEEWX_DB_DIR`, `WEEWX_DB_HDD_DIR`, `WEEWX_DB_ROTATIONS`,
-    `WEEWX_DB_ZRAM_SIZE` (empty = auto-compute).
+    `WEEWX_DB_ZRAM_SIZE` (`"AUTO"` or empty = auto-compute).
 
 Still freestanding under `scripts/` (not yet first-class features):
 `weewx-onedrive-backup.sh`, `weewx-nginx-ssl.sh` (cert issuance is now
