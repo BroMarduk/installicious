@@ -18,24 +18,34 @@
 #
 # Role-flow order (role declares REQUIRED / DEFAULT / OPTIONAL features):
 #
-#   pick_role  →  show_required*  →  pick_addons_required*  →  pick_optional*
-#                                                           →  merge_role
-#                                                           →  pick_addons*
-#                                                           →  pick_packages*
-#                                                           →  merge_packages
-#                                                           →  edit_config*
-#                                                           →  confirm  →  run
+#   pick_role  →  show_required*       →  pick_addons_required*
+#              →  pick_role_specific*  →  pick_optional*
+#                                      →  merge_role
+#                                      →  pick_addons*
+#                                      →  pick_packages*
+#                                      →  merge_packages
+#                                      →  edit_config*
+#                                      →  confirm  →  run
 #
 #   Step ordering (role flow, mapped to Daisy's 7-step ask):
 #     1. pick_role
 #     2. show_required (info)
 #     3. pick_addons_required (MANDATORY single-pick radios only —
 #        e.g. webserver's apache/nginx/lighttpd/caddy chooser).
-#     4. pick_optional — role's DEFAULT + OPTIONAL, conflict-filtered.
+#     4a. pick_role_specific — items in the role's DEFAULT+OPTIONAL
+#         tiers that declare II_RESTRICT_TO_ROLES naming this role
+#         (e.g. weewx-webroot, weewx-site-ram, weewx-database-ram,
+#         skyfield on the WeeWx role). Conflict-filtered.
+#     4b. pick_optional — items in the role's DEFAULT+OPTIONAL tiers
+#         that aren't role-specific (the cross-role / generic items:
+#         locale, bash, motd, ram-logging, rconf, compressed-swap on
+#         the WeeWx role). Conflict-filtered against everything from
+#         steps 1-4a so a step-4a pick can naturally exclude a
+#         step-4b row.
 #     5. pick_addons — ALL in-queue parents' non-exclusive sub-features,
 #        conflict-filtered (e.g. nginx's webserver-under-construction /
 #        webserver-ssl get filtered when weewx-site-ram was picked at
-#        step 4).
+#        step 4a).
 #     6. pick_packages — packages picker: required (auto-installed via
 #        II_DEPS) listed in header; remaining packages selectable, with
 #        II_RESTRICT_TO_ROLES + II_CONFLICTS_WITH excluded.
@@ -54,9 +64,15 @@
 #                         optional groups on required parents defer to
 #                         pick_addons so the conflict filter has
 #                         visibility into the step-4 picks.
-#   pick_optional         Role: pick optional add-on features
-#                         (DEFAULT + OPTIONAL, conflict-filtered)
-#   merge_role            internal: stage selected = required + optional
+#   pick_role_specific    Role: pick optional add-ons from the tier list
+#                         that declare II_RESTRICT_TO_ROLES naming this
+#                         role. Conflict-filtered. Auto-skipped when no
+#                         role-specific items exist.
+#   pick_optional         Role: pick the remaining (generic) optional
+#                         add-ons — tier items WITHOUT a role restriction.
+#                         Conflict-filtered against role_required +
+#                         step-3 picks + step-4a picks.
+#   merge_role            internal: stage selected = required + role-specific + generic
 #   pick_addons           sub-menu(s) for ALL in-queue parents with a
 #                         non-exclusive II_OPTIONAL_GROUP, conflict-filtered
 #   pick_packages         pick from packages/ (II_CATEGORY="package");
@@ -115,13 +131,23 @@ role_title=""
 role_required=""
 role_default=""
 role_optional=""
+# Split of the role's DEFAULT+OPTIONAL tiers into "role-specific" vs
+# "generic", computed once when pick_role completes. Role-specific
+# items are those with II_RESTRICT_TO_ROLES naming the current role
+# (e.g. weewx-webroot, weewx-site-ram, weewx-database-ram, skyfield —
+# all restricted to "weewx"). Generic items have no restriction. The
+# two lists feed two separate pickers: pick_role_specific (step 4a)
+# and pick_optional (step 4b, generic only).
+role_specific_features=""
+role_generic_features=""
 features_selected=""
 packages_selected=""
+role_specific_picked=""
 optional_picked=""
-# Whether the user has visited the optional checklist for this role yet.
-# On the first visit we seed optional_picked from the role's DEFAULT list
-# so those items are pre-checked; subsequent visits preserve the user's
-# edits via optional_picked itself.
+# Per-stage "have I shown this screen yet?" flags. First visit seeds
+# the picker from the relevant tier defaults; later visits preserve
+# whatever the user actually picked.
+role_specific_visited=0
 optional_visited=0
 selected=""           # final list (parents + their picked add-ons)
 selected_parents=""   # the user's category/role picks BEFORE add-ons get merged
@@ -214,19 +240,103 @@ _required_packages_from_features() {
 # features (the stubbed roles today: homeassistant, mediaserver, pihole).
 # Both flow through the per-feature checklist (custom_features → pick_addons
 # → pick_packages → edit_config → confirm) instead of
-# show_required / pick_optional.
+# show_required / pick_role_specific / pick_optional.
 _role_uses_custom_flow() {
   [[ $role_id == "custom" ]] && return 0
   [[ -z $role_required && -z $role_default && -z $role_optional ]] && return 0
   return 1
 }
-# What pick_addons (non-required parents) rewinds to.
+
+# Splits the role's DEFAULT + OPTIONAL tiers into "role-specific"
+# (II_RESTRICT_TO_ROLES contains $role_id) and "generic" (no restriction
+# on this role). The split is what powers the new step-4a / step-4b
+# distinction — role-specific items get their own picker first so the
+# user thinks about the decisions only meaningful under THIS role,
+# then a separate generic picker surfaces the cross-role choices.
+#
+# A feature whose II_RESTRICT_TO_ROLES is set BUT doesn't include the
+# current role is a role-author error (the feature is on a tier list
+# for a role that's not allowed to install it). We drop it from both
+# lists here — the queue would refuse to install it anyway via
+# manifest_is_visible_for_role at the install body level.
+_compute_role_specific_features() {
+  local out="" id ppath restrict r matched
+  for id in $role_default $role_optional; do
+    [[ -z $id ]] && continue
+    ppath=$(manifest_path_for "$id" 2>/dev/null)
+    [[ -z $ppath ]] && continue
+    restrict=$(manifest_get_field "$ppath" "II_RESTRICT_TO_ROLES")
+    [[ -z $restrict ]] && continue
+    matched=0
+    for r in $restrict; do [[ "$r" == "$role_id" ]] && matched=1 && break; done
+    [[ $matched -eq 1 ]] && out+=" $id"
+  done
+  echo "$out" | tr -s ' ' | sed 's/^ //; s/ $//'
+}
+
+_compute_role_generic_features() {
+  local out="" id ppath restrict
+  for id in $role_default $role_optional; do
+    [[ -z $id ]] && continue
+    ppath=$(manifest_path_for "$id" 2>/dev/null)
+    [[ -z $ppath ]] && continue
+    restrict=$(manifest_get_field "$ppath" "II_RESTRICT_TO_ROLES")
+    [[ -z $restrict ]] && out+=" $id"
+    # Items with a non-empty restriction that includes $role_id are
+    # role-specific (see _compute_role_specific_features); ones with a
+    # restriction excluding $role_id are dropped (role-author error).
+  done
+  echo "$out" | tr -s ' ' | sed 's/^ //; s/ $//'
+}
+
+# Filter a feature list to the role_default subset (those that should
+# be pre-checked on first visit). Used to seed role_specific_picked
+# and optional_picked from the right defaults.
+_intersect_with_role_default() {
+  local out="" id d
+  for id in $1; do
+    for d in $role_default; do
+      [[ "$id" == "$d" ]] && out+=" $id" && break
+    done
+  done
+  echo "$out" | tr -s ' ' | sed 's/^ //; s/ $//'
+}
+
+# What pick_addons (non-required parents) rewinds to. Same idea as
+# before but now the chain runs through pick_optional (generic) →
+# pick_role_specific (role-curated) → pick_addons_required (radios) →
+# show_required → pick_role, with each stage skipped when its data
+# set is empty.
 _pre_addons_stage() {
   if _role_uses_custom_flow; then
     echo "custom_features"
-  elif [[ -n $role_default || -n $role_optional ]]; then
+  elif [[ -n $role_generic_features ]]; then
     echo "pick_optional"
+  elif [[ -n $role_specific_features ]]; then
+    echo "pick_role_specific"
   elif _any_required_parent_has_radios; then
+    echo "pick_addons_required"
+  elif [[ -n $role_required ]]; then
+    echo "show_required"
+  else
+    echo "pick_role"
+  fi
+}
+# Where BACK from pick_optional goes (step 4b → step 4a or earlier).
+_pre_optional_stage() {
+  if [[ -n $role_specific_features ]]; then
+    echo "pick_role_specific"
+  elif _any_required_parent_has_radios; then
+    echo "pick_addons_required"
+  elif [[ -n $role_required ]]; then
+    echo "show_required"
+  else
+    echo "pick_role"
+  fi
+}
+# Where BACK from pick_role_specific goes (step 4a → step 3 or earlier).
+_pre_role_specific_stage() {
+  if _any_required_parent_has_radios; then
     echo "pick_addons_required"
   elif [[ -n $role_required ]]; then
     echo "show_required"
@@ -309,17 +419,25 @@ while true; do
         role_required=$(role_get_field "$role_path" "ROLE_FEATURES_REQUIRED")
         role_default=$(role_get_field "$role_path" "ROLE_FEATURES_DEFAULT")
         role_optional=$(role_get_field "$role_path" "ROLE_FEATURES_OPTIONAL")
+        # Classify the tier list into role-specific (II_RESTRICT_TO_ROLES
+        # contains $role_id) and generic (no restriction). Each gets its
+        # own picker — step 4a + step 4b — so role-curated decisions
+        # land before the cross-role ones.
+        role_specific_features=$(_compute_role_specific_features)
+        role_generic_features=$(_compute_role_generic_features)
         if [[ -n $role_required ]]; then
           stage="show_required"
-        elif [[ -n $role_default || -n $role_optional ]]; then
+        elif [[ -n $role_specific_features ]]; then
+          stage="pick_role_specific"
+        elif [[ -n $role_generic_features ]]; then
           stage="pick_optional"
         else
           # Role with no features in any tier — the stubbed roles today
-          # (homeassistant, mediaserver, pihole, weewx) take this branch.
-          # Behave like Custom: drop into the per-feature picker so the
-          # user can still build a queue. Once a stub populates any of
-          # REQUIRED / DEFAULT / OPTIONAL it'll route through one of the
-          # role-driven stages above.
+          # (homeassistant, mediaserver, pihole) take this branch. Behave
+          # like Custom: drop into the per-feature picker so the user can
+          # still build a queue. Once a stub populates any of REQUIRED /
+          # DEFAULT / OPTIONAL it'll route through one of the role-driven
+          # stages above.
           log_info "Role $role_id has no required/default/optional features defined; routing to per-feature picker."
           stage="custom_features"
         fi
@@ -457,96 +575,155 @@ while true; do
         continue
       fi
 
-      # Forward: pick_optional if the role offers any default/optional
-      # features, otherwise straight to merge_role. (No work shown if
-      # _screens stayed empty — no required parent had an exclusive group.)
+      # Forward: pick_role_specific (step 4a) if the role has any
+      # role-specific items, else pick_optional (step 4b) if any generic
+      # items, else straight to merge_role. (No work shown if _screens
+      # stayed empty — no required parent had an exclusive group.)
       if [[ ${#_screens[@]} -eq 0 ]]; then
         log_info "No required parents have exclusive II_OPTIONAL_GROUP; auto-advancing past step 3."
       fi
-      if [[ -n $role_default || -n $role_optional ]]; then
+      if [[ -n $role_specific_features ]]; then
+        stage="pick_role_specific"
+      elif [[ -n $role_generic_features ]]; then
         stage="pick_optional"
       else
         stage="merge_role"
       fi
       ;;
 
+    pick_role_specific)
+      log_info "Rendering role-specific picker for role $role_id (step 4a)."
+      # Step 4a: items in the role's DEFAULT+OPTIONAL tiers that are
+      # restricted to THIS role (II_RESTRICT_TO_ROLES contains $role_id).
+      # The split is automatic — role authors don't add a new tier, they
+      # just set II_RESTRICT_TO_ROLES on their role-specific features.
+      # Defaults follow tier membership: items also in role_default are
+      # pre-checked, items only in role_optional start off.
+      if [[ -z $role_specific_features ]]; then
+        log_info "No role-specific features for $role_id; auto-advancing."
+        if [[ -n $role_generic_features ]]; then
+          stage="pick_optional"
+        else
+          stage="merge_role"
+        fi
+        continue
+      fi
+
+      if [[ $role_specific_visited -eq 0 ]]; then
+        role_specific_picked=$(_intersect_with_role_default "$role_specific_features")
+        role_specific_visited=1
+      fi
+
+      # Conflict-filter the visible items against the locked-in queue
+      # (role_required + step-3 addons_picked values).
+      _rs_queue_snapshot="$role_required"
+      for _akey in "${!addons_picked[@]}"; do _rs_queue_snapshot+=" ${addons_picked[$_akey]}"; done
+      _rs_filtered=""
+      for _id in $role_specific_features; do
+        # shellcheck disable=SC2086
+        if manifest_is_in_conflict_with "$_id" $_rs_queue_snapshot; then
+          log_info "  filter: $_id (role-specific tier) — conflicts with the locked-in queue."
+          continue
+        fi
+        _rs_filtered+=" $_id"
+      done
+      _rs_filtered=$(echo "$_rs_filtered" | tr -s ' ' | sed 's/^ //; s/ $//')
+
+      auto_selected=$(_auto_selected_for_optional)
+      if [[ -n $auto_selected ]]; then
+        rs_desc="Auto-selected (will install automatically):\n  $auto_selected\n\nRole-specific add-ons below — these only make sense under the $role_title role. Default-on rows are pre-checked; toggle as needed."
+      else
+        rs_desc="Role-specific add-ons (under the $role_title role)."
+      fi
+
+      # shellcheck disable=SC2086
+      role_specific_picked=$(menu_pick_optionals "$role_title - Role-specific" \
+        --desc "$rs_desc" \
+        --previously "${role_specific_picked//\"/}" \
+        $_rs_filtered)
+      rc=$?
+      case $rc in
+        0)
+          if [[ -n $role_generic_features ]]; then
+            stage="pick_optional"
+          else
+            stage="merge_role"
+          fi
+          ;;
+        1|255) stage=$(_pre_role_specific_stage) ;;
+        2)
+          # Nothing to render here either (whole list got conflict-filtered).
+          role_specific_picked=""
+          if [[ -n $role_generic_features ]]; then
+            stage="pick_optional"
+          else
+            stage="merge_role"
+          fi
+          ;;
+      esac
+      ;;
+
     pick_optional)
-      log_info "Rendering optional-features picker for role $role_id (step 4)."
-      # First visit for this role: seed user's selection with the role's
-      # DEFAULT list so those items are pre-checked. Items in
-      # ROLE_FEATURES_OPTIONAL stay unchecked until the user toggles them.
+      log_info "Rendering generic optional-features picker for role $role_id (step 4b)."
+      # Step 4b: items in the role's DEFAULT+OPTIONAL tiers that are NOT
+      # restricted to this role (the cross-role-available features:
+      # locale, bash, motd, ram-logging, rconf, compressed-swap on the
+      # WeeWx role). Filtered against the same conflict snapshot as
+      # step 4a plus role_specific_picked, so generic items that conflict
+      # with role-specific picks drop out here.
+      if [[ -z $role_generic_features ]]; then
+        log_info "No generic optional features for $role_id; auto-advancing."
+        stage="merge_role"
+        continue
+      fi
+      # First visit: seed picked from generic items also in DEFAULT.
       if [[ $optional_visited -eq 0 ]]; then
-        optional_picked="$role_default"
+        optional_picked=$(_intersect_with_role_default "$role_generic_features")
         optional_visited=1
       fi
       # Compose the screen description so the user sees what's already
-      # locked in (role_required + the radio backend picked in
-      # pick_addons_required), mirroring how pick_packages shows
-      # auto-installed required packages above its checklist.
+      # locked in (role_required + step-3 picks + step-4a picks).
       auto_selected=$(_auto_selected_for_optional)
+      _rs_for_header="${role_specific_picked//\"/}"
+      [[ -n $_rs_for_header ]] && auto_selected="$auto_selected $_rs_for_header"
+      auto_selected=$(echo "$auto_selected" | tr -s ' ' | sed 's/^ //; s/ $//')
       if [[ -n $auto_selected ]]; then
-        optional_desc="Auto-selected (will install automatically):\n  $auto_selected\n\nOptional add-ons below. Default-on rows are pre-checked; toggle as needed."
+        optional_desc="Auto-selected (will install automatically):\n  $auto_selected\n\nGeneric optional add-ons below. Default-on rows are pre-checked; toggle as needed."
       else
-        optional_desc="Optional add-ons (default off; pick any you want)."
+        optional_desc="Generic optional add-ons (default off; pick any you want)."
       fi
 
-      # Apply the II_CONFLICTS_WITH filter: drop any role-tier item that
-      # conflicts with the locked-in queue (role_required + step-3 picks).
-      # Today no real conflict pair lives across this boundary (the canonical
-      # pair, weewx-site-ram ↔ webserver-under-construction, sits at the
-      # role-tier vs nginx-sub-feature boundary which is caught in step 5),
-      # but the filter is in place for future role authors who put
-      # conflicting items in the tier list.
-      _opt_queue_snapshot="$role_required"
+      # Conflict filter: snapshot includes role_required + step-3 picks +
+      # step-4a (role_specific_picked) so any generic item that conflicts
+      # with the user's role-specific selections is dropped here.
+      _opt_queue_snapshot="$role_required ${role_specific_picked//\"/}"
       for _akey in "${!addons_picked[@]}"; do _opt_queue_snapshot+=" ${addons_picked[$_akey]}"; done
-      _opt_default_filtered=""
-      _opt_optional_filtered=""
-      for _id in $role_default; do
+      _opt_filtered=""
+      for _id in $role_generic_features; do
         # shellcheck disable=SC2086
         if manifest_is_in_conflict_with "$_id" $_opt_queue_snapshot; then
-          log_info "  filter: $_id (default tier) — conflicts with the locked-in queue."
+          log_info "  filter: $_id (generic tier) — conflicts with the locked-in queue."
           continue
         fi
-        _opt_default_filtered+=" $_id"
+        _opt_filtered+=" $_id"
       done
-      for _id in $role_optional; do
-        # shellcheck disable=SC2086
-        if manifest_is_in_conflict_with "$_id" $_opt_queue_snapshot; then
-          log_info "  filter: $_id (optional tier) — conflicts with the locked-in queue."
-          continue
-        fi
-        _opt_optional_filtered+=" $_id"
-      done
-      _opt_default_filtered=$(echo "$_opt_default_filtered" | tr -s ' ' | sed 's/^ //; s/ $//')
-      _opt_optional_filtered=$(echo "$_opt_optional_filtered" | tr -s ' ' | sed 's/^ //; s/ $//')
+      _opt_filtered=$(echo "$_opt_filtered" | tr -s ' ' | sed 's/^ //; s/ $//')
 
       # shellcheck disable=SC2086
       optional_picked=$(menu_pick_optionals "$role_title" \
         --desc "$optional_desc" \
         --previously "${optional_picked//\"/}" \
-        $_opt_default_filtered $_opt_optional_filtered)
+        $_opt_filtered)
       rc=$?
       case $rc in
         0)     stage="merge_role" ;;
-        1|255)
-          # BACK from pick_optional rewinds to whichever stage rendered
-          # something just before us: pick_addons_required (radios) if
-          # any required parent had an exclusive sub-menu, else
-          # show_required, else pick_role for roles with no required tier.
-          if _any_required_parent_has_radios; then
-            stage="pick_addons_required"
-          elif [[ -n $role_required ]]; then
-            stage="show_required"
-          else
-            stage="pick_role"
-          fi
-          ;;
+        1|255) stage=$(_pre_optional_stage) ;;
         2)     optional_picked=""; stage="merge_role" ;;
       esac
       ;;
 
     merge_role)
-      selected="$role_required ${optional_picked//\"/}"
+      selected="$role_required ${role_specific_picked//\"/} ${optional_picked//\"/}"
       selected=$(echo "$selected" | tr -s ' ' | sed 's/^ //; s/ $//')
       if [[ -z $selected ]]; then
         log_info "User $CURRENTUSER continued without selecting any features; nothing to do."

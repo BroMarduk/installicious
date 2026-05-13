@@ -4,10 +4,12 @@
 # state machine; this file mirrors the logic so we get fast unit coverage of
 # the empty-role corner without driving whiptail.
 #
-# This is the path stubbed roles take today (homeassistant, mediaserver, pihole,
-# weewx all have empty required/optional and so flow through the Custom-style
-# per-feature picker — they "behave like Custom" until they grow real feature
-# lists).
+# This is the path stubbed roles take today (homeassistant, mediaserver,
+# pihole have empty required/optional and so flow through the
+# Custom-style per-feature picker — they "behave like Custom" until they
+# grow real feature lists). The weewx role used to be in this group but
+# has since been populated with REQUIRED + DEFAULT + OPTIONAL tiers, so
+# it no longer takes the empty-role path at runtime.
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 1
 
