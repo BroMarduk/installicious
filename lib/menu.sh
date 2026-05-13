@@ -31,7 +31,7 @@
 # selections when they navigate BACK and then forward again.
 #
 # If <exclude> (space-separated IDs) is provided, those IDs are dropped from
-# the checklist entirely. Used by custom_packages to hide packages that are
+# the checklist entirely. Used by pick_packages to hide packages that are
 # already required by selected features — those get pulled in via II_DEPS by
 # the scheduler regardless, so showing them as toggleable would be misleading.
 menu_select_category() {
