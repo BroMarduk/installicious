@@ -154,6 +154,25 @@ _any_required_parent_has_addons() {
   return 1
 }
 
+# rc=0 if any required parent declares an EXCLUSIVE II_OPTIONAL_GROUP
+# (radio-list). Used by the radio-only sub-menu stage (step 3) and the
+# BACK chain from pick_optional to know whether the radio screen exists.
+# A non-exclusive (checklist) group on a required parent doesn't count
+# here — those defer to pick_addons (step 5) so the conflict filter has
+# visibility into the user's role-tier selections from step 4.
+_any_required_parent_has_radios() {
+  local id ppath addons mode
+  for id in $role_required; do
+    ppath=$(manifest_path_for "$id" 2>/dev/null)
+    [[ -z $ppath ]] && continue
+    addons=$(manifest_get_field "$ppath" "II_OPTIONAL_GROUP")
+    [[ -z $addons ]] && continue
+    mode=$(manifest_get_field "$ppath" "II_OPTIONAL_GROUP_MODE")
+    [[ $mode == "exclusive" ]] && return 0
+  done
+  return 1
+}
+
 _any_optional_parent_has_addons() {
   local id ppath addons
   for id in $selected_parents; do
@@ -230,7 +249,7 @@ _pre_addons_stage() {
     echo "custom_features"
   elif [[ -n $role_default || -n $role_optional ]]; then
     echo "pick_optional"
-  elif _any_required_parent_has_addons; then
+  elif _any_required_parent_has_radios; then
     echo "pick_addons_required"
   elif [[ -n $role_required ]]; then
     echo "show_required"
@@ -389,14 +408,15 @@ while true; do
       ;;
 
     pick_addons_required)
-      log_info "Rendering required-feature add-on sub-menus."
-      # Walk an indexed _screens array so the user can navigate BACK one
-      # screen at a time. Level 0 holds the role_required parents that
-      # have II_OPTIONAL_GROUP. When NEXT advances past a screen we
-      # discover whether the picked feature itself has II_OPTIONAL_GROUP
-      # (e.g. nginx -> under-construction + ssl) and append it to
-      # _screens. Re-picking at an earlier level truncates the future
-      # screens so stale ones from a prior backend choice don't linger.
+      log_info "Rendering required-feature radio sub-menus (step 3)."
+      # Step 3 of the role flow: only the MANDATORY single-pick (radio /
+      # exclusive II_OPTIONAL_GROUP) sub-menus for required parents fire
+      # here. Non-exclusive (checklist) sub-menus — even on required
+      # parents — defer to pick_addons (step 5) so the conflict filter
+      # there has visibility into what the user picked on pick_optional
+      # (step 4). Concretely: webserver's apache/nginx/lighttpd/caddy
+      # radio fires here; the chosen backend's under-construction / ssl
+      # checklist does NOT fire here.
       _rewind=0
       declare -a _screens=()
       for parent_id in $role_required; do
@@ -405,6 +425,8 @@ while true; do
         [[ -z $ppath ]] && continue
         pchildren=$(manifest_get_field "$ppath" "II_OPTIONAL_GROUP")
         [[ -z $pchildren ]] && continue
+        pmode=$(manifest_get_field "$ppath" "II_OPTIONAL_GROUP_MODE")
+        [[ $pmode != "exclusive" ]] && continue
         _screens+=("$parent_id")
       done
 
@@ -414,27 +436,18 @@ while true; do
         ppath=$(manifest_path_for "$parent_id" 2>/dev/null)
         pchildren=$(manifest_get_field "$ppath" "II_OPTIONAL_GROUP")
         ptitle=$(manifest_get_field "$ppath" "II_TITLE")
-        pmode=$(manifest_get_field "$ppath" "II_OPTIONAL_GROUP_MODE")
 
-        if [[ $pmode == "exclusive" ]]; then
-          # shellcheck disable=SC2086
-          picked=$(menu_pick_one_optional "$ptitle" \
-            --previously "${addons_picked[$parent_id]:-}" \
-            $pchildren)
-        else
-          # shellcheck disable=SC2086
-          picked=$(menu_pick_optionals "$ptitle" \
-            --previously "${addons_picked[$parent_id]:-}" \
-            $pchildren)
-        fi
+        # shellcheck disable=SC2086
+        picked=$(menu_pick_one_optional "$ptitle" \
+          --previously "${addons_picked[$parent_id]:-}" \
+          $pchildren)
         rc=$?
         case $rc in
           0)
             addons_picked[$parent_id]="${picked//\"/}"
-            # Truncate _screens past the current index — any future
-            # screens belonged to a prior pick at this level and may now
-            # be stale. Then append fresh picks (only those with their
-            # own II_OPTIONAL_GROUP), skipping anything already queued.
+            # Append picked children with their OWN exclusive groups (a
+            # cascade of radios; rare but possible) so they fire as the
+            # next screen. Non-exclusive children land in step 5.
             _screens=("${_screens[@]:0:$((_idx+1))}")
             for _pid in ${picked//\"/}; do
               [[ -z $_pid ]] && continue
@@ -445,6 +458,8 @@ while true; do
               [[ -z $_pp ]] && continue
               _pc=$(manifest_get_field "$_pp" "II_OPTIONAL_GROUP")
               [[ -z $_pc ]] && continue
+              _pm=$(manifest_get_field "$_pp" "II_OPTIONAL_GROUP_MODE")
+              [[ $_pm != "exclusive" ]] && continue
               _screens+=("$_pid")
             done
             _idx=$((_idx + 1))
@@ -468,9 +483,9 @@ while true; do
 
       # Forward: pick_optional if the role offers any default/optional
       # features, otherwise straight to merge_role. (No work shown if
-      # _screens stayed empty — no required parent had II_OPTIONAL_GROUP.)
+      # _screens stayed empty — no required parent had an exclusive group.)
       if [[ ${#_screens[@]} -eq 0 ]]; then
-        log_info "No required parents have II_OPTIONAL_GROUP; auto-advancing."
+        log_info "No required parents have exclusive II_OPTIONAL_GROUP; auto-advancing past step 3."
       fi
       if [[ -n $role_default || -n $role_optional ]]; then
         stage="pick_optional"
@@ -480,7 +495,7 @@ while true; do
       ;;
 
     pick_optional)
-      log_info "Rendering optional-features picker for role $role_id."
+      log_info "Rendering optional-features picker for role $role_id (step 4)."
       # First visit for this role: seed user's selection with the role's
       # DEFAULT list so those items are pre-checked. Items in
       # ROLE_FEATURES_OPTIONAL stay unchecked until the user toggles them.
@@ -498,20 +513,51 @@ while true; do
       else
         optional_desc="Optional add-ons (default off; pick any you want)."
       fi
+
+      # Apply the II_CONFLICTS_WITH filter: drop any role-tier item that
+      # conflicts with the locked-in queue (role_required + step-3 picks).
+      # Today no real conflict pair lives across this boundary (the canonical
+      # pair, weewx-site-ram ↔ webserver-under-construction, sits at the
+      # role-tier vs nginx-sub-feature boundary which is caught in step 5),
+      # but the filter is in place for future role authors who put
+      # conflicting items in the tier list.
+      _opt_queue_snapshot="$role_required"
+      for _akey in "${!addons_picked[@]}"; do _opt_queue_snapshot+=" ${addons_picked[$_akey]}"; done
+      _opt_default_filtered=""
+      _opt_optional_filtered=""
+      for _id in $role_default; do
+        # shellcheck disable=SC2086
+        if manifest_is_in_conflict_with "$_id" $_opt_queue_snapshot; then
+          log_info "  filter: $_id (default tier) — conflicts with the locked-in queue."
+          continue
+        fi
+        _opt_default_filtered+=" $_id"
+      done
+      for _id in $role_optional; do
+        # shellcheck disable=SC2086
+        if manifest_is_in_conflict_with "$_id" $_opt_queue_snapshot; then
+          log_info "  filter: $_id (optional tier) — conflicts with the locked-in queue."
+          continue
+        fi
+        _opt_optional_filtered+=" $_id"
+      done
+      _opt_default_filtered=$(echo "$_opt_default_filtered" | tr -s ' ' | sed 's/^ //; s/ $//')
+      _opt_optional_filtered=$(echo "$_opt_optional_filtered" | tr -s ' ' | sed 's/^ //; s/ $//')
+
       # shellcheck disable=SC2086
       optional_picked=$(menu_pick_optionals "$role_title" \
         --desc "$optional_desc" \
         --previously "${optional_picked//\"/}" \
-        $role_default $role_optional)
+        $_opt_default_filtered $_opt_optional_filtered)
       rc=$?
       case $rc in
         0)     stage="merge_role" ;;
         1|255)
           # BACK from pick_optional rewinds to whichever stage rendered
-          # something just before us: pick_addons_required if any
-          # required parent had a sub-menu, else show_required, else
-          # pick_role for roles with no required tier.
-          if _any_required_parent_has_addons; then
+          # something just before us: pick_addons_required (radios) if
+          # any required parent had an exclusive sub-menu, else
+          # show_required, else pick_role for roles with no required tier.
+          if _any_required_parent_has_radios; then
             stage="pick_addons_required"
           elif [[ -n $role_required ]]; then
             stage="show_required"
@@ -539,24 +585,56 @@ while true; do
       ;;
 
     pick_addons)
-      log_info "Rendering non-required add-on sub-menus."
-      # Walk an indexed _screens array so BACK rewinds one screen at a
-      # time (rather than exiting the whole stage). Level 0 holds the
-      # non-required selected_parents that declare II_OPTIONAL_GROUP;
-      # REQUIRED parents already had their sub-menus in
-      # pick_addons_required, so they're skipped here. NEXT can append
-      # newly-picked features that themselves have II_OPTIONAL_GROUP.
+      log_info "Rendering all-parents add-on sub-menus (step 5)."
+      # Step 5 of the role flow: every parent in the queue (required +
+      # role-picked-in-step-3 + role-optional-from-step-4) that declares
+      # a NON-EXCLUSIVE II_OPTIONAL_GROUP fires its checklist here.
+      # Exclusive (radio) sub-menus already fired in pick_addons_required
+      # (step 3), so they're skipped. Each child is filtered against
+      # II_CONFLICTS_WITH the already-locked-in queue snapshot so e.g.
+      # webserver-under-construction is dropped from nginx's sub-menu
+      # when weewx-site-ram was picked at step 4.
       _rewind=0
+
+      # Candidate parents = role_required ∪ selected_parents ∪ values in
+      # addons_picked (the radio-stage backend pick lands here as e.g.
+      # addons_picked[webserver]="nginx"; nginx becomes a candidate so
+      # its own non-exclusive children — under-construction / ssl —
+      # render in step 5).
+      declare -A _cand_seen=()
+      declare -a _candidates=()
+      _push_candidate() {
+        local _id="$1"
+        [[ -z $_id || -n ${_cand_seen[$_id]:-} ]] && return 0
+        _cand_seen[$_id]=1
+        _candidates+=("$_id")
+      }
+      for parent_id in $role_required; do _push_candidate "$parent_id"; done
+      for parent_id in $selected_parents; do _push_candidate "$parent_id"; done
+      for _akey in "${!addons_picked[@]}"; do
+        for parent_id in ${addons_picked[$_akey]}; do _push_candidate "$parent_id"; done
+      done
+      unset -f _push_candidate
+
+      # Filter candidates to those with a non-exclusive optional group.
       declare -a _screens=()
-      for parent_id in $selected_parents; do
-        [[ -z $parent_id ]] && continue
-        _id_in_required "$parent_id" && continue
+      for parent_id in "${_candidates[@]}"; do
         ppath=$(manifest_path_for "$parent_id" 2>/dev/null)
         [[ -z $ppath ]] && continue
         pchildren=$(manifest_get_field "$ppath" "II_OPTIONAL_GROUP")
         [[ -z $pchildren ]] && continue
+        pmode=$(manifest_get_field "$ppath" "II_OPTIONAL_GROUP_MODE")
+        [[ $pmode == "exclusive" ]] && continue
         _screens+=("$parent_id")
       done
+
+      # Queue snapshot used by the conflict filter — IDs locked in
+      # before any step-5 picks. Newly-picked children at step 5
+      # extend this set so later screens in the same stage also see
+      # the live queue.
+      _queue_snapshot=""
+      for _qid in "${!_cand_seen[@]}"; do _queue_snapshot+=" $_qid"; done
+      _queue_snapshot=$(echo "$_queue_snapshot" | tr -s ' ' | sed 's/^ //; s/ $//')
 
       _idx=0
       while [[ $_idx -lt ${#_screens[@]} ]]; do
@@ -564,19 +642,29 @@ while true; do
         ppath=$(manifest_path_for "$parent_id" 2>/dev/null)
         pchildren=$(manifest_get_field "$ppath" "II_OPTIONAL_GROUP")
         ptitle=$(manifest_get_field "$ppath" "II_TITLE")
-        pmode=$(manifest_get_field "$ppath" "II_OPTIONAL_GROUP_MODE")
 
-        if [[ $pmode == "exclusive" ]]; then
+        # Drop children that conflict with anything currently queued.
+        _filtered=""
+        for _ch in $pchildren; do
           # shellcheck disable=SC2086
-          picked=$(menu_pick_one_optional "$ptitle" \
-            --previously "${addons_picked[$parent_id]:-}" \
-            $pchildren)
-        else
-          # shellcheck disable=SC2086
-          picked=$(menu_pick_optionals "$ptitle" \
-            --previously "${addons_picked[$parent_id]:-}" \
-            $pchildren)
+          if manifest_is_in_conflict_with "$_ch" $_queue_snapshot; then
+            log_info "  filter: $_ch (under $parent_id) — conflicts with the locked-in queue."
+            continue
+          fi
+          _filtered+=" $_ch"
+        done
+        _filtered=$(echo "$_filtered" | tr -s ' ' | sed 's/^ //; s/ $//')
+
+        if [[ -z $_filtered ]]; then
+          log_info "  $parent_id: no add-ons left after conflict filter; skipping."
+          _idx=$((_idx + 1))
+          continue
         fi
+
+        # shellcheck disable=SC2086
+        picked=$(menu_pick_optionals "$ptitle" \
+          --previously "${addons_picked[$parent_id]:-}" \
+          $_filtered)
         rc=$?
         case $rc in
           0)
@@ -584,6 +672,9 @@ while true; do
             _screens=("${_screens[@]:0:$((_idx+1))}")
             for _pid in ${picked//\"/}; do
               [[ -z $_pid ]] && continue
+              # Extend the queue snapshot with newly-picked IDs so the
+              # next screen's conflict filter sees them.
+              _queue_snapshot+=" $_pid"
               _dup=0
               for _s in "${_screens[@]}"; do [[ "$_s" == "$_pid" ]] && _dup=1 && break; done
               [[ $_dup -eq 1 ]] && continue
@@ -591,6 +682,8 @@ while true; do
               [[ -z $_pp ]] && continue
               _pc=$(manifest_get_field "$_pp" "II_OPTIONAL_GROUP")
               [[ -z $_pc ]] && continue
+              _pm=$(manifest_get_field "$_pp" "II_OPTIONAL_GROUP_MODE")
+              [[ $_pm == "exclusive" ]] && continue
               _screens+=("$_pid")
             done
             _idx=$((_idx + 1))
