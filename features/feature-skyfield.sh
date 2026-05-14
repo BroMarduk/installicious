@@ -21,9 +21,12 @@
 #                3. apt-remove the python packages we installed (per-package
 #                   pre-state check leaves anything that was already there).
 #
-#              II_DEPS="weewx" so the scheduler auto-pulls weewx into the
-#              queue (and with the hardened scheduler will refuse to start if
-#              the weewx installer is missing entirely).
+#              II_DEPS="weewx weewx-setup" so the scheduler auto-pulls the
+#              weewx apt package AND the non-interactive config pass into the
+#              queue, ordered before skyfield — the extension installs onto a
+#              fully-configured weewx.conf rather than the package default.
+#              (The hardened scheduler refuses to start if either dep's
+#              installer is missing entirely.)
 #
 #              v1 caveats: extension name "SkyfieldAlmanac" is hardcoded for
 #              the wee_extension --uninstall step; if upstream renames the
@@ -34,7 +37,7 @@ II_ID="skyfield"
 II_TITLE="SkyfieldAlmanac (WeeWX extension)"
 II_CATEGORY="feature"
 II_VERSION="1"
-II_DEPS="weewx"
+II_DEPS="weewx weewx-setup"
 II_REQUIRES_REBOOT="never"
 II_APT_PACKAGES="python3-numpy python3-pandas python3-skyfield"
 II_RESTRICT_TO_ROLES="weewx"

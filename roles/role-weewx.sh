@@ -8,7 +8,15 @@
 # lands on the heavy weewx-specific decisions before the general ones,
 # and so toggling them up-front communicates what extra packages will
 # be pulled (zram-tools, sqlite3, etc.):
-#   - the three weewx-specific wrappers:
+#   - the four weewx-specific wrappers:
+#       weewx-setup            — configures weewx.conf non-interactively
+#                                (station location / lat / lon / altitude
+#                                / units / driver via weewx's own
+#                                reconfigure CLI) then deep-merges the
+#                                user's overrides/weewx.conf. Runs before
+#                                skyfield (skyfield's II_DEPS pulls it in)
+#                                so the extension installs onto a
+#                                fully-configured weewx.
 #       weewx-webroot          — repoints the active backend's default
 #                                site at /var/www/html/weewx so visitors
 #                                hit the WeeWX page at "/"
@@ -23,7 +31,8 @@
 #                                snapshots; spares the SD card from
 #                                WeeWX's continuous DB writes
 #   - locale (deselectable), bash, motd
-#   - skyfield (transitively pulls the weewx apt package via its II_DEPS)
+#   - skyfield (transitively pulls the weewx apt package + weewx-setup
+#     via its II_DEPS)
 #   - ram-logging — log2ram on a station Pi is a strict win, so it's
 #     default-on under this role (still optional under other roles).
 #
@@ -38,10 +47,13 @@
 # default-on.
 #
 # ROLE_CONFIG points at config/weewx.config so the in-menu editor sees
-# the shared WEEWX_* defaults (WEB_DIR, TMPFS_SIZE, DB_DIR, DB_HDD_DIR,
-# DB_ROTATIONS, DB_ZRAM_SIZE). Without this, the editor would render
-# blank rows for those keys since no per-feature config/<id>.config
-# files exist for them.
+# the shared WEEWX_* defaults — the webroot / ramdisk knobs (WEB_DIR,
+# TMPFS_SIZE, DB_DIR, DB_HDD_DIR, DB_ROTATIONS, DB_ZRAM_SIZE) AND the
+# weewx-setup station knobs (STATION_LOCATION, LATITUDE, LONGITUDE,
+# ALTITUDE, ALTITUDE_UNITS, STATION_TYPE, UNITS, REGISTER_STATION,
+# STATION_URL). Without this, the editor would render blank rows for
+# those keys since no per-feature config/<id>.config files exist for
+# them.
 #
 # Still freestanding under scripts/ (not yet first-class features):
 # weewx-nginx-ssl (subsumed by feature-webserver-ssl for cert issuance —
@@ -52,7 +64,7 @@ ROLE_ID="weewx"
 ROLE_TITLE="WeeWx"
 ROLE_DESCRIPTION="Weather station software + Skyfield extension."
 ROLE_FEATURES_REQUIRED="pkupd webserver"
-ROLE_FEATURES_DEFAULT="weewx-webroot weewx-site-ram weewx-database-ram locale bash motd skyfield ram-logging"
+ROLE_FEATURES_DEFAULT="weewx-setup weewx-webroot weewx-site-ram weewx-database-ram locale bash motd skyfield ram-logging"
 ROLE_FEATURES_OPTIONAL="rconf compressed-swap"
 ROLE_CONFIG="config/weewx.config"
 ROLE_EDITABLE_CONFIG=""

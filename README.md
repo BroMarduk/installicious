@@ -188,26 +188,50 @@ separately in [docs/webserver-ssl-policy-matrix.md](docs/webserver-ssl-policy-ma
 ### WeeWx
 
 WeeWx-role-only features (hidden in the Custom flow via
-`II_RESTRICT_TO_ROLES="weewx"`). All three are default-on under the WeeWx
+`II_RESTRICT_TO_ROLES="weewx"`). All four are default-on under the WeeWx
 role; the role also makes `webserver` required, pulls in `skyfield`
-(which transitively installs the `weewx` apt package), and pre-checks
-`ram-logging` (log2ram) since a station Pi is a strict win for offloading
-`/var/log` writes to RAM.
+(which transitively installs the `weewx` apt package + `weewx-setup`),
+and pre-checks `ram-logging` (log2ram) since a station Pi is a strict win
+for offloading `/var/log` writes to RAM.
 
 | ID                      | Title                                            | Default | Reboot      |
 |---|---|---|---|
+| `weewx-setup`           | WeeWX station setup (non-interactive config)     | off*    | never       |
 | `weewx-webroot`         | WeeWX as default web root                        | off*    | never       |
 | `weewx-site-ram`        | WeeWX site on tmpfs (with boot loading page)     | off*    | conditional |
 | `weewx-database-ram`    | WeeWX database on zram (validated snapshots)     | off*    | conditional |
 
 *`II_DEFAULT_SELECTED="off"` at the feature level — but the WeeWx role's
-`ROLE_FEATURES_DEFAULT` checks all three on by default for that role.
+`ROLE_FEATURES_DEFAULT` checks all four on by default for that role.
 Naming note: `weewx-site-ram` actually uses **tmpfs** (uncompressed RAM —
 no benefit from compression on tiny static HTML), `weewx-database-ram`
 uses **zram** (compressed RAM block device — meaningful saves on the
 SQLite DB). The `-ram` suffix is uniform with `feature-ram-logging` for
 symmetry; the underlying mechanism differs by file.
 
+- **weewx-setup** — configures WeeWX non-interactively so the apt
+  package never has to prompt. Two layers:
+  - **Install-critical settings** (the per-Pi-unique bits) live as
+    `WEEWX_STATION_*` keys in `config/weewx.config` and surface on the
+    in-menu **Edit Configuration** screen: `WEEWX_STATION_LOCATION`,
+    `WEEWX_LATITUDE`, `WEEWX_LONGITUDE`, `WEEWX_ALTITUDE` +
+    `WEEWX_ALTITUDE_UNITS`, `WEEWX_STATION_TYPE`, `WEEWX_UNITS`,
+    `WEEWX_REGISTER_STATION` + `WEEWX_STATION_URL`. After the apt
+    install, these are fed to WeeWX's own reconfigure CLI — `weectl
+    station reconfigure` on weewx 5, `wee_config --reconfigure` on
+    weewx 4 (auto-detected) — so WeeWX parses and rewrites
+    `/etc/weewx/weewx.conf` itself.
+  - **Everything else** — report skins, RESTful uploaders, logging,
+    retention, driver-specific sections — goes in
+    [`overrides/weewx.conf`](overrides/weewx.conf), a partial
+    `weewx.conf` you edit with a text editor. After the reconfigure
+    pass, `resources/weewx-merge-overrides.py` deep-merges that file
+    onto `/etc/weewx/weewx.conf` via `configobj` (a WeeWX dependency).
+    An empty / all-comments override file is a no-op.
+
+  Runs before `skyfield` (skyfield's `II_DEPS` pulls it in) so the
+  extension installs onto a fully-configured WeeWX. Uninstall restores
+  `weewx.conf` from the pre-install snapshot.
 - **weewx-webroot** — repoints the active webserver backend's default
   site at `$WEEWX_WEB_DIR` (default `/var/www/html/weewx`) so visitors
   hit the WeeWX page at `/` instead of the backend's stock welcome page.
@@ -265,6 +289,15 @@ Static defaults live in `config/`:
   etc. — per-feature defaults. Editable keys named in each feature's
   `II_EDITABLE_CONFIG` surface in the in-menu **Edit Configuration**
   screen and are persisted to `/etc/installicious/state/menu-config.sh`.
+
+User-editable config overlays live in `overrides/`:
+
+- Distinct from `config/` (framework defaults). These are files **you
+  customize** — the long tail of optional tuning that would bloat the
+  Edit Configuration screen if surfaced as `II_EDITABLE_CONFIG` keys.
+- `overrides/weewx.conf` — a partial `weewx.conf` deep-merged onto
+  `/etc/weewx/weewx.conf` by `weewx-setup`. See
+  [`overrides/README.md`](overrides/README.md) for the format.
 
 Runtime state lives under `/etc/installicious/`:
 
