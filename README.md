@@ -133,17 +133,17 @@ change actually requires one).
 The `webserver` feature is the entry point. It is `exclusive`-grouped
 with its four backends — you pick **exactly one**:
 
-| Backend ID  | Title             | Default | Built-in HTTPS         | apt source |
-|---|---|---|---|---|
-| `nginx`     | nginx             | on      | via `webserver-ssl`    | stock Debian/RPi OS archive |
-| `apache`    | Apache (apache2)  | off     | via `webserver-ssl`    | stock Debian/RPi OS archive |
-| `lighttpd`  | lighttpd          | off     | via `webserver-ssl`    | stock Debian/RPi OS archive |
-| `caddy`     | Caddy             | off     | built in (auto-ACME)   | **Cloudsmith** (third-party repo, auto-configured) |
+| Backend ID  | Title             | Default | Built-in HTTPS         |
+|---|---|---|---|
+| `nginx`     | nginx             | on      | via `webserver-ssl`    |
+| `apache`    | Apache (apache2)  | off     | via `webserver-ssl`    |
+| `lighttpd`  | lighttpd          | off     | via `webserver-ssl`    |
+| `caddy`     | Caddy             | off     | built in (auto-ACME)   |
 
-`caddy` isn't in the Debian / Raspberry Pi OS archive, so `feature-caddy`
-configures the Cloudsmith apt repo on first install (`apt_add_repo` in
-`lib/apt.sh` — dearmors the signing key, drops the sources file, refreshes
-the cache). nginx / apache / lighttpd need no such step.
+All four backends are in the stock Debian / Raspberry Pi OS archive
+(Bookworm + Trixie) — a plain `apt install` suffices, no third-party
+repo setup. (`weewx` is the exception in this project — see the WeeWx
+section below.)
 
 `webserver` editable keys (apply to whichever backend was picked):
 
@@ -199,11 +199,14 @@ role; the role also makes `webserver` required, pulls in `skyfield`
 and pre-checks `ram-logging` (log2ram) since a station Pi is a strict win
 for offloading `/var/log` writes to RAM.
 
-Like Caddy, **WeeWX isn't in the Debian / Raspberry Pi OS archive** — the
-`weewx` package installer (`packages/package-weewx.sh`) configures
-weewx.com's own apt repo on first install via the same `apt_add_repo`
-helper. The repo + key are left in place on `--uninstall` (removing a
-package is fine; ripping out a repo is more invasive than warranted).
+**WeeWX isn't in the Debian / Raspberry Pi OS archive** (RPi OS doesn't
+mirror it) — so the `weewx` package installer
+(`packages/package-weewx.sh`) configures weewx.com's own apt repo on
+first install via the generic `apt_add_repo` helper in `lib/apt.sh`. The
+repo + key are left in place on `--uninstall` (removing a package is
+fine; ripping out a repo is more invasive than warranted). weewx is the
+only package in the project that needs this today — every webserver
+backend, including Caddy, is in the stock archive.
 
 | ID                      | Title                                            | Default | Reboot      |
 |---|---|---|---|
