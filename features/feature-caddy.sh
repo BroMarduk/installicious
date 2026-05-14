@@ -8,6 +8,15 @@
 #              client instead of certbot — no python3-certbot-* deps,
 #              no DNS plugin gymnastics, just Caddy doing its thing).
 #
+#              Caddy is NOT in the Debian / Raspberry Pi OS archive — it's
+#              published via Cloudsmith. do_install configures that apt
+#              repo first (lib/apt.sh's apt_add_repo, idempotent): the
+#              signing key dearmors to
+#              /usr/share/keyrings/caddy-stable-archive-keyring.gpg and the
+#              sources file is fetched from Cloudsmith's generated
+#              debian.deb.txt. nginx / apache / lighttpd need no such step
+#              — they ARE in the stock archive.
+#
 #              CADDY_HTTP_POLICY values:
 #                "redirect-all"  (default) every HTTP request -> HTTPS
 #                "redirect-name" only Host==WEBSERVER_SERVER_NAME
@@ -37,7 +46,7 @@
 II_ID="caddy"
 II_TITLE="Caddy"
 II_CATEGORY="feature"
-II_VERSION="7"
+II_VERSION="8"
 II_DEPS=""
 II_REQUIRES_REBOOT="never"
 II_DEFAULT_SELECTED="off"
@@ -338,6 +347,22 @@ do_install() {
   esac
   if [[ -z $WEBSERVER_SSL_EMAIL ]]; then
     log_warn "WEBSERVER_SSL_EMAIL is empty; Caddy will register with Let's Encrypt anonymously (no renewal reminders)."
+  fi
+
+  # Caddy isn't in the Debian / Raspberry Pi OS archive — it's published
+  # via Cloudsmith. Configure that apt repo first (idempotent). The
+  # sources line is fetched from Cloudsmith's generated debian.deb.txt,
+  # which references signed-by=/usr/share/keyrings/caddy-stable-archive-keyring.gpg
+  # — so the key must dearmor to exactly that path.
+  log_info "Configuring the Cloudsmith caddy apt repository (caddy isn't in the Debian/RPi OS archive)."
+  if ! apt_add_repo "caddy-stable" \
+      "https://dl.cloudsmith.io/public/caddy/stable/gpg.key" \
+      "https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt" \
+      "/usr/share/keyrings/caddy-stable-archive-keyring.gpg"; then
+    log_fail "Failed to configure the Cloudsmith caddy apt repository."
+    status_mark_failed "$II_ID" "caddy repo setup failed"
+    echo -e "[ \e[0;31mFAIL\e[0m ] Installicious could not set up the Cloudsmith caddy apt repository."
+    return 1
   fi
 
   log_info "Ensuring apt package: $II_APT_PACKAGES"

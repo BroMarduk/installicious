@@ -142,3 +142,89 @@ apt_remove() {
   fi
   sudo "${_APT_ENV[@]}" apt-get --yes --purge autoremove "$@"
 }
+
+# apt_add_repo <name> <key-url> <repo-line-or-url> [<keyring-path>]
+#
+# Sets up a third-party apt repository — needed for packages that aren't in
+# the Debian / Raspberry Pi OS archive (weewx and caddy are the two today;
+# RPi OS in particular doesn't mirror them).
+#
+#   <name>              identifier for the sources file
+#                       (/etc/apt/sources.list.d/<name>.list)
+#   <key-url>           URL to fetch the repo's GPG signing key from; it's
+#                       dearmored into <keyring-path>
+#   <repo-line-or-url>  EITHER a literal "deb ..." line written verbatim,
+#                       OR an http(s):// URL whose body IS the sources-file
+#                       content (some vendors — Caddy via Cloudsmith —
+#                       publish a generated .list; weewx publishes a static
+#                       one-liner)
+#   <keyring-path>      where to dearmor the key to. Default
+#                       /etc/apt/trusted.gpg.d/<name>.gpg. Pass an explicit
+#                       path when the fetched repo line references a
+#                       specific signed-by= location (Caddy's does).
+#
+# Bootstraps wget + gnupg + ca-certificates (the fetch/dearmor/TLS deps),
+# refreshes the apt cache afterward so the new repo's packages are visible.
+# Idempotent: if the keyring already exists and the sources file content
+# already matches, it's a no-op (no re-fetch, no redundant apt-get update).
+# Returns non-zero on any step failure.
+apt_add_repo() {
+  local name="$1" key_url="$2" repo_spec="$3"
+  local keyring="${4:-/etc/apt/trusted.gpg.d/${name}.gpg}"
+  local list_file="/etc/apt/sources.list.d/${name}.list"
+
+  if [[ -z $name || -z $key_url || -z $repo_spec ]]; then
+    echo "apt_add_repo: usage: apt_add_repo <name> <key-url> <repo-line-or-url> [<keyring-path>]" >&2
+    return 2
+  fi
+
+  # Bootstrap deps — these ARE in the stock archive, so no chicken-and-egg.
+  apt_ensure_installed wget gnupg ca-certificates || return $?
+
+  # Resolve the intended sources-file content: a literal deb line, or the
+  # body of a URL the vendor publishes.
+  local list_content
+  if [[ $repo_spec == http://* || $repo_spec == https://* ]]; then
+    list_content=$(wget -qO - "$repo_spec") || {
+      echo "apt_add_repo: failed to fetch sources content from $repo_spec" >&2
+      return 1
+    }
+  else
+    list_content="$repo_spec"
+  fi
+  if [[ -z $list_content ]]; then
+    echo "apt_add_repo: empty sources content for $name" >&2
+    return 1
+  fi
+
+  # Idempotency: keyring present + sources content already matches → no-op.
+  if [[ -f $keyring && -f $list_file ]] \
+     && [[ "$(cat "$list_file" 2>/dev/null)" == "$list_content" ]]; then
+    return 0
+  fi
+
+  # Fetch + dearmor the signing key.
+  if ! wget -qO - "$key_url" | sudo gpg --dearmor --yes --output "$keyring" 2>/dev/null; then
+    echo "apt_add_repo: failed to fetch/dearmor key for $name from $key_url" >&2
+    return 1
+  fi
+  sudo chmod 0644 "$keyring"
+
+  # Write the sources file.
+  printf '%s\n' "$list_content" | sudo tee "$list_file" >/dev/null || return 1
+
+  # Force a refresh so the new repo's packages become installable now.
+  sudo "${_APT_ENV[@]}" apt-get update --yes || return $?
+  return 0
+}
+
+# apt_remove_repo <name> [<keyring-path>]
+# Symmetric teardown for apt_add_repo: removes the sources file and the
+# dearmored keyring. Default keyring path matches apt_add_repo's default.
+apt_remove_repo() {
+  local name="$1"
+  local keyring="${2:-/etc/apt/trusted.gpg.d/${name}.gpg}"
+  [[ -z $name ]] && { echo "apt_remove_repo: usage: apt_remove_repo <name> [<keyring-path>]" >&2; return 2; }
+  sudo rm -f "$keyring" "/etc/apt/sources.list.d/${name}.list"
+  return 0
+}
