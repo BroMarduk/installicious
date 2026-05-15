@@ -8,7 +8,8 @@
 # lands on the heavy weewx-specific decisions before the general ones,
 # and so toggling them up-front communicates what extra packages will
 # be pulled (zram-tools, sqlite3, etc.):
-#   - the four weewx-specific wrappers:
+#   - the weewx-specific features (all II_RESTRICT_TO_ROLES="weewx", so
+#     they land on the pick_role_specific screen, step 4a):
 #       weewx-setup            — configures weewx.conf non-interactively
 #                                (station location / lat / lon / altitude
 #                                / units / driver via weewx's own
@@ -30,6 +31,11 @@
 #                                ext4 with validated hourly + shutdown
 #                                snapshots; spares the SD card from
 #                                WeeWX's continuous DB writes
+#       neowx-material         — installs the NeoWX Material skin
+#                                (seehase's fork): weectl extension
+#                                install + lang/HTML_ROOT in weewx.conf +
+#                                a LANG drop-in for the weewx service +
+#                                the user's overrides/neowx-material-skin.conf
 #   - locale (deselectable), bash, motd
 #   - skyfield (transitively pulls the weewx apt package + weewx-setup
 #     via its II_DEPS)
@@ -64,7 +70,7 @@ ROLE_ID="weewx"
 ROLE_TITLE="WeeWx"
 ROLE_DESCRIPTION="Weather station software + Skyfield extension."
 ROLE_FEATURES_REQUIRED="pkupd webserver"
-ROLE_FEATURES_DEFAULT="weewx-setup weewx-webroot weewx-site-ram weewx-database-ram locale bash motd skyfield ram-logging"
+ROLE_FEATURES_DEFAULT="weewx-setup weewx-webroot weewx-site-ram weewx-database-ram neowx-material locale bash motd skyfield ram-logging"
 ROLE_FEATURES_OPTIONAL="rconf compressed-swap"
 ROLE_CONFIG="config/weewx.config"
 ROLE_EDITABLE_CONFIG=""

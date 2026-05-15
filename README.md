@@ -193,7 +193,7 @@ separately in [docs/webserver-ssl-policy-matrix.md](docs/webserver-ssl-policy-ma
 ### WeeWx
 
 WeeWx-role-only features (hidden in the Custom flow via
-`II_RESTRICT_TO_ROLES="weewx"`). All four are default-on under the WeeWx
+`II_RESTRICT_TO_ROLES="weewx"`). All five are default-on under the WeeWx
 role; the role also makes `webserver` required, pulls in `skyfield`
 (which transitively installs the `weewx` apt package + `weewx-setup`),
 and pre-checks `ram-logging` (log2ram) since a station Pi is a strict win
@@ -214,9 +214,10 @@ backend, including Caddy, is in the stock archive.
 | `weewx-webroot`         | WeeWX as default web root                        | off*    | never       |
 | `weewx-site-ram`        | WeeWX site on tmpfs (with boot loading page)     | off*    | conditional |
 | `weewx-database-ram`    | WeeWX database on zram (validated snapshots)     | off*    | conditional |
+| `neowx-material`        | NeoWX Material WeeWX skin                        | off*    | never       |
 
 *`II_DEFAULT_SELECTED="off"` at the feature level — but the WeeWx role's
-`ROLE_FEATURES_DEFAULT` checks all four on by default for that role.
+`ROLE_FEATURES_DEFAULT` checks all five on by default for that role.
 Naming note: `weewx-site-ram` actually uses **tmpfs** (uncompressed RAM —
 no benefit from compression on tiny static HTML), `weewx-database-ram`
 uses **zram** (compressed RAM block device — meaningful saves on the
@@ -286,6 +287,36 @@ symmetry; the underlying mechanism differs by file.
     running WeeWX.
   - Editable: `WEEWX_DB_DIR`, `WEEWX_DB_HDD_DIR`, `WEEWX_DB_ROTATIONS`,
     `WEEWX_DB_ZRAM_SIZE` (`"AUTO"` or empty = auto-compute).
+- **neowx-material** — installs the [NeoWX Material
+  skin](https://github.com/seehase/neowx-material) (seehase's
+  actively-maintained fork) and wires up everything its README calls
+  out:
+  - **Install** — downloads the extension archive (`NEOWX_EXTENSION_URL`,
+    defaults to the fork's `master.zip`; pin a release tag for
+    reproducible builds) and installs it via WeeWX's own extension CLI
+    (`weectl extension install` on weewx 5, `wee_extension --install` on
+    weewx 4, auto-detected).
+  - **Localization** — merges `lang` / `HTML_ROOT` / `enable` into
+    `[StdReport][[neowx-material]]` in `weewx.conf` so the skin renders
+    in `NEOWX_LANG` (radio picker — 11 languages) and writes to
+    `NEOWX_HTML_ROOT` (defaults to `WEEWX_WEB_DIR`).
+  - **Time & Date** — when `NEOWX_LOCALE` is set, writes a
+    `/etc/systemd/system/weewx.service.d/neowx-locale.conf` drop-in with
+    `Environment="LANG=…"` so WeeWX renders dates/times in that locale
+    (the clean, update-surviving equivalent of the README's "edit
+    weewx.service" step). Warns — doesn't fail — if the locale isn't
+    generated yet (`feature-locale` or `dpkg-reconfigure locales`
+    handles that).
+  - **Skin config** — deep-merges
+    [`overrides/neowx-material-skin.conf`](overrides/neowx-material-skin.conf)
+    onto the skin's `skin.conf` via the same `weewx-merge-overrides.py`
+    helper (colour scheme, MQTT, forecast, charts, …). Empty override
+    file = no-op.
+
+  Editable: `NEOWX_LANG`, `NEOWX_LOCALE`, `NEOWX_HTML_ROOT`. Uninstall
+  removes the extension via the WeeWX CLI (which strips the skin dir +
+  its `weewx.conf` section), removes the locale drop-in, and restores
+  `weewx.conf` from snapshot.
 
 Still freestanding under `scripts/` (not yet first-class features):
 `weewx-onedrive-backup.sh`, `weewx-nginx-ssl.sh` (cert issuance is now

@@ -25,6 +25,7 @@ for the changes to take effect.
 | File | Consumed by | Format |
 |---|---|---|
 | `weewx.conf` | `feature-weewx-setup` | partial `weewx.conf` (ConfigObj/INI) — deep-merged onto `/etc/weewx/weewx.conf` after the apt install + `weectl station reconfigure` pass |
+| `neowx-material-skin.conf` | `feature-neowx-material` | partial NeoWX Material `skin.conf` (ConfigObj/INI) — deep-merged onto `/etc/weewx/skins/neowx-material/skin.conf` after the extension install |
 
 An empty (or all-comments) override file is a no-op — the feature skips the
 merge entirely.
