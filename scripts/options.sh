@@ -822,7 +822,18 @@ while true; do
         case $rc in
           0)
             addons_picked[$parent_id]="${picked//\"/}"
-            _screens=("${_screens[@]:0:$((_idx+1))}")
+            # NO truncation here. _screens was pre-seeded up front with
+            # ALL queue parents that declare a non-exclusive group, in
+            # discovery order. Truncating at $_idx (the old BFS pattern,
+            # inherited from pick_addons_required where _screens grew
+            # via cascade from a single root) would drop pre-seeded
+            # parents that haven't been visited yet — that's how
+            # picking nginx then advancing past motd's sub-screen used
+            # to silently swallow nginx's sub-screen (and with it the
+            # webserver-ssl row). Cascade entries (a child whose own
+            # II_OPTIONAL_GROUP fires its own screen) are appended
+            # below; on a stale re-pick they linger but are harmless to
+            # NEXT through.
             for _pid in ${picked//\"/}; do
               [[ -z $_pid ]] && continue
               # Extend the queue snapshot with newly-picked IDs so the
