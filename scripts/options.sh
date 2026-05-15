@@ -524,21 +524,33 @@ while true; do
         _screens+=("$parent_id")
       done
 
+      # Resume at the last screen when re-entered via BACK from any
+      # stage forward of this one (pick_role_specific, pick_optional,
+      # merge_role). Otherwise start at the first screen.
       _idx=0
+      case "$prev_stage" in
+        pick_role_specific|pick_optional|merge_role|pick_addons|pick_packages|edit_config|confirm|merge_packages)
+          [[ ${#_screens[@]} -gt 0 ]] && _idx=$(( ${#_screens[@]} - 1 ))
+          ;;
+      esac
       while [[ $_idx -lt ${#_screens[@]} ]]; do
         parent_id="${_screens[$_idx]}"
         ppath=$(manifest_path_for "$parent_id" 2>/dev/null)
         pchildren=$(manifest_get_field "$ppath" "II_OPTIONAL_GROUP")
         ptitle=$(manifest_get_field "$ppath" "II_TITLE")
 
+        # Capture into a temp so a BACK (rc=1|255) within the BFS doesn't
+        # overwrite addons_picked[$parent_id] with whatever whiptail
+        # emitted on Cancel. Only commit on rc=0.
         # shellcheck disable=SC2086
-        picked=$(menu_pick_one_optional "$ptitle" \
+        _picked=$(menu_pick_one_optional "$ptitle" \
           --previously "${addons_picked[$parent_id]:-}" \
           $pchildren)
         rc=$?
         case $rc in
           0)
-            addons_picked[$parent_id]="${picked//\"/}"
+            addons_picked[$parent_id]="${_picked//\"/}"
+            picked="$_picked"   # local alias for the post-pick cascade walk below
             # Append picked children with their OWN exclusive groups (a
             # cascade of radios; rare but possible) so they fire as the
             # next screen. Non-exclusive children land in step 5.
@@ -636,14 +648,20 @@ while true; do
         rs_desc="Role-specific add-ons (under the $role_title role)."
       fi
 
+      # Capture into a temp so a BACK (rc=1|255) doesn't overwrite
+      # role_specific_picked with whatever whiptail emitted on Cancel.
+      # (whiptail behavior on Cancel varies across builds — some emit
+      # the current selection, some emit empty; either way a BACK shouldn't
+      # mutate our persistent state). Only commit the temp on rc=0.
       # shellcheck disable=SC2086
-      role_specific_picked=$(menu_pick_optionals "$role_title - Role-specific" \
+      _picked=$(menu_pick_optionals "$role_title - Role-specific" \
         --desc "$rs_desc" \
         --previously "${role_specific_picked//\"/}" \
         $_rs_filtered)
       rc=$?
       case $rc in
         0)
+          role_specific_picked="$_picked"
           if [[ -n $role_generic_features ]]; then
             stage="pick_optional"
           else
@@ -709,14 +727,16 @@ while true; do
       done
       _opt_filtered=$(echo "$_opt_filtered" | tr -s ' ' | sed 's/^ //; s/ $//')
 
+      # BACK-preserves-selection: see the matching pattern in
+      # pick_role_specific. _picked is the temp; commit on rc=0 only.
       # shellcheck disable=SC2086
-      optional_picked=$(menu_pick_optionals "$role_title" \
+      _picked=$(menu_pick_optionals "$role_title" \
         --desc "$optional_desc" \
         --previously "${optional_picked//\"/}" \
         $_opt_filtered)
       rc=$?
       case $rc in
-        0)     stage="merge_role" ;;
+        0)     optional_picked="$_picked"; stage="merge_role" ;;
         1|255) stage=$(_pre_optional_stage) ;;
         2)     optional_picked=""; stage="merge_role" ;;
       esac
@@ -789,7 +809,17 @@ while true; do
       for _qid in "${!_cand_seen[@]}"; do _queue_snapshot+=" $_qid"; done
       _queue_snapshot=$(echo "$_queue_snapshot" | tr -s ' ' | sed 's/^ //; s/ $//')
 
+      # Resume at the last screen if the user came back into this stage
+      # via BACK from the immediately-following stage (pick_packages).
+      # Otherwise (forward entry from merge_role) start at the first
+      # screen. Without this, BACK from pick_packages would land on the
+      # FIRST sub-screen (e.g. motd's) and the user would have to NEXT
+      # through it to get back to the screen they actually wanted to
+      # edit (e.g. nginx's, where webserver-ssl lives).
       _idx=0
+      if [[ $prev_stage == "pick_packages" && ${#_screens[@]} -gt 0 ]]; then
+        _idx=$(( ${#_screens[@]} - 1 ))
+      fi
       while [[ $_idx -lt ${#_screens[@]} ]]; do
         parent_id="${_screens[$_idx]}"
         ppath=$(manifest_path_for "$parent_id" 2>/dev/null)
@@ -814,14 +844,18 @@ while true; do
           continue
         fi
 
+        # Capture into a temp so a BACK (rc=1|255) within the BFS doesn't
+        # overwrite addons_picked[$parent_id] with whatever whiptail
+        # emitted on Cancel. Only commit on rc=0.
         # shellcheck disable=SC2086
-        picked=$(menu_pick_optionals "$ptitle" \
+        _picked=$(menu_pick_optionals "$ptitle" \
           --previously "${addons_picked[$parent_id]:-}" \
           $_filtered)
         rc=$?
         case $rc in
           0)
-            addons_picked[$parent_id]="${picked//\"/}"
+            addons_picked[$parent_id]="${_picked//\"/}"
+            picked="$_picked"   # local alias for the cascade walk below
             # NO truncation here. _screens was pre-seeded up front with
             # ALL queue parents that declare a non-exclusive group, in
             # discovery order. Truncating at $_idx (the old BFS pattern,
