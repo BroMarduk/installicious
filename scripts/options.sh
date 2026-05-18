@@ -124,8 +124,16 @@ post_install_clear
 
 CURRENTUSER=$(whoami)
 
+# Last-run picker memory. Sources $PATH_STATE/selections.sh and populates
+# LAST_* (role, features, role-specific picks, optional picks, packages,
+# serialized addons map). Missing file = first run = all LAST_* unset.
+# We seed each picker from the matching LAST_* when present, falling back
+# to manifest defaults otherwise; and we rewrite the file on every picker
+# advance so a Cancel-mid-flow still leaves the prior forward path in place.
+state_load_selections || true
+
 # State carried across stages.
-role_id=""
+role_id="${LAST_ROLE_ID:-}"
 role_path=""
 role_title=""
 role_required=""
@@ -140,18 +148,58 @@ role_optional=""
 # and pick_optional (step 4b, generic only).
 role_specific_features=""
 role_generic_features=""
-features_selected=""
-packages_selected=""
+features_selected="${LAST_FEATURES_SELECTED:-}"
+packages_selected="${LAST_PACKAGES_SELECTED:-}"
 role_specific_picked=""
 optional_picked=""
 # Per-stage "have I shown this screen yet?" flags. First visit seeds
-# the picker from the relevant tier defaults; later visits preserve
-# whatever the user actually picked.
+# the picker from the LAST_* memory (or manifest tier defaults if no
+# memory was loaded); later visits preserve whatever the user actually
+# picked during this run.
 role_specific_visited=0
 optional_visited=0
 selected=""           # final list (parents + their picked add-ons)
 selected_parents=""   # the user's category/role picks BEFORE add-ons get merged
 declare -A addons_picked   # parent_id → space-separated add-on IDs the user picked
+
+# Seed addons_picked from the last-run serialization (parent:children-csv
+# entries joined by `;`). On role-switch the whole map is cleared below.
+_deserialize_addons_picked() {
+  local serialized="$1" entry parent children
+  local -a _entries
+  IFS=';' read -ra _entries <<< "$serialized"
+  for entry in "${_entries[@]}"; do
+    [[ -z $entry ]] && continue
+    parent="${entry%%:*}"
+    children="${entry#*:}"
+    children="${children//,/ }"
+    addons_picked[$parent]="$children"
+  done
+}
+_serialize_addons_picked() {
+  local out="" parent
+  for parent in "${!addons_picked[@]}"; do
+    [[ -z ${addons_picked[$parent]:-} ]] && continue
+    [[ -n $out ]] && out+=";"
+    out+="${parent}:${addons_picked[$parent]// /,}"
+  done
+  echo "$out"
+}
+[[ -n ${LAST_ADDONS_PICKED:-} ]] && _deserialize_addons_picked "$LAST_ADDONS_PICKED"
+
+# _persist_selections — single-call helper that snapshots the current
+# in-memory picker state to $PATH_STATE/selections.sh. Called at the end
+# of every forward-advancing stage so the on-disk file always reflects
+# the last successful screen the user passed through.
+_persist_selections() {
+  state_save_selections \
+    "$role_id" \
+    "${features_selected//\"/}" \
+    "${role_specific_picked//\"/}" \
+    "${optional_picked//\"/}" \
+    "${packages_selected//\"/}" \
+    "$(_serialize_addons_picked)"
+}
 
 # Tracks the stage we just left, so stages that auto-advance on rc=2 (e.g.
 # edit_config when no keys are editable) can detect a back-from-confirm
@@ -406,6 +454,31 @@ while true; do
       esac
       log_info "User $CURRENTUSER picked role: $role_id."
 
+      # Role switched from the previous run? Drop the prior role's
+      # picker memory so the new role starts from its own manifest
+      # defaults — addons-of-A wouldn't make sense restored under B,
+      # and a tier item only valid under role A would silently no-op
+      # under B. LAST_ROLE_ID gets re-set so the clear only fires once
+      # per role-switch event (and not on every revisit of pick_role
+      # within the same role).
+      if [[ -n ${LAST_ROLE_ID:-} && "$role_id" != "$LAST_ROLE_ID" ]]; then
+        log_info "Role changed from $LAST_ROLE_ID to $role_id; clearing stale per-role selections."
+        features_selected=""
+        role_specific_picked=""
+        optional_picked=""
+        packages_selected=""
+        addons_picked=()
+        role_specific_visited=0
+        optional_visited=0
+        LAST_FEATURES_SELECTED=""
+        LAST_ROLE_SPECIFIC_PICKED=""
+        LAST_OPTIONAL_PICKED=""
+        LAST_PACKAGES_SELECTED=""
+        LAST_ADDONS_PICKED=""
+        LAST_ROLE_ID="$role_id"
+      fi
+      _persist_selections
+
       if [[ $role_id == "custom" ]]; then
         role_path=""
         role_title="Custom"
@@ -466,7 +539,7 @@ while true; do
         "$restricted_excludes")
       rc=$?
       case $rc in
-        0)     stage="merge_features" ;;
+        0)     _persist_selections; stage="merge_features" ;;
         1|255) stage="pick_role" ;;          # BACK or ESC → previous stage
         2)     features_selected=""; stage="merge_features" ;;
       esac
@@ -550,6 +623,7 @@ while true; do
         case $rc in
           0)
             addons_picked[$parent_id]="${_picked//\"/}"
+            _persist_selections
             picked="$_picked"   # local alias for the post-pick cascade walk below
             # Append picked children with their OWN exclusive groups (a
             # cascade of radios; rare but possible) so they fire as the
@@ -622,7 +696,14 @@ while true; do
       fi
 
       if [[ $role_specific_visited -eq 0 ]]; then
-        role_specific_picked=$(_intersect_with_role_default "$role_specific_features")
+        # Prefer the last-run picks (LAST_ROLE_SPECIFIC_PICKED) so a
+        # rerun keeps whatever the user checked last time; fall back to
+        # the role's DEFAULT tier intersection on a true first run.
+        if [[ -n ${LAST_ROLE_SPECIFIC_PICKED:-} ]]; then
+          role_specific_picked="$LAST_ROLE_SPECIFIC_PICKED"
+        else
+          role_specific_picked=$(_intersect_with_role_default "$role_specific_features")
+        fi
         role_specific_visited=1
       fi
 
@@ -662,6 +743,7 @@ while true; do
       case $rc in
         0)
           role_specific_picked="$_picked"
+          _persist_selections
           if [[ -n $role_generic_features ]]; then
             stage="pick_optional"
           else
@@ -694,9 +776,15 @@ while true; do
         stage="merge_role"
         continue
       fi
-      # First visit: seed picked from generic items also in DEFAULT.
+      # First visit: prefer LAST_OPTIONAL_PICKED (so a rerun preserves
+      # whatever the user checked last time, e.g. compressed-swap toggled
+      # on under WeeWx); fall back to the DEFAULT-tier intersection.
       if [[ $optional_visited -eq 0 ]]; then
-        optional_picked=$(_intersect_with_role_default "$role_generic_features")
+        if [[ -n ${LAST_OPTIONAL_PICKED:-} ]]; then
+          optional_picked="$LAST_OPTIONAL_PICKED"
+        else
+          optional_picked=$(_intersect_with_role_default "$role_generic_features")
+        fi
         optional_visited=1
       fi
       # Compose the screen description so the user sees what's already
@@ -736,7 +824,7 @@ while true; do
         $_opt_filtered)
       rc=$?
       case $rc in
-        0)     optional_picked="$_picked"; stage="merge_role" ;;
+        0)     optional_picked="$_picked"; _persist_selections; stage="merge_role" ;;
         1|255) stage=$(_pre_optional_stage) ;;
         2)     optional_picked=""; stage="merge_role" ;;
       esac
@@ -855,6 +943,7 @@ while true; do
         case $rc in
           0)
             addons_picked[$parent_id]="${_picked//\"/}"
+            _persist_selections
             picked="$_picked"   # local alias for the cascade walk below
             # NO truncation here. _screens was pre-seeded up front with
             # ALL queue parents that declare a non-exclusive group, in
@@ -982,7 +1071,7 @@ while true; do
         "$pkg_excludes")
       rc=$?
       case $rc in
-        0)     stage="merge_packages" ;;
+        0)     _persist_selections; stage="merge_packages" ;;
         1|255) stage="pick_addons" ;;            # BACK → previous picker
         2)     packages_selected=""; stage="merge_packages" ;;
       esac

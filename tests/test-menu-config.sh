@@ -171,5 +171,85 @@ rm -f state/menu-config.sh
 rmdir state 2>/dev/null
 export PATH_STATE="$saved_path_state"
 
+# ===========================================================================
+echo
+echo "=== Test 10: state_save_selections + state_load_selections roundtrip ==="
+# Selections file lives at $PATH_STATE/selections.sh — distinct from
+# menu-config.sh (which holds edited VALUES, not picks). This roundtrip
+# locks in that save→load preserves role, role-tier picks, addons map,
+# and the custom-flow features list.
+unset LAST_ROLE_ID LAST_FEATURES_SELECTED LAST_ROLE_SPECIFIC_PICKED \
+      LAST_OPTIONAL_PICKED LAST_PACKAGES_SELECTED LAST_ADDONS_PICKED
+state_load_selections; chkrc "no file → rc=1" $? 1
+
+state_save_selections \
+  "weewx" \
+  "" \
+  "weewx-setup weewx-webroot weewx-site-ram neowx-material skyfield" \
+  "locale bash motd compressed-swap ram-logging" \
+  "" \
+  "webserver:webserver-ssl;motd:motd-weather,motd-updates"
+chkrc "state_save_selections rc=0" $? 0
+[[ -f "$TMPSTATE/selections.sh" ]] && ok "selections.sh written" \
+  || fail "selections.sh not created"
+
+unset LAST_ROLE_ID LAST_FEATURES_SELECTED LAST_ROLE_SPECIFIC_PICKED \
+      LAST_OPTIONAL_PICKED LAST_PACKAGES_SELECTED LAST_ADDONS_PICKED
+state_load_selections; chkrc "load existing file → rc=0" $? 0
+chkeq "LAST_ROLE_ID"               "$LAST_ROLE_ID"               "weewx"
+chkeq "LAST_FEATURES_SELECTED"     "$LAST_FEATURES_SELECTED"     ""
+chkeq "LAST_ROLE_SPECIFIC_PICKED"  "$LAST_ROLE_SPECIFIC_PICKED"  "weewx-setup weewx-webroot weewx-site-ram neowx-material skyfield"
+chkeq "LAST_OPTIONAL_PICKED"       "$LAST_OPTIONAL_PICKED"       "locale bash motd compressed-swap ram-logging"
+chkeq "LAST_PACKAGES_SELECTED"     "$LAST_PACKAGES_SELECTED"     ""
+chkeq "LAST_ADDONS_PICKED"         "$LAST_ADDONS_PICKED"         "webserver:webserver-ssl;motd:motd-weather,motd-updates"
+
+# ===========================================================================
+echo
+echo "=== Test 11: addons_picked serialize/deserialize roundtrip (in options.sh) ==="
+# These helpers live in scripts/options.sh, not lib/state.sh. We re-define
+# them here so the test exercises the actual format used at runtime.
+declare -A addons_picked=()
+addons_picked[webserver]="webserver-ssl"
+addons_picked[motd]="motd-weather motd-updates"
+addons_picked[somefeature]=""   # empty entries skipped
+
+_serialize_addons_picked() {
+  local out="" parent
+  for parent in "${!addons_picked[@]}"; do
+    [[ -z ${addons_picked[$parent]:-} ]] && continue
+    [[ -n $out ]] && out+=";"
+    out+="${parent}:${addons_picked[$parent]// /,}"
+  done
+  echo "$out"
+}
+_deserialize_addons_picked() {
+  local serialized="$1" entry parent children
+  local -a _entries
+  IFS=';' read -ra _entries <<< "$serialized"
+  for entry in "${_entries[@]}"; do
+    [[ -z $entry ]] && continue
+    parent="${entry%%:*}"
+    children="${entry#*:}"
+    children="${children//,/ }"
+    addons_picked[$parent]="$children"
+  done
+}
+
+serialized=$(_serialize_addons_picked)
+# Order of associative-array keys isn't guaranteed; just check both entries
+# are present and skip-empty fired.
+echo "$serialized" | grep -q "webserver:webserver-ssl" && ok "webserver entry present" \
+  || fail "webserver entry missing: $serialized"
+echo "$serialized" | grep -q "motd:motd-weather,motd-updates" && ok "motd entry present" \
+  || fail "motd entry missing: $serialized"
+[[ "$serialized" != *"somefeature"* ]] && ok "empty 'somefeature' skipped" \
+  || fail "empty entry leaked: $serialized"
+
+# Roundtrip back through deserialize.
+declare -A addons_picked=()
+_deserialize_addons_picked "webserver:webserver-ssl;motd:motd-weather,motd-updates"
+chkeq "deserialize webserver"  "${addons_picked[webserver]}"  "webserver-ssl"
+chkeq "deserialize motd"       "${addons_picked[motd]}"       "motd-weather motd-updates"
+
 echo
 echo "=== Done ==="

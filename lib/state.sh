@@ -192,3 +192,77 @@ state_clear_menu_overrides() {
   [[ -f $file ]] || return 0
   rm -f "$file" 2>/dev/null || sudo rm -f "$file"
 }
+
+# ---------------------------------------------------------------------------
+# Picker selections (last-run memory)
+#
+# Persists the user's picker choices to $PATH_STATE/selections.sh so a
+# subsequent run defaults to what they picked last time — covers the role
+# pick, the role-tier picks (step 4a + 4b), the addons map, packages, and
+# the custom-flow feature checklist. Distinct from menu-config.sh (which
+# stores edited config VALUES); this stores which features/packages/add-ons
+# were CHECKED.
+#
+# Schema:
+#   LAST_ROLE_ID="weewx"                       # last-picked role
+#   LAST_FEATURES_SELECTED=""                  # custom-flow picks
+#   LAST_ROLE_SPECIFIC_PICKED="weewx-setup …"  # step 4a picks
+#   LAST_OPTIONAL_PICKED="compressed-swap …"   # step 4b picks
+#   LAST_PACKAGES_SELECTED=""                  # step 6 picks
+#   LAST_ADDONS_PICKED="webserver:webserver-ssl;motd:motd-weather,motd-updates"
+#     # serialized addons map — `;` separates entries, `:` splits
+#     # parent from children, `,` separates children within a parent.
+#     # Feature IDs in this codebase don't contain `;` `:` or `,` so the
+#     # encoding is unambiguous without escaping.
+#
+# Lifecycle: the file is overwritten on every picker advance, persists
+# across runs and a Cancel-mid-flow, and is NOT auto-cleared. Manual reset:
+#   sudo rm $PATH_STATE/selections.sh
+# ---------------------------------------------------------------------------
+
+_selections_file() {
+  echo "${PATH_STATE:-state}/selections.sh"
+}
+
+# state_load_selections - source $PATH_STATE/selections.sh if present,
+# populating LAST_* variables in the caller's env. rc=0 if loaded, rc=1
+# if no file exists. Caller should treat all LAST_* as optional ("${var:-}").
+state_load_selections() {
+  local file
+  file=$(_selections_file)
+  if [[ ! -f $file ]]; then
+    return 1
+  fi
+  # shellcheck disable=SC1090
+  source "$file"
+}
+
+# state_save_selections <role> <features> <role_specific> <optional> <packages> <addons_serialized>
+# Overwrite the selections file with the given values. Each arg is the
+# space-separated picker output; addons_serialized is the
+# parent:children;parent:children format documented at the top of this section.
+state_save_selections() {
+  local role="${1:-}"
+  local features="${2:-}"
+  local role_specific="${3:-}"
+  local optional="${4:-}"
+  local packages="${5:-}"
+  local addons="${6:-}"
+  _state_write_pairs "$(_selections_file)" \
+    "LAST_ROLE_ID=$role" \
+    "LAST_FEATURES_SELECTED=$features" \
+    "LAST_ROLE_SPECIFIC_PICKED=$role_specific" \
+    "LAST_OPTIONAL_PICKED=$optional" \
+    "LAST_PACKAGES_SELECTED=$packages" \
+    "LAST_ADDONS_PICKED=$addons"
+}
+
+# state_clear_selections - remove the selections file. Called by manual
+# reset paths (or a future --reset-selections flag); never invoked by the
+# framework's normal flow.
+state_clear_selections() {
+  local file
+  file=$(_selections_file)
+  [[ -f $file ]] || return 0
+  rm -f "$file" 2>/dev/null || sudo rm -f "$file"
+}
