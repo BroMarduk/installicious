@@ -512,37 +512,42 @@ menu_edit_config() {
   done
 
   # ---- edit loop ----
-  # The editor lists three kinds of entries (in this order):
-  #     __FORWARD__   "Save & continue to install confirmation"  — SELECT → forward
-  #     __BACK__      "Back to previous screen"                  — SELECT → rewind
-  #     <KEY>         "<current value>"                          — SELECT → edit that key
+  # The editor lists two kinds of entries:
+  #     __FORWARD__   ">>> SAVE & CONTINUE TO INSTALL <<<"  — SELECT → forward
+  #     <KEY>         "<current value>"                     — SELECT → edit that key
   # Button labels:
-  #     OK     = "SELECT" (acts on the highlighted entry)
-  #     CANCEL = "BACK"   (same effect as picking __BACK__ — rewinds)
+  #     OK     = "SELECT" (acts on the highlighted entry — advance via the
+  #              FORWARD row, edit via any key row)
+  #     CANCEL = "BACK"   (rewinds to the previous picker; this is the
+  #              ONLY back path in the editor — no redundant __BACK__ entry)
   #     ESC    = same as BACK
-  # Forward and Back are always unambiguous: the CANCEL button never forwards,
-  # the OK button only forwards when the user explicitly picked the FORWARD
-  # entry. Both BACK and FORWARD paths fall through to the persist block so
-  # in-progress edits survive a rewind-and-return trip. ESC behaves like BACK
-  # (per the back-button-everywhere policy; splash + role picker are the only
-  # screens where ESC exits).
+  # The FORWARD entry is the first menu row AND we pin --default-item to it,
+  # so pressing ENTER on a freshly-opened editor always advances. The CANCEL
+  # button is the only thing that rewinds, so the cancel-as-forward muscle
+  # memory from the previous CANCEL="DONE" editor no longer applies — users
+  # who reflexively hit cancel rewind, which matches every other dialog in
+  # the installer.
   local choice new_val rc result_rc=0
   while true; do
     local -a items=()
-    items+=("__FORWARD__" "Save & continue to install confirmation")
-    items+=("__BACK__"    "Back to previous screen")
+    items+=("__FORWARD__" ">>> SAVE & CONTINUE TO INSTALL <<<")
     local -a sorted_keys
     mapfile -t sorted_keys < <(printf '%s\n' "${!current[@]}" | sort)
     for key in "${sorted_keys[@]}"; do
       items+=("$key" "${current[$key]}")
     done
 
+    # --default-item __FORWARD__ pins the highlight to the FORWARD entry
+    # so ENTER reliably advances no matter what whiptail's idea of "default
+    # selection" happens to be on this build.
     choice=$(whiptail --title "Edit Configuration" \
       --ok-button "SELECT" --cancel-button "BACK" \
-      --menu "Pick a row to edit, or one of the Forward / Back entries at the top." 20 80 12 \
+      --default-item "__FORWARD__" \
+      --menu "Highlight SAVE & CONTINUE + SELECT to advance. Highlight any key + SELECT to edit it. BACK button rewinds." 22 80 14 \
       "${items[@]}" \
       3>&1 1>&2 2>&3)
     rc=$?
+    log_info "menu_edit_config: whiptail returned rc=$rc choice='${choice//$'\n'/\\n}'"
     # CANCEL button or ESC → BACK (persist + rewind).
     if [[ $rc -ne 0 ]]; then
       result_rc=1
@@ -550,10 +555,6 @@ menu_edit_config() {
     fi
     if [[ $choice == "__FORWARD__" ]]; then
       result_rc=0  # explicit forward — go to confirm.
-      break
-    fi
-    if [[ $choice == "__BACK__" ]]; then
-      result_rc=1  # explicit back — rewind to previous picker.
       break
     fi
 
