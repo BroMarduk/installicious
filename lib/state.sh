@@ -158,7 +158,8 @@ state_clear() {
 # in future installicious sessions.
 #
 # Lifecycle: the file is intentionally NOT cleared automatically.
-#   - Created/updated by menu_edit_config when the user clicks DONE or BACK.
+#   - Created/updated by menu_edit_config in both the forward and back paths
+#     out of the editor (so in-progress edits survive a rewind-and-return).
 #   - Persists across queue completion, queue failure, mid-queue reboots,
 #     and brand-new sessions, so values like an AccuWeather API key only
 #     have to be entered once.

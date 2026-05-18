@@ -389,16 +389,18 @@ _menu_source_choices_for() {
 # selected feature's II_EDITABLE_CONFIG manifest field. Reads default values
 # from the corresponding .config files (chained: installicious.config first,
 # then per-feature configs, then role config, then any prior menu-config.sh).
-# Loops a whiptail menu+inputbox until the user picks DONE or BACK. Persists
-# the final values to $PATH_STATE/menu-config.sh on DONE.
+# Loops a whiptail menu+inputbox until the user picks the "Save & continue"
+# or "Back" entry (or hits the BACK button). Persists the final values to
+# $PATH_STATE/menu-config.sh in both cases so a rewind-and-return trip
+# preserves any in-progress edits.
 #
 # Return codes (matches the lib/menu.sh contract):
-#   0   forward — user pressed DONE; overrides persisted
-#   1   back    — user pressed BACK or selected the "<-- Back" entry; overrides
-#                 are NOT persisted (caller can re-enter the previous stage)
+#   0   forward — user picked the "Save & continue" entry; edits persisted
+#   1   back    — user picked the "Back" entry or pressed the BACK button
+#                 (or ESC); in-progress edits are still persisted so a
+#                 rewind-and-return trip preserves them
 #   2   no-data — no editable keys advertised; nothing to show, caller should
 #                 auto-advance
-#   255 abort   — user pressed ESC
 #
 # Pass role_id="" or "custom" when running the Custom flow (no role config).
 menu_edit_config() {
@@ -454,6 +456,7 @@ menu_edit_config() {
   [[ -n $role_config_file && -f $role_config_file ]] && config_files+=("$role_config_file")
 
   if [[ ${#key_seen[@]} -eq 0 ]]; then
+    log_info "menu_edit_config: no editable keys discovered from role=$role_id + ${#feature_ids[@]} feature ids; returning rc=2 (caller auto-advances)."
     return 2  # nothing to edit; caller auto-advances
   fi
 
@@ -483,8 +486,10 @@ menu_edit_config() {
     fi
   done
   if [[ ${#key_seen[@]} -eq 0 ]]; then
+    log_info "menu_edit_config: every editable key was filtered out by menu_key_applicable on this system; returning rc=2."
     return 2  # nothing applies on this system
   fi
+  log_info "menu_edit_config: ${#key_seen[@]} editable key(s) will render: ${!key_seen[*]}"
 
   # ---- read current values via the chain ----
   #
@@ -507,15 +512,25 @@ menu_edit_config() {
   done
 
   # ---- edit loop ----
-  # Buttons: OK="EDIT" → edit highlighted row; CANCEL="DONE" → forward.
-  # "<-- Back" appears as the first menu entry; selecting it sets result_rc=1
-  # and breaks. Both DONE and BACK fall through to the persist block — that
-  # way an in-progress edit is remembered if the user goes back and returns.
-  # ESC bypasses persistence and returns 255.
+  # The editor lists three kinds of entries (in this order):
+  #     __FORWARD__   "Save & continue to install confirmation"  — SELECT → forward
+  #     __BACK__      "Back to previous screen"                  — SELECT → rewind
+  #     <KEY>         "<current value>"                          — SELECT → edit that key
+  # Button labels:
+  #     OK     = "SELECT" (acts on the highlighted entry)
+  #     CANCEL = "BACK"   (same effect as picking __BACK__ — rewinds)
+  #     ESC    = same as BACK
+  # Forward and Back are always unambiguous: the CANCEL button never forwards,
+  # the OK button only forwards when the user explicitly picked the FORWARD
+  # entry. Both BACK and FORWARD paths fall through to the persist block so
+  # in-progress edits survive a rewind-and-return trip. ESC behaves like BACK
+  # (per the back-button-everywhere policy; splash + role picker are the only
+  # screens where ESC exits).
   local choice new_val rc result_rc=0
   while true; do
     local -a items=()
-    items+=("__BACK__" "<-- Back to previous screen")
+    items+=("__FORWARD__" "Save & continue to install confirmation")
+    items+=("__BACK__"    "Back to previous screen")
     local -a sorted_keys
     mapfile -t sorted_keys < <(printf '%s\n' "${!current[@]}" | sort)
     for key in "${sorted_keys[@]}"; do
@@ -523,26 +538,22 @@ menu_edit_config() {
     done
 
     choice=$(whiptail --title "Edit Configuration" \
-      --ok-button "EDIT" --cancel-button "DONE" \
-      --menu "Pick a value to edit, DONE to continue, or <-- Back to rewind." 20 80 12 \
+      --ok-button "SELECT" --cancel-button "BACK" \
+      --menu "Pick a row to edit, or one of the Forward / Back entries at the top." 20 80 12 \
       "${items[@]}" \
       3>&1 1>&2 2>&3)
     rc=$?
-    # ESC and BACK both rewind to the previous stage with the user's edits
-    # persisted. Only DONE (the cancel-button label, rc!=0 with no choice)
-    # forwards; only the explicit "<-- Back" entry (rc=0 with that value)
-    # rewinds with persistence. ESC behaves like BACK rather than abort,
-    # per the back-button-everywhere policy (splash + role picker excepted).
-    if [[ $rc -eq 255 ]]; then
-      result_rc=1  # ESC → treat like BACK (persist + rewind)
+    # CANCEL button or ESC → BACK (persist + rewind).
+    if [[ $rc -ne 0 ]]; then
+      result_rc=1
       break
     fi
-    if [[ $rc -ne 0 ]]; then
-      result_rc=0  # DONE → forward
+    if [[ $choice == "__FORWARD__" ]]; then
+      result_rc=0  # explicit forward — go to confirm.
       break
     fi
     if [[ $choice == "__BACK__" ]]; then
-      result_rc=1  # BACK entry → rewind, with persist below
+      result_rc=1  # explicit back — rewind to previous picker.
       break
     fi
 

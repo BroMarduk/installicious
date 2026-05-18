@@ -989,16 +989,27 @@ while true; do
       ;;
 
     merge_packages)
-      # Append packages to the already-selected features+addons. This
-      # is where we make the final "did the user pick anything at all"
-      # decision — features alone, packages alone, or any combination
-      # is fine. Empty everything means "nothing to do" → exit.
-      selected="$selected ${packages_selected//\"/}"
+      # Append packages_selected to the features+addons list (which
+      # pick_addons already rebuilt cleanly from selected_parents +
+      # addons_picked). Dedupe so a BACK-from-edit_config → forward-from-
+      # pick_packages round trip doesn't double the package IDs — the
+      # earlier version appended unconditionally, so every revisit grew
+      # `selected` by another copy of packages_selected.
+      declare -A _mp_seen=()
+      for _id in $selected; do _mp_seen[$_id]=1; done
+      for _pid in ${packages_selected//\"/}; do
+        [[ -z $_pid ]] && continue
+        [[ -n ${_mp_seen[$_pid]:-} ]] && continue
+        _mp_seen[$_pid]=1
+        selected+=" $_pid"
+      done
+      unset _mp_seen
       selected=$(echo "$selected" | tr -s ' ' | sed 's/^ //; s/ $//')
       if [[ -z $selected ]]; then
         log_info "User $CURRENTUSER continued without selecting any features or packages; nothing to do."
         exit 0
       fi
+      log_info "merge_packages: queue = $selected"
       stage="edit_config"
       ;;
 
