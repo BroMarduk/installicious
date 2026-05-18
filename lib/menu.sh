@@ -540,11 +540,18 @@ menu_edit_config() {
     # --default-item __FORWARD__ pins the highlight to the FORWARD entry
     # so ENTER reliably advances no matter what whiptail's idea of "default
     # selection" happens to be on this build.
+    #
+    # `--` before "${items[@]}" tells popt (whiptail's arg parser) to stop
+    # treating arguments as options — without it a menu-item description
+    # that happens to start with `-` (e.g. a persisted West longitude like
+    # "-73.032") gets parsed as an unknown option, whiptail bails rc=1, and
+    # the editor disappears before the user sees it. That was the symptom
+    # behind "can't get past step 6" — see the rc/choice log line below.
     choice=$(whiptail --title "Edit Configuration" \
       --ok-button "SELECT" --cancel-button "BACK" \
       --default-item "__FORWARD__" \
       --menu "Highlight SAVE & CONTINUE + SELECT to advance. Highlight any key + SELECT to edit it. BACK button rewinds." 22 80 14 \
-      "${items[@]}" \
+      -- "${items[@]}" \
       3>&1 1>&2 2>&3)
     rc=$?
     log_info "menu_edit_config: whiptail returned rc=$rc choice='${choice//$'\n'/\\n}'"
@@ -578,21 +585,43 @@ menu_edit_config() {
         fi
         choice_items+=("$cval" "$clabel")
       done
+      # `--default-item=…` (equals form) so a dash-leading current value
+      # is unambiguously the option's value, not a new option. `--` before
+      # the items array stops popt from parsing dash-leading choice values.
       new_val=$(whiptail --title "$choice" \
-        --default-item "${current[$choice]}" \
+        --default-item="${current[$choice]}" \
         --menu "Select a value for $choice:" 20 80 12 \
-        "${choice_items[@]}" \
+        -- "${choice_items[@]}" \
         3>&1 1>&2 2>&3)
     else
+      # For --inputbox the init value is the 4th positional, so we can't
+      # use `--` between width and init (whiptail would consume `--` as
+      # the init). Sanitize instead: prefix dash-leading values with a
+      # leading space (display-only), and strip it back off after the user
+      # confirms. Without this, editing a key whose current value is a
+      # West longitude / negative latitude fails to render with rc=1.
+      local _init="${current[$choice]}"
+      local _sanitized=0
+      if [[ $_init == -* ]]; then
+        _init=" $_init"
+        _sanitized=1
+      fi
       new_val=$(whiptail --title "$choice" \
         --inputbox "Enter new value for $choice:" \
-        10 70 "${current[$choice]}" \
+        10 70 "$_init" \
         3>&1 1>&2 2>&3)
     fi
     rc=$?
     # cancel OR ESC on a value-input screen → discard the in-progress edit,
     # return to the editor list (treat ESC like Cancel here, not abort).
     [[ $rc -ne 0 ]] && continue
+    # Strip the leading sanitization space iff (a) we added one going in
+    # AND (b) the user returned the SAME dash-leading shape (didn't change
+    # the leading character). Without (b), if the user typed something
+    # different the new value is theirs to keep verbatim.
+    if [[ ${_sanitized:-0} -eq 1 && "${new_val:0:2}" == " -" ]]; then
+      new_val="${new_val:1}"
+    fi
     current[$choice]="$new_val"
     # The user edited this row — even if they typed the same value the
     # _default_<KEY> helper would return, we now treat it as an explicit
