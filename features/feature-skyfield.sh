@@ -6,22 +6,21 @@
 #              planet positions, etc.) by replacing weewx's built-in pyephem
 #              calculations with the Skyfield library.
 #
-#              Steps:
-#                1. Install three apt packages (numpy, pandas, python3-skyfield).
+#              Follows the upstream's official install recipe (no git, no
+#              source tree on disk):
+#                1. Ensure three apt packages (numpy, pandas, python3-skyfield).
 #                   Pre-install state is recorded per package so --uninstall
 #                   only removes packages we put in place.
-#                2. Clone (or refresh) the SkyfieldAlmanac repo to a working
-#                   directory under $PATH_BACKUP/skyfield-source.
-#                3. Register the extension with WeeWX via its own CLI:
-#                   `weectl extension install` on weewx 5 (Trixie's apt
-#                   ships 5.x), `wee_extension --install` on weewx 4 —
-#                   auto-detected, same pattern feature-neowx-material uses.
+#                2. wget the extension ZIP to a temp file.
+#                3. Hand the ZIP to WeeWX's own extension CLI — `weectl
+#                   extension install` on weewx 5 (Trixie's apt ships 5.x),
+#                   `wee_extension --install=` on weewx 4. Auto-detected;
+#                   same pattern feature-neowx-material uses.
 #
 #              --uninstall reverses in opposite order:
 #                1. weectl/wee_extension --uninstall (best-effort; weewx may
 #                   already be gone if the user pulled it).
-#                2. Remove the cloned source tree.
-#                3. apt-remove the python packages we installed (per-package
+#                2. apt-remove the python packages we installed (per-package
 #                   pre-state check leaves anything that was already there).
 #
 #              II_DEPS="weewx weewx-setup" so the scheduler auto-pulls the
@@ -31,15 +30,22 @@
 #              (The hardened scheduler refuses to start if either dep's
 #              installer is missing entirely.)
 #
-#              v1 caveats: extension name "SkyfieldAlmanac" is hardcoded for
-#              the uninstall step; if upstream renames the extension, update
-#              SKYFIELD_EXTENSION_NAME below.
+#              v2 notes:
+#                - Switched from git clone of Jterrettaz/SkyfieldAlmanac to
+#                  ZIP download of roe-dl/weewx-skyfield-almanac. Jterrettaz
+#                  was an old fork; roe-dl is the actively-maintained
+#                  upstream and matches the WeeWX docs' install recipe.
+#                  Bonus: drops the git apt dep AND eliminates the silent
+#                  `git clone` hang we hit in the wild.
+#                - SKYFIELD_EXTENSION_NAME is the name `weectl extension
+#                  list` will report for the registered extension. If
+#                  upstream renames it, override the env var.
 
 # === II_MANIFEST_BEGIN ===
 II_ID="skyfield"
 II_TITLE="SkyfieldAlmanac (WeeWX extension)"
 II_CATEGORY="feature"
-II_VERSION="1"
+II_VERSION="2"
 II_DEPS="weewx weewx-setup"
 II_REQUIRES_REBOOT="never"
 II_APT_PACKAGES="python3-numpy python3-pandas python3-skyfield"
@@ -52,9 +58,8 @@ source lib/status.sh
 source lib/apt.sh
 source lib/installer_apt.sh
 
-SKYFIELD_REPO_URL="${SKYFIELD_REPO_URL:-https://github.com/Jterrettaz/SkyfieldAlmanac.git}"
+SKYFIELD_EXTENSION_URL="${SKYFIELD_EXTENSION_URL:-https://github.com/roe-dl/weewx-skyfield-almanac/archive/refs/heads/master.zip}"
 SKYFIELD_EXTENSION_NAME="${SKYFIELD_EXTENSION_NAME:-SkyfieldAlmanac}"
-SKYFIELD_SRC_DIR="${SKYFIELD_SRC_DIR:-${PATH_BACKUP:-backup}/skyfield-source}"
 
 # _weewx_ext_tool — echo the WeeWX extension CLI on this box:
 # "weectl" (weewx 5), "wee_extension" (weewx 4), or "" if neither is on
@@ -106,36 +111,8 @@ do_install() {
     return $rc
   fi
 
-  # Step 2: fetch source. Need git for this; pull it in if not already there.
-  installer_apt_ensure_deps git
-  rc=$?
-  if [[ $rc -ne 0 ]]; then
-    status_mark_failed "$II_ID" "git not available (code $rc)"
-    echo -e "[ \e[0;31mFAIL\e[0m ] Installicious could not ensure git was installed for SkyfieldAlmanac. Error Code: $rc."
-    return $rc
-  fi
-
-  log_info "Fetching SkyfieldAlmanac source into $SKYFIELD_SRC_DIR."
-  if [[ -d "$SKYFIELD_SRC_DIR/.git" ]]; then
-    if ! sudo git -C "$SKYFIELD_SRC_DIR" pull --ff-only; then
-      log_warn "git pull failed; re-cloning from scratch."
-      sudo rm -rf "$SKYFIELD_SRC_DIR"
-    fi
-  fi
-  if [[ ! -d "$SKYFIELD_SRC_DIR/.git" ]]; then
-    sudo mkdir -p "$(dirname "$SKYFIELD_SRC_DIR")"
-    if ! sudo git clone "$SKYFIELD_REPO_URL" "$SKYFIELD_SRC_DIR"; then
-      log_fail "Failed to clone $SKYFIELD_REPO_URL."
-      status_mark_failed "$II_ID" "git clone failed"
-      echo -e "[ \e[0;31mFAIL\e[0m ] Installicious could not clone the SkyfieldAlmanac source."
-      return 1
-    fi
-  fi
-  status_set "$STATUS_FILE" "SKYFIELD_FW_SRC_DIR" "$SKYFIELD_SRC_DIR"
-
-  # Step 3: register with weewx via its extension CLI (weewx 5 → weectl,
-  # weewx 4 → wee_extension). Auto-detected so the same feature works on
-  # both Bookworm's weewx 4 and Trixie's weewx 5.
+  # Step 2: pick the extension CLI before we download — fail fast if WeeWX
+  # didn't bring one in. (Cheaper than discovering it after a 1-MB wget.)
   local tool
   tool=$(_weewx_ext_tool)
   if [[ -z $tool ]]; then
@@ -145,24 +122,44 @@ do_install() {
     return 1
   fi
 
-  # Extension-install behavior on an already-registered extension varies:
-  # some weewx builds overwrite silently, some prompt, some error. Soft-fail
-  # rather than hard-fail — a non-zero exit when the extension is already
-  # registered shouldn't tank the rest of the queue. Manual re-register:
-  #   sudo weectl extension uninstall SkyfieldAlmanac --yes   # (or wee_extension --uninstall)
-  #   sudo bash installicious.sh                              # re-runs cleanly
+  # Step 3: download the extension ZIP. --tries=3 + --timeout=30 keeps a
+  # flaky connection from silently hanging (the previous git-clone path
+  # had no timeout and stuck for hours when the network blipped).
+  local zip
+  zip=$(mktemp --suffix=.zip) || {
+    log_fail "mktemp failed for skyfield zip."
+    status_mark_failed "$II_ID" "mktemp failed"
+    echo -e "[ \e[0;31mFAIL\e[0m ] Installicious could not create a temp file for the SkyfieldAlmanac extension."
+    return 1
+  }
+  log_info "Downloading SkyfieldAlmanac from $SKYFIELD_EXTENSION_URL."
+  if ! wget --tries=3 --timeout=30 -qO "$zip" "$SKYFIELD_EXTENSION_URL"; then
+    log_fail "Failed to download $SKYFIELD_EXTENSION_URL."
+    rm -f "$zip"
+    status_mark_failed "$II_ID" "extension download failed"
+    echo -e "[ \e[0;31mFAIL\e[0m ] Installicious could not download the SkyfieldAlmanac extension."
+    return 1
+  fi
+
+  # Step 4: register the extension. weectl/wee_extension behavior on an
+  # already-registered extension varies (some overwrite silently, some
+  # error). Soft-fail rather than tank the queue — manual reinstall is
+  #   sudo weectl extension uninstall SkyfieldAlmanac --yes
+  #   sudo bash installicious.sh
+  local install_rc
   if [[ $tool == weectl ]]; then
-    log_info "Registering extension with weewx 5: weectl extension install $SKYFIELD_SRC_DIR"
-    if ! sudo weectl extension install "$SKYFIELD_SRC_DIR" --yes 2>&1 | tee -a "$FILE_LOG_INSTALLER"; then
-      log_warn "weectl extension install returned non-zero. The extension may already be registered, or there may be a real error. Verify with: sudo weectl extension list"
-      echo -e "[ \e[0;33mWARN\e[0m ] weectl extension install returned non-zero — check 'weectl extension list' to confirm SkyfieldAlmanac is registered."
-    fi
+    log_info "Registering extension with weewx 5: weectl extension install <zip>"
+    sudo weectl extension install "$zip" --yes 2>&1 | tee -a "$FILE_LOG_INSTALLER"
+    install_rc="${PIPESTATUS[0]}"
   else
-    log_info "Registering extension with weewx 4: wee_extension --install $SKYFIELD_SRC_DIR"
-    if ! sudo wee_extension --install="$SKYFIELD_SRC_DIR" 2>&1 | tee -a "$FILE_LOG_INSTALLER"; then
-      log_warn "wee_extension --install returned non-zero. The extension may already be registered, or there may be a real error. Verify with: sudo wee_extension --list"
-      echo -e "[ \e[0;33mWARN\e[0m ] wee_extension --install returned non-zero — check 'wee_extension --list' to confirm SkyfieldAlmanac is registered."
-    fi
+    log_info "Registering extension with weewx 4: wee_extension --install=<zip>"
+    sudo wee_extension --install="$zip" 2>&1 | tee -a "$FILE_LOG_INSTALLER"
+    install_rc="${PIPESTATUS[0]}"
+  fi
+  rm -f "$zip"
+  if [[ $install_rc -ne 0 ]]; then
+    log_warn "$tool extension install returned non-zero ($install_rc). The extension may already be registered, or there may be a real error. Verify with: sudo $tool extension list"
+    echo -e "[ \e[0;33mWARN\e[0m ] $tool extension install returned non-zero — check '$tool extension list' to confirm SkyfieldAlmanac is registered."
   fi
 
   status_mark_complete "$II_ID" "$II_VERSION"
@@ -200,16 +197,8 @@ do_uninstall() {
     log_info "Neither weectl nor wee_extension present; skipping extension unregister (weewx likely already removed)."
   fi
 
-  # Step 2: remove the cloned source tree.
-  local recorded_src
-  recorded_src=$(status_get "$STATUS_FILE" "SKYFIELD_FW_SRC_DIR")
-  [[ -z $recorded_src ]] && recorded_src="$SKYFIELD_SRC_DIR"
-  if [[ -d $recorded_src ]]; then
-    log_info "Removing source tree at $recorded_src."
-    sudo rm -rf "$recorded_src" || log_warn "rm of $recorded_src returned non-zero."
-  fi
-
-  # Step 3: revert apt packages we installed.
+  # Step 2: revert apt packages we installed. No source tree to remove —
+  # the v2 install recipe doesn't keep one on disk.
   # shellcheck disable=SC2086
   installer_apt_revert "$STATUS_FILE" $II_APT_PACKAGES
 
