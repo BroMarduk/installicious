@@ -389,16 +389,16 @@ _menu_source_choices_for() {
 # selected feature's II_EDITABLE_CONFIG manifest field. Reads default values
 # from the corresponding .config files (chained: installicious.config first,
 # then per-feature configs, then role config, then any prior menu-config.sh).
-# Loops a whiptail menu+inputbox until the user picks the "Save & continue"
-# or "Back" entry (or hits the BACK button). Persists the final values to
+# Loops a whiptail menu+inputbox until the user clicks NEXT (forward) or
+# the "<-- Back" entry (rewind). Persists the final values to
 # $PATH_STATE/menu-config.sh in both cases so a rewind-and-return trip
 # preserves any in-progress edits.
 #
 # Return codes (matches the lib/menu.sh contract):
-#   0   forward — user picked the "Save & continue" entry; edits persisted
-#   1   back    — user picked the "Back" entry or pressed the BACK button
-#                 (or ESC); in-progress edits are still persisted so a
-#                 rewind-and-return trip preserves them
+#   0   forward — user clicked the NEXT button; edits persisted
+#   1   back    — user picked the "<-- Back" entry (or pressed ESC);
+#                 in-progress edits are still persisted so a rewind-and-
+#                 return trip preserves them
 #   2   no-data — no editable keys advertised; nothing to show, caller should
 #                 auto-advance
 #
@@ -513,55 +513,48 @@ menu_edit_config() {
 
   # ---- edit loop ----
   # The editor lists two kinds of entries:
-  #     __FORWARD__   ">>> SAVE & CONTINUE TO INSTALL <<<"  — SELECT → forward
-  #     <KEY>         "<current value>"                     — SELECT → edit that key
+  #     __BACK__   "<-- Back to previous screen"   — SELECT → rewind
+  #     <KEY>      "<current value>"               — SELECT → edit that key
   # Button labels:
-  #     OK     = "SELECT" (acts on the highlighted entry — advance via the
-  #              FORWARD row, edit via any key row)
-  #     CANCEL = "BACK"   (rewinds to the previous picker; this is the
-  #              ONLY back path in the editor — no redundant __BACK__ entry)
-  #     ESC    = same as BACK
-  # The FORWARD entry is the first menu row AND we pin --default-item to it,
-  # so pressing ENTER on a freshly-opened editor always advances. The CANCEL
-  # button is the only thing that rewinds, so the cancel-as-forward muscle
-  # memory from the previous CANCEL="DONE" editor no longer applies — users
-  # who reflexively hit cancel rewind, which matches every other dialog in
-  # the installer.
+  #     OK     = "SELECT" (left button — acts on the highlighted entry:
+  #              picks __BACK__ to rewind, picks a key to edit it)
+  #     CANCEL = "NEXT"   (right button — explicit forward to confirm,
+  #              no editing happens)
+  #     ESC    = BACK     (consistent with the back-everywhere policy;
+  #              splash + role picker are the only screens where ESC exits)
+  # `--` before "${items[@]}" stops popt from parsing dash-leading values
+  # (e.g. a persisted West longitude like "-73.032") as unknown options;
+  # without it whiptail bails rc=1 before the dialog even renders.
   local choice new_val rc result_rc=0
   while true; do
     local -a items=()
-    items+=("__FORWARD__" ">>> SAVE & CONTINUE TO INSTALL <<<")
+    items+=("__BACK__" "<-- Back to previous screen")
     local -a sorted_keys
     mapfile -t sorted_keys < <(printf '%s\n' "${!current[@]}" | sort)
     for key in "${sorted_keys[@]}"; do
       items+=("$key" "${current[$key]}")
     done
 
-    # --default-item __FORWARD__ pins the highlight to the FORWARD entry
-    # so ENTER reliably advances no matter what whiptail's idea of "default
-    # selection" happens to be on this build.
-    #
-    # `--` before "${items[@]}" tells popt (whiptail's arg parser) to stop
-    # treating arguments as options — without it a menu-item description
-    # that happens to start with `-` (e.g. a persisted West longitude like
-    # "-73.032") gets parsed as an unknown option, whiptail bails rc=1, and
-    # the editor disappears before the user sees it. That was the symptom
-    # behind "can't get past step 6" — see the rc/choice log line below.
     choice=$(whiptail --title "Edit Configuration" \
-      --ok-button "SELECT" --cancel-button "BACK" \
-      --default-item "__FORWARD__" \
-      --menu "Highlight SAVE & CONTINUE + SELECT to advance. Highlight any key + SELECT to edit it. BACK button rewinds." 22 80 14 \
+      --ok-button "SELECT" --cancel-button "NEXT" \
+      --menu "Highlight a key + SELECT to edit, or NEXT to continue. Highlight Back + SELECT to rewind." 22 80 14 \
       -- "${items[@]}" \
       3>&1 1>&2 2>&3)
     rc=$?
     log_info "menu_edit_config: whiptail returned rc=$rc choice='${choice//$'\n'/\\n}'"
-    # CANCEL button or ESC → BACK (persist + rewind).
-    if [[ $rc -ne 0 ]]; then
+    # ESC → BACK (per the app-wide back-everywhere policy).
+    if [[ $rc -eq 255 ]]; then
       result_rc=1
       break
     fi
-    if [[ $choice == "__FORWARD__" ]]; then
-      result_rc=0  # explicit forward — go to confirm.
+    # CANCEL button = NEXT → forward to confirm.
+    if [[ $rc -ne 0 ]]; then
+      result_rc=0
+      break
+    fi
+    # OK button = SELECT → act on the chosen row.
+    if [[ $choice == "__BACK__" ]]; then
+      result_rc=1
       break
     fi
 
