@@ -35,7 +35,7 @@
 II_ID="weewx-database-ram"
 II_TITLE="WeeWX database on zram (validated snapshots)"
 II_CATEGORY="feature"
-II_VERSION="1"
+II_VERSION="2"
 II_DEPS="weewx"
 II_REQUIRES_REBOOT="conditional"
 II_DEFAULT_SELECTED="off"
@@ -50,6 +50,7 @@ source lib/status.sh
 source lib/state.sh
 source lib/backup.sh
 source lib/apt.sh
+source lib/installer_apt.sh
 
 FILE_CONFIG_WEEWX="${PATH_CONFIG:-config}/weewx.config"
 [[ -f $FILE_CONFIG_WEEWX ]] && source "$FILE_CONFIG_WEEWX"
@@ -390,6 +391,21 @@ do_install() {
     return 1
   fi
 
+  # Apt deps that the runtime scripts (weewx-ram-setup, save, teardown)
+  # call out to: sqlite3 (quick_check + .backup), rsync (non-DB mirror),
+  # util-linux (zramctl), zram-tools (older zram-userland helpers some
+  # distros keep around). Pre-install state recorded per-package so
+  # --uninstall only removes what we put in place.
+  log_info "Ensuring apt deps: $II_APT_PACKAGES"
+  # shellcheck disable=SC2086
+  installer_apt_record_install "$STATUS_FILE" $II_APT_PACKAGES
+  local rc=$?
+  if [[ $rc -ne 0 ]]; then
+    status_mark_failed "$II_ID" "apt deps install failed (code $rc)"
+    echo -e "[ \e[0;31mFAIL\e[0m ] Installicious could not install weewx-database-ram apt dependencies. Error Code: $rc."
+    return $rc
+  fi
+
   compute_ram_plan
   log_info "Plan: zram ${ZRAM_SIZE} ${ZRAM_ALGO} [${ZRAM_SIZE_SOURCE}] (model: ${DETECTED_PI_MODEL}, DB ${DETECTED_DB_MB}M, rotation ${WEEWX_DB_ROTATIONS})."
 
@@ -502,6 +518,12 @@ do_uninstall() {
   if systemctl is-enabled --quiet weewx 2>/dev/null; then
     sudo systemctl start weewx || log_warn "weewx restart returned non-zero."
   fi
+
+  # Revert apt packages we installed (per-package pre-state check leaves
+  # anything that was already there — e.g. rsync is almost always present
+  # on a Pi independent of this feature).
+  # shellcheck disable=SC2086
+  installer_apt_revert "$STATUS_FILE" $II_APT_PACKAGES
 
   status_mark_uninstalled "$II_ID"
   log_ok "weewx-database-ram uninstalled."
