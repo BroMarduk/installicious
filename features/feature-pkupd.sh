@@ -7,17 +7,22 @@
 #              in $PATH_STATUS/pkupd.status.time). A step that succeeded
 #              within the skip window is silently skipped by the lib.
 #
-#              Two editable knobs (config/pkupd.config, also on the in-menu
+#              Three editable knobs (config/pkupd.config, also on the in-menu
 #              Edit Configuration screen):
 #                PKUPD_UPGRADE_MODE   "dist-upgrade" (default — pulls new
 #                                     packages incl. new-ABI kernels) or
 #                                     "upgrade" (in-place only — never pulls
-#                                     a kernel jump unprompted)
+#                                     a kernel jump unprompted). "full-upgrade"
+#                                     is accepted as an alias of dist-upgrade
+#                                     (they're the identical apt operation).
 #                PKUPD_SKIP_WINDOW_MIN  minutes; after a successful upgrade,
 #                                     a re-run within this window skips the
 #                                     apt steps. Default 60. 0 disables the
 #                                     skip. A FAILED upgrade records no
 #                                     timestamp, so a retry always re-runs.
+#                PKUPD_AUTOREMOVE     "true" (default) runs apt-get autoremove
+#                                     --purge after the upgrade; "false" skips
+#                                     it. Independent of the upgrade depth.
 #
 #              --uninstall is a no-op with a notice — apt operations are not
 #              individually reversible. Use apt directly to downgrade specific
@@ -34,7 +39,7 @@ II_VERSION="1"
 II_DEPS=""
 II_REQUIRES_REBOOT="conditional"
 II_DEFAULT_SELECTED="on"
-II_EDITABLE_CONFIG="PKUPD_UPGRADE_MODE PKUPD_SKIP_WINDOW_MIN"
+II_EDITABLE_CONFIG="PKUPD_UPGRADE_MODE PKUPD_SKIP_WINDOW_MIN PKUPD_AUTOREMOVE"
 # === II_MANIFEST_END ===
 
 source config/installicious.config || exit 1
@@ -49,6 +54,7 @@ FILE_CONFIG_PKUPD="${PATH_CONFIG:-config}/pkupd.config"
 state_apply_menu_overrides
 PKUPD_UPGRADE_MODE="${PKUPD_UPGRADE_MODE:-dist-upgrade}"
 PKUPD_SKIP_WINDOW_MIN="${PKUPD_SKIP_WINDOW_MIN:-60}"
+PKUPD_AUTOREMOVE="${PKUPD_AUTOREMOVE:-true}"
 
 MODE="install"
 while [[ $# -gt 0 ]]; do
@@ -92,7 +98,7 @@ STATUS_FILE=$(status_file_for "$II_ID")
 fail_step() {
   local what="$1"      # short description for log/status
   local user_msg="$2"  # for the colorized terminal summary
-  local key="$3"       # legacy status key, e.g. PKUPD_UPDATE
+  local key="$3"       # per-step status key in pkupd.status, e.g. PKUPD_UPDATE_STEP
   local rc="$4"
   log_fail "$what failed." "$rc"
   status_set "$STATUS_FILE" "$key" "Error"
@@ -104,36 +110,48 @@ fail_step() {
 
 log_info "Refreshing apt cache (apt-get update)."
 apt_ensure_fresh; rc=$?
-[[ $rc -ne 0 ]] && fail_step "apt-get update" "update package lists" "PKUPD_UPDATE" "$rc"
-status_set "$STATUS_FILE" "PKUPD_UPDATE" "Completed"
+[[ $rc -ne 0 ]] && fail_step "apt-get update" "update package lists" "PKUPD_UPDATE_STEP" "$rc"
+status_set "$STATUS_FILE" "PKUPD_UPDATE_STEP" "Completed"
 
 case "$PKUPD_UPGRADE_MODE" in
   upgrade)
     log_info "Running apt-get upgrade (PKUPD_UPGRADE_MODE=upgrade — kernels held back)."
     apt_upgrade_fresh; rc=$?
-    [[ $rc -ne 0 ]] && fail_step "apt-get upgrade" "upgrade packages" "PKUPD_UPGRADE" "$rc"
+    [[ $rc -ne 0 ]] && fail_step "apt-get upgrade" "upgrade packages" "PKUPD_UPGRADE_STEP" "$rc"
     ;;
-  dist-upgrade|"")
-    log_info "Running apt-get dist-upgrade (PKUPD_UPGRADE_MODE=dist-upgrade)."
+  dist-upgrade|full-upgrade|"")
+    # full-upgrade is the `apt` CLI's name for `apt-get dist-upgrade` —
+    # identical operation, accepted as an alias.
+    log_info "Running apt-get dist-upgrade (PKUPD_UPGRADE_MODE=$PKUPD_UPGRADE_MODE)."
     apt_dist_upgrade_fresh; rc=$?
-    [[ $rc -ne 0 ]] && fail_step "apt-get dist-upgrade" "upgrade packages" "PKUPD_UPGRADE" "$rc"
+    [[ $rc -ne 0 ]] && fail_step "apt-get dist-upgrade" "upgrade packages" "PKUPD_UPGRADE_STEP" "$rc"
     ;;
   *)
     log_warn "Unknown PKUPD_UPGRADE_MODE '$PKUPD_UPGRADE_MODE'; defaulting to dist-upgrade."
     log_info "Running apt-get dist-upgrade."
     apt_dist_upgrade_fresh; rc=$?
-    [[ $rc -ne 0 ]] && fail_step "apt-get dist-upgrade" "upgrade packages" "PKUPD_UPGRADE" "$rc"
+    [[ $rc -ne 0 ]] && fail_step "apt-get dist-upgrade" "upgrade packages" "PKUPD_UPGRADE_STEP" "$rc"
     ;;
 esac
-status_set "$STATUS_FILE" "PKUPD_UPGRADE" "Completed"
+status_set "$STATUS_FILE" "PKUPD_UPGRADE_STEP" "Completed"
 
-log_info "Running apt-get autoremove."
-apt_autoremove_fresh; rc=$?
-[[ $rc -ne 0 ]] && fail_step "apt-get autoremove" "autoremove unused packages" "PKUPD_AUTOREMOVE" "$rc"
-status_set "$STATUS_FILE" "PKUPD_AUTOREMOVE" "Completed"
+case "$PKUPD_AUTOREMOVE" in
+  false)
+    log_info "PKUPD_AUTOREMOVE=false — skipping apt-get autoremove."
+    status_set "$STATUS_FILE" "PKUPD_AUTOREMOVE_STEP" "Skipped"
+    ;;
+  *)
+    [[ $PKUPD_AUTOREMOVE != "true" ]] \
+      && log_warn "Unknown PKUPD_AUTOREMOVE '$PKUPD_AUTOREMOVE'; defaulting to true (running autoremove)."
+    log_info "Running apt-get autoremove."
+    apt_autoremove_fresh; rc=$?
+    [[ $rc -ne 0 ]] && fail_step "apt-get autoremove" "autoremove unused packages" "PKUPD_AUTOREMOVE_STEP" "$rc"
+    status_set "$STATUS_FILE" "PKUPD_AUTOREMOVE_STEP" "Completed"
+    ;;
+esac
 
 status_set "$STATUS_FILE" "PKUPD_STATUS" "Completed"
 status_mark_complete "$II_ID" "$II_VERSION"
-log_ok "Package update + upgrade + autoremove complete."
+log_ok "Package update + upgrade complete."
 echo -e "[  \e[0;32mOK\e[0m  ] Installicious successfully customized the package updates for the Raspberry Pi."
 exit 0

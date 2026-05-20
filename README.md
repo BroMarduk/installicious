@@ -75,13 +75,17 @@ change actually requires one).
 | `locale`| Set Localizations (US default) | on      | never       |
 | `rconf` | Raspberry Pi Configuration     | off     | conditional |
 
-- **pkupd** — `apt update`, then an upgrade, then `autoremove`. Triggers
-  a reboot only if apt indicates one is required. Editable keys:
-  `PKUPD_UPGRADE_MODE` (`dist-upgrade`, the default — pulls new packages
-  incl. new-ABI kernels; or `upgrade` — in-place only, never pulls a
-  kernel jump unprompted) and `PKUPD_SKIP_WINDOW_MIN` (minutes; after a
-  successful upgrade a re-run within this window skips the apt steps —
-  default 60, `0` disables the skip; a failed upgrade always re-runs).
+- **pkupd** — `apt update`, then an upgrade, then (optionally)
+  `autoremove`. Triggers a reboot only if apt indicates one is required.
+  Editable keys:
+  - `PKUPD_UPGRADE_MODE` — `dist-upgrade` (default — pulls new packages
+    incl. new-ABI kernels; `full-upgrade` is an accepted alias) or
+    `upgrade` (in-place only, never pulls a kernel jump unprompted).
+  - `PKUPD_SKIP_WINDOW_MIN` — minutes; after a successful upgrade a
+    re-run within this window skips the apt steps (default 60, `0`
+    disables the skip; a failed upgrade always re-runs).
+  - `PKUPD_AUTOREMOVE` — `true` (default) runs `apt-get autoremove
+    --purge` after the upgrade; `false` skips it.
 - **bash** — installs a curated `.bashrc` / aliases / prompt. Re-login
   is handled automatically by the `installicious` wrapper.
 - **locale** — sets language, timezone, console keyboard, and Wi-Fi
