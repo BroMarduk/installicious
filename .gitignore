@@ -7,3 +7,9 @@ logs/
 # Editor / tooling — local-only.
 .vscode/
 .claude/
+
+# Personal config overrides — *.dan files hold per-user secrets and
+# customizations (e.g. overrides/weewx.conf.dan with Wunderground
+# credentials). They're intentionally out of git so the framework's
+# default overrides/*.conf templates stay clean and reviewable.
+*.dan
