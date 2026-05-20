@@ -251,5 +251,55 @@ _deserialize_addons_picked "webserver:webserver-ssl;motd:motd-weather,motd-updat
 chkeq "deserialize webserver"  "${addons_picked[webserver]}"  "webserver-ssl"
 chkeq "deserialize motd"       "${addons_picked[motd]}"       "motd-weather motd-updates"
 
+# ===========================================================================
+echo
+echo "=== Test 12: configuration.override layering ==="
+# overrides/configuration.override is a hand-authored KEY=VALUE file. It
+# overrides config/*.config defaults but loses to the in-menu editor's
+# menu-config.sh. Precedence: config < configuration.override < menu-config.sh
+TMPOV=$(mktemp -d)
+export PATH_OVERRIDES="$TMPOV"
+rm -f "$TMPSTATE/menu-config.sh"
+TMPCFG2=$(mktemp -d)
+cat > "$TMPCFG2/feature.config" <<'EOF'
+LAYER_KEY="from_config"
+CONFIG_ONLY="from_config"
+EOF
+
+# (a) no override files → config value wins
+chkeq "config value when no override" \
+  "$(_menu_read_var_chain LAYER_KEY "$TMPCFG2/feature.config")" "from_config"
+
+# (b) configuration.override beats config
+echo 'LAYER_KEY="from_cfg_override"' > "$TMPOV/configuration.override"
+chkeq "configuration.override beats config" \
+  "$(_menu_read_var_chain LAYER_KEY "$TMPCFG2/feature.config")" "from_cfg_override"
+
+# (c) menu-config.sh beats configuration.override
+echo 'LAYER_KEY="from_menu"' > "$TMPSTATE/menu-config.sh"
+chkeq "menu-config.sh beats configuration.override" \
+  "$(_menu_read_var_chain LAYER_KEY "$TMPCFG2/feature.config")" "from_menu"
+
+# (d) --skip-state drops menu-config.sh but KEEPS configuration.override
+chkeq "--skip-state keeps configuration.override" \
+  "$(_menu_read_var_chain LAYER_KEY --skip-state "$TMPCFG2/feature.config")" "from_cfg_override"
+
+# (e) state_apply_menu_overrides layers the same way into the live env
+unset LAYER_KEY CONFIG_ONLY
+source "$TMPCFG2/feature.config"
+state_apply_menu_overrides
+chkeq "state_apply: menu edit wins"      "$LAYER_KEY"   "from_menu"
+chkeq "state_apply: config-only intact"  "$CONFIG_ONLY" "from_config"
+
+# (f) no menu-config.sh → state_apply lands on configuration.override
+rm -f "$TMPSTATE/menu-config.sh"
+unset LAYER_KEY
+source "$TMPCFG2/feature.config"
+state_apply_menu_overrides
+chkeq "state_apply: override wins when no menu file" "$LAYER_KEY" "from_cfg_override"
+
+rm -rf "$TMPOV" "$TMPCFG2"
+unset PATH_OVERRIDES
+
 echo
 echo "=== Done ==="

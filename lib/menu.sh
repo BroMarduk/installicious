@@ -303,15 +303,21 @@ menu_confirm() {
 # ---------------------------------------------------------------------------
 
 # _menu_read_var_chain <var> [--skip-state] <config_file...>
-# Sources each config file in a subshell (in order) plus any prior
-# state/menu-config.sh, then echoes the value of <var>. The subshell isolates
-# the sources from the caller's env. Empty if var is unset after all sources.
+# Sources each config file in a subshell (in order), then the hand-authored
+# overrides/configuration.override, then any prior state/menu-config.sh, and
+# echoes the value of <var>. The subshell isolates the sources from the
+# caller's env. Empty if var is unset after all sources.
 #
-# --skip-state omits the state/menu-config.sh overlay — useful when the caller
-# needs to know what the "baseline" value would be (i.e. what the chain would
-# return if no prior menu-config.sh overrides were applied). menu_edit_config
-# uses this to skip persisting values that would round-trip to the same thing
-# the chain produces on its own.
+# Source order mirrors state_apply_menu_overrides exactly, so the editor's
+# displayed value matches what an installer will actually see:
+#   <config_file...>  <  configuration.override  <  menu-config.sh
+#
+# --skip-state omits ONLY the state/menu-config.sh overlay — useful when the
+# caller needs the "baseline" value, i.e. what the chain would return without
+# the menu editor's own output. configuration.override stays in the baseline
+# (it's a user-authored default, not menu output). menu_edit_config uses this
+# to skip persisting values that would round-trip to the same thing the chain
+# produces on its own.
 _menu_read_var_chain() {
   local var="$1"
   shift
@@ -325,6 +331,8 @@ _menu_read_var_chain() {
     for f in "$@"; do
       [[ -f $f ]] && source "$f" 2>/dev/null
     done
+    local cfg_override="${PATH_OVERRIDES:-overrides}/configuration.override"
+    [[ -f $cfg_override ]] && source "$cfg_override" 2>/dev/null
     if [[ $skip_state -eq 0 ]] \
        && [[ -f "${PATH_STATE:-state}/menu-config.sh" ]]; then
       source "${PATH_STATE:-state}/menu-config.sh" 2>/dev/null

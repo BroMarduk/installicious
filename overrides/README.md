@@ -54,3 +54,45 @@ override to take effect.
 
 An empty (or all-comments) override file is a no-op — the feature skips the
 merge entirely.
+
+## `configuration.override` — set editable-config DEFAULTS from a file
+
+The two files above overlay *application* config (`weewx.conf`, `skin.conf`).
+`configuration.override` is different: it overrides **installicious's own
+editable-config items** — the `II_EDITABLE_CONFIG` keys you'd otherwise set
+on the in-menu **Edit Configuration** screen (`MOTD_NAME`, `WEEWX_LATITUDE`,
+`PKUPD_UPGRADE_MODE`, `LOCALE_TIMEZONE`, …).
+
+It's a plain `KEY=VALUE` bash file. Drop one onto a fresh Pi and every
+install picks up your preferred values — no clicking through the editor.
+That's the point: **repeatability**.
+
+Precedence (last wins):
+
+```
+config/*.config            framework defaults
+overrides/configuration.override   ← your hand-authored baseline
+state/menu-config.sh        ← the in-menu editor's output
+```
+
+So `configuration.override` beats the shipped defaults, and an in-menu edit
+still beats `configuration.override` (the file is your baseline; the menu
+tweaks on top of it for the current run).
+
+Example — create `/etc/installicious/overrides/configuration.override`:
+
+```bash
+# installicious editable-config defaults — KEY=VALUE, sourced as bash.
+# Keys are the II_EDITABLE_CONFIG names; see each config/<feature>.config
+# for what's available and the documented format of each value.
+MOTD_NAME="Dan"
+WEEWX_STATION_LOCATION="Manchester Center, VT"
+WEEWX_LATITUDE="43.167"
+WEEWX_LONGITUDE="-73.032"
+PKUPD_UPGRADE_MODE="upgrade"
+PKUPD_AUTOREMOVE="true"
+```
+
+Like the other `*.override` files it's gitignored and excluded from
+`setup.sh`'s sync, so it persists at `/etc/installicious/overrides/` across
+re-downloads. Edited values take effect on the next installicious run.

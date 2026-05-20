@@ -155,15 +155,28 @@ state_clear() {
 }
 
 # ---------------------------------------------------------------------------
-# Menu config overrides
+# Config overrides — two layers
 #
-# When the user edits values in the menu_edit_config screen, we persist them
-# to $PATH_STATE/menu-config.sh as a sourceable file. Each installer that
-# advertises editable config (II_EDITABLE_CONFIG) sources this file AFTER its
-# baseline .config files so the user's edits win — both at install time AND
-# in future installicious sessions.
+# An installer that advertises editable config (II_EDITABLE_CONFIG) sources
+# its baseline config/*.config files, then calls state_apply_menu_overrides
+# to layer two user-override files on top (lowest precedence first):
 #
-# Lifecycle: the file is intentionally NOT cleared automatically.
+#   1. overrides/configuration.override  — hand-authored by the user. A
+#      plain KEY=VALUE bash file for setting preferred DEFAULTS without
+#      clicking through the in-menu editor. Drop one onto a fresh Pi and
+#      every install picks up your values — repeatability, no re-typing.
+#      Gitignored (*.override) and skipped by setup.sh's rsync, so it
+#      persists across re-downloads.
+#
+#   2. $PATH_STATE/menu-config.sh         — machine-written by
+#      menu_edit_config when the user edits values on the in-menu screen.
+#      Sourced LAST, so an in-menu edit always wins over the hand-authored
+#      configuration.override (the file is your baseline; the menu tweaks
+#      on top).
+#
+# Net precedence:  config/*.config  <  configuration.override  <  menu-config.sh
+#
+# menu-config.sh lifecycle: NOT cleared automatically.
 #   - Created/updated by menu_edit_config in both the forward and back paths
 #     out of the editor (so in-progress edits survive a rewind-and-return).
 #   - Persists across queue completion, queue failure, mid-queue reboots,
@@ -179,10 +192,24 @@ _menu_overrides_file() {
   echo "${PATH_STATE:-state}/menu-config.sh"
 }
 
-# state_apply_menu_overrides - source $PATH_STATE/menu-config.sh if present.
-# Call from an installer after its baseline config sourcing so user-edited
-# values override defaults. No-op if the file doesn't exist.
+# _config_override_file - path to the hand-authored overrides file.
+_config_override_file() {
+  echo "${PATH_OVERRIDES:-overrides}/configuration.override"
+}
+
+# state_apply_menu_overrides - layer the user-override files onto the
+# config values already sourced by the caller. Sources, in order:
+#   1. overrides/configuration.override  (hand-authored baseline)
+#   2. $PATH_STATE/menu-config.sh         (in-menu editor output — wins)
+# Each is a no-op if its file doesn't exist. Call from an installer after
+# its baseline config/*.config sourcing.
 state_apply_menu_overrides() {
+  local cfg_override
+  cfg_override=$(_config_override_file)
+  if [[ -f $cfg_override ]]; then
+    # shellcheck disable=SC1090
+    source "$cfg_override"
+  fi
   local file
   file=$(_menu_overrides_file)
   if [[ -f $file ]]; then
