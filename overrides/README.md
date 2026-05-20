@@ -79,20 +79,32 @@ So `configuration.override` beats the shipped defaults, and an in-menu edit
 still beats `configuration.override` (the file is your baseline; the menu
 tweaks on top of it for the current run).
 
-Example — create `/etc/installicious/overrides/configuration.override`:
+**Start from the shipped template** — `configuration.override.example`
+lists every editable key, grouped by feature, with its default value and a
+one-line note, all commented out:
+
+```bash
+sudo cp /etc/installicious/overrides/configuration.override.example \
+        /etc/installicious/overrides/configuration.override
+sudo nano /etc/installicious/overrides/configuration.override
+```
+
+Uncomment and edit only the keys you want; leave the rest commented to keep
+the framework default. A minimal hand-written file works just as well:
 
 ```bash
 # installicious editable-config defaults — KEY=VALUE, sourced as bash.
-# Keys are the II_EDITABLE_CONFIG names; see each config/<feature>.config
-# for what's available and the documented format of each value.
 MOTD_NAME="Dan"
 WEEWX_STATION_LOCATION="Manchester Center, VT"
 WEEWX_LATITUDE="43.167"
 WEEWX_LONGITUDE="-73.032"
 PKUPD_UPGRADE_MODE="upgrade"
-PKUPD_AUTOREMOVE="true"
 ```
 
-Like the other `*.override` files it's gitignored and excluded from
-`setup.sh`'s sync, so it persists at `/etc/installicious/overrides/` across
-re-downloads. Edited values take effect on the next installicious run.
+`configuration.override.example` is the one override file kept in git (it
+has no real values). Your `configuration.override` is gitignored
+(`*.override`) and excluded from `setup.sh`'s sync, so it persists at
+`/etc/installicious/overrides/` across re-downloads. Edited values take
+effect on the next installicious run — the file is part of each
+installer's skip-hash, so a change auto-re-triggers the affected
+installers (no manual status reset).
