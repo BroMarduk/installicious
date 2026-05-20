@@ -107,6 +107,10 @@ else
 fi
 log_init "$II_TITLE" "$FILE_LOG_INSTALLER"
 
+# One-line record of which user config-override layers are in play, so a
+# run's log shows whether overrides/configuration.override was picked up.
+state_log_override_status
+
 # Pull the OS / Pi-model detection results into scope so per-installer
 # choices files (sourced by menu_edit_config) can gate their offerings on
 # II_MODEL_NUM, II_CODENAME, II_IS_LITE, etc.

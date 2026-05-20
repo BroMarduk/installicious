@@ -226,6 +226,34 @@ state_clear_menu_overrides() {
   rm -f "$file" 2>/dev/null || sudo rm -f "$file"
 }
 
+# state_log_override_status - emit ONE log line summarising which config
+# override layers are in play this run. Call once, AFTER log_init (so the
+# log file is open). state_apply_menu_overrides itself stays silent —
+# it's called by ~every installer, often before that installer's
+# log_init, so logging there would either be lost or noisy. This gives a
+# single grep-able line ("Config override layers:") near the top of the
+# run instead. No-op if log_info isn't available.
+state_log_override_status() {
+  declare -F log_info >/dev/null || return 0
+  local cfg file msg="Config override layers:"
+  cfg=$(_config_override_file)
+  file=$(_menu_overrides_file)
+  local n
+  if [[ -f $cfg ]]; then
+    n=$(grep -cE '^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*=' "$cfg" 2>/dev/null || true)
+    msg+=" configuration.override=${n:-0} key(s)"
+  else
+    msg+=" configuration.override=absent"
+  fi
+  if [[ -f $file ]]; then
+    n=$(grep -cE '^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*=' "$file" 2>/dev/null || true)
+    msg+="; menu-config.sh=${n:-0} key(s)"
+  else
+    msg+="; menu-config.sh=absent"
+  fi
+  log_info "$msg"
+}
+
 # ---------------------------------------------------------------------------
 # Picker selections (last-run memory)
 #

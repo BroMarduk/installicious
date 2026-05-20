@@ -54,6 +54,10 @@ else
 fi
 log_init "$II_TITLE" "$FILE_LOG_INSTALLER"
 
+# One-line record of which user config-override layers are in play, so a
+# resumed run's log shows whether overrides/configuration.override applies.
+state_log_override_status
+
 # menu-config.sh is intentionally preserved across runs so the user's edits
 # (API keys, hostnames, etc.) survive into future installicious sessions
 # without having to be re-entered. Reset manually with
