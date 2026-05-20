@@ -47,6 +47,9 @@ EOF
 cat > "$STUB/apt-get" <<EOF
 #!/bin/bash
 [[ -f "$STUB/.fail" ]] && exit 7
+# Skip leading "-o KEY=VALUE" option pairs installicious passes (e.g.
+# -o DPkg::Lock::Timeout=300) before the apt-get subcommand.
+while [[ \$1 == "-o" ]]; do shift 2; done
 op=\$1
 shift
 if [[ \$op == install ]]; then

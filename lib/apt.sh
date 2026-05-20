@@ -44,6 +44,21 @@ APT_TIME_FILE="${APT_TIME_FILE:-}"
 # wrap can borrow via `${_APT_ENV[@]}` after sourcing this lib.
 _APT_ENV=(env LC_ALL=C LANG=C DEBIAN_FRONTEND=noninteractive)
 
+# apt-get options spliced into every invocation (right after `apt-get`):
+#   DPkg::Lock::Timeout=300  Wait up to 5 minutes for the dpkg / apt lock
+#                     instead of failing the instant it's contended.
+#                     Debian's apt-daily.service / apt-daily-upgrade.service
+#                     systemd timers — and unattended-upgrades — grab the
+#                     lock on their own schedule (and shortly after boot).
+#                     Without the wait, an installicious queue installer
+#                     that races one of them dies immediately with
+#                     "E: Could not get lock /var/lib/dpkg/lock-frontend".
+#                     With it, apt blocks until the background run finishes
+#                     and releases the lock, then proceeds.
+# Override _APT_LOCK_TIMEOUT before sourcing this lib to change the wait.
+_APT_LOCK_TIMEOUT="${_APT_LOCK_TIMEOUT:-300}"
+_APT_OPTS=(-o "DPkg::Lock::Timeout=${_APT_LOCK_TIMEOUT}")
+
 _apt_time_file() {
   if [[ -n $APT_TIME_FILE ]]; then
     echo "$APT_TIME_FILE"
@@ -97,7 +112,7 @@ _apt_run_with_cache() {
 # apt_ensure_fresh - run apt-get update if the cached run is stale.
 apt_ensure_fresh() {
   _apt_run_with_cache "PKUPD_UPDATE_RUN" \
-    sudo "${_APT_ENV[@]}" apt-get update --yes
+    sudo "${_APT_ENV[@]}" apt-get "${_APT_OPTS[@]}" update --yes
 }
 
 # apt_dist_upgrade_fresh - run apt-get dist-upgrade if the cached run is stale.
@@ -106,7 +121,7 @@ apt_ensure_fresh() {
 # linux-image-X.Y.Z package).
 apt_dist_upgrade_fresh() {
   _apt_run_with_cache "PKUPD_UPGRADE_RUN" \
-    sudo "${_APT_ENV[@]}" apt-get dist-upgrade --yes
+    sudo "${_APT_ENV[@]}" apt-get "${_APT_OPTS[@]}" dist-upgrade --yes
 }
 
 # apt_upgrade_fresh - run apt-get upgrade if the cached run is stale.
@@ -117,13 +132,13 @@ apt_dist_upgrade_fresh() {
 # doesn't double-upgrade within the freshness window.
 apt_upgrade_fresh() {
   _apt_run_with_cache "PKUPD_UPGRADE_RUN" \
-    sudo "${_APT_ENV[@]}" apt-get upgrade --yes
+    sudo "${_APT_ENV[@]}" apt-get "${_APT_OPTS[@]}" upgrade --yes
 }
 
 # apt_autoremove_fresh - run apt-get autoremove (with --purge) if the cached run is stale.
 apt_autoremove_fresh() {
   _apt_run_with_cache "PKUPD_AUTOREMOVE_RUN" \
-    sudo "${_APT_ENV[@]}" apt-get --yes --purge autoremove
+    sudo "${_APT_ENV[@]}" apt-get "${_APT_OPTS[@]}" --yes --purge autoremove
 }
 
 # apt_is_installed <package> - return 0 if dpkg reports the package installed.
@@ -146,7 +161,7 @@ apt_ensure_installed() {
     return 0
   fi
   apt_ensure_fresh || return $?
-  sudo "${_APT_ENV[@]}" apt-get install --yes "${missing[@]}"
+  sudo "${_APT_ENV[@]}" apt-get "${_APT_OPTS[@]}" install --yes "${missing[@]}"
 }
 
 # apt_remove <package> [<package> ...] - purge packages and autoremove unused deps.
@@ -154,7 +169,7 @@ apt_remove() {
   if [[ $# -eq 0 ]]; then
     return 0
   fi
-  sudo "${_APT_ENV[@]}" apt-get --yes --purge autoremove "$@"
+  sudo "${_APT_ENV[@]}" apt-get "${_APT_OPTS[@]}" --yes --purge autoremove "$@"
 }
 
 # apt_add_repo <name> <key-url> <repo-line-or-url> [<keyring-path>]
@@ -228,7 +243,7 @@ apt_add_repo() {
   printf '%s\n' "$list_content" | sudo tee "$list_file" >/dev/null || return 1
 
   # Force a refresh so the new repo's packages become installable now.
-  sudo "${_APT_ENV[@]}" apt-get update --yes || return $?
+  sudo "${_APT_ENV[@]}" apt-get "${_APT_OPTS[@]}" update --yes || return $?
   return 0
 }
 

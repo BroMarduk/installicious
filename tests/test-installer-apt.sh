@@ -230,5 +230,18 @@ fi
 ACCEPTABLE_TIME_DELTA_SEC=0      # PKUPD_SKIP_WINDOW_MIN=0 disables the skip
 _apt_is_fresh "$recent"; chkrc "window 0 -> always stale (re-run)" $? 1
 
+# ===========================================================================
+echo
+echo "=== Test 13: apt-get calls carry the dpkg lock-wait option ==="
+# Every apt-get invocation must pass -o DPkg::Lock::Timeout so a queue
+# installer racing a background apt-daily run waits for the lock instead
+# of dying with "Could not get lock /var/lib/dpkg/lock-frontend".
+chkeq "_APT_OPTS[0] is -o"            "${_APT_OPTS[0]}" "-o"
+chkeq "_APT_OPTS[1] sets Lock Timeout" "${_APT_OPTS[1]}" "DPkg::Lock::Timeout=300"
+# Confirm the option is actually spliced into the helper bodies, not just
+# defined — guards against a future edit dropping "${_APT_OPTS[@]}".
+splice_count=$(grep -c '"${_APT_OPTS\[@\]}"' lib/apt.sh)
+chkeq "all 7 apt-get calls splice _APT_OPTS" "$splice_count" "7"
+
 echo
 echo "=== Done ==="
