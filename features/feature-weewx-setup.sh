@@ -63,11 +63,13 @@ WEEWX_STATION_URL="${WEEWX_STATION_URL:-}"
 
 WEEWX_CONF="/etc/weewx/weewx.conf"
 # overrides/weewx.conf is the git-tracked default template. A sibling
-# weewx.conf.dan — if present — is the user's personal copy (gitignored
-# via the *.dan rule) and takes precedence, so personal customizations
-# and secrets stay out of git while the shipped template stays clean.
+# weewx.override — if present — is the user's personal copy (gitignored
+# via the *.override rule) and takes precedence, so personal
+# customizations and secrets stay out of git while the shipped template
+# stays clean.
 OVERRIDE_FILE="${PATH_OVERRIDES:-overrides}/weewx.conf"
-[[ -f "${OVERRIDE_FILE}.dan" ]] && OVERRIDE_FILE="${OVERRIDE_FILE}.dan"
+_personal_override="${OVERRIDE_FILE%.conf}.override"
+[[ -f "$_personal_override" ]] && OVERRIDE_FILE="$_personal_override"
 MERGE_HELPER="${PATH_RESOURCES:-resources}/weewx-merge-overrides.py"
 
 MODE="install"

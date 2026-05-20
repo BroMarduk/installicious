@@ -76,10 +76,11 @@ SKIN_REPORT_NAME="neowx-material"          # [StdReport][[<this>]] section name
 LOCALE_DROPIN_DIR="/etc/systemd/system/weewx.service.d"
 LOCALE_DROPIN="${LOCALE_DROPIN_DIR}/neowx-locale.conf"
 # overrides/neowx-material-skin.conf is the git-tracked default template.
-# A sibling neowx-material-skin.conf.dan — if present — is the user's
-# personal copy (gitignored via the *.dan rule) and takes precedence.
+# A sibling neowx-material-skin.override — if present — is the user's
+# personal copy (gitignored via the *.override rule) and takes precedence.
 OVERRIDE_FILE="${PATH_OVERRIDES:-overrides}/neowx-material-skin.conf"
-[[ -f "${OVERRIDE_FILE}.dan" ]] && OVERRIDE_FILE="${OVERRIDE_FILE}.dan"
+_personal_override="${OVERRIDE_FILE%.conf}.override"
+[[ -f "$_personal_override" ]] && OVERRIDE_FILE="$_personal_override"
 MERGE_HELPER="${PATH_RESOURCES:-resources}/weewx-merge-overrides.py"
 
 MODE="install"
