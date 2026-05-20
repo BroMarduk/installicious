@@ -203,5 +203,32 @@ installer_apt_ensure_deps x y z >/dev/null 2>&1
 chkrc "first failure short-circuits" $? 42
 chkeq "log records only first attempt" "${APT_INSTALL_LOG[*]}" "x"
 
+# ===========================================================================
+echo
+echo "=== Test 12: apt upgrade-mode helpers + freshness window ==="
+# Both upgrade variants exist (pkupd dispatches on PKUPD_UPGRADE_MODE).
+declare -F apt_dist_upgrade_fresh >/dev/null && ok "apt_dist_upgrade_fresh defined" \
+  || fail "apt_dist_upgrade_fresh missing"
+declare -F apt_upgrade_fresh >/dev/null && ok "apt_upgrade_fresh defined" \
+  || fail "apt_upgrade_fresh missing"
+
+# _apt_is_fresh underpins the PKUPD_SKIP_WINDOW_MIN re-run skip: a step is
+# "fresh" (skipped) if its recorded success timestamp is within
+# ACCEPTABLE_TIME_DELTA_SEC. pkupd sets that var from PKUPD_SKIP_WINDOW_MIN*60.
+ACCEPTABLE_TIME_DELTA_SEC=3600   # 60-minute window, pkupd's default
+
+_apt_is_fresh ""; chkrc "empty timestamp -> stale (re-run)" $? 1
+
+recent=$(date -d '-10 minutes' '+%Y-%m-%d %T' 2>/dev/null || date '+%Y-%m-%d %T')
+_apt_is_fresh "$recent"; chkrc "10 min ago, 60 min window -> fresh (skip)" $? 0
+
+old=$(date -d '-120 minutes' '+%Y-%m-%d %T' 2>/dev/null)
+if [[ -n $old ]]; then
+  _apt_is_fresh "$old"; chkrc "120 min ago, 60 min window -> stale (re-run)" $? 1
+fi
+
+ACCEPTABLE_TIME_DELTA_SEC=0      # PKUPD_SKIP_WINDOW_MIN=0 disables the skip
+_apt_is_fresh "$recent"; chkrc "window 0 -> always stale (re-run)" $? 1
+
 echo
 echo "=== Done ==="

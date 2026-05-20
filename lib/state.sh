@@ -66,9 +66,26 @@ state_save() {
     "II_QUEUE_STARTED_AT=$started_at"
 }
 
+# _state_read_field <var> <file>
+# Echo the value of a single II_QUEUE_* variable from a state file by
+# sourcing it in an isolated subshell. One field per call — deliberately
+# NOT a tab-joined multi-field read: tab is an IFS *whitespace* character,
+# so a `printf '%s\t%s\t...'` of fields where some are empty collapses the
+# run of adjacent tabs into a single delimiter, and the non-empty values
+# shift left into the wrong variables. (That bug swapped II_QUEUE_REASON
+# and II_QUEUE_STARTED_AT on every queue.) Per-field subshells have no
+# delimiter to collapse, so empty fields stay put.
+_state_read_field() {
+  local var="$1" file="$2"
+  (
+    # shellcheck disable=SC1090
+    source "$file" 2>/dev/null
+    printf '%s' "${!var:-}"
+  )
+}
+
 # state_save_cursor <cursor>
-# Update only the cursor; preserves the rest of the state file. Sources the
-# existing file in a subshell to read the other fields.
+# Update only the cursor; preserves the rest of the state file.
 state_save_cursor() {
   local cursor="$1"
   local file
@@ -78,18 +95,10 @@ state_save_cursor() {
     return 1
   fi
   local ids reason trigger started_at
-  read -r ids reason trigger started_at < <(
-    # shellcheck disable=SC1090
-    source "$file" 2>/dev/null
-    printf '%s\t%s\t%s\t%s' \
-      "${II_QUEUE_IDS:-}" "${II_QUEUE_REASON:-}" "${II_QUEUE_TRIGGER:-}" "${II_QUEUE_STARTED_AT:-}"
-  )
-  IFS=$'\t' read -r ids reason trigger started_at < <(
-    # shellcheck disable=SC1090
-    source "$file" 2>/dev/null
-    printf '%s\t%s\t%s\t%s' \
-      "${II_QUEUE_IDS:-}" "${II_QUEUE_REASON:-}" "${II_QUEUE_TRIGGER:-}" "${II_QUEUE_STARTED_AT:-}"
-  )
+  ids=$(_state_read_field II_QUEUE_IDS "$file")
+  reason=$(_state_read_field II_QUEUE_REASON "$file")
+  trigger=$(_state_read_field II_QUEUE_TRIGGER "$file")
+  started_at=$(_state_read_field II_QUEUE_STARTED_AT "$file")
   _state_write_pairs "$file" \
     "II_QUEUE_IDS=$ids" \
     "II_QUEUE_CURSOR=$cursor" \
@@ -108,11 +117,8 @@ state_save_reboot() {
   file=$(_state_file)
   local ids started_at
   if [[ -f $file ]]; then
-    IFS=$'\t' read -r ids started_at < <(
-      # shellcheck disable=SC1090
-      source "$file" 2>/dev/null
-      printf '%s\t%s' "${II_QUEUE_IDS:-}" "${II_QUEUE_STARTED_AT:-}"
-    )
+    ids=$(_state_read_field II_QUEUE_IDS "$file")
+    started_at=$(_state_read_field II_QUEUE_STARTED_AT "$file")
   fi
   [[ -z $started_at ]] && started_at=$(date '+%Y-%m-%d %T')
   _state_write_pairs "$file" \

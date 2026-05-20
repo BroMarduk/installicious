@@ -126,5 +126,26 @@ chkeq "empty trigger" "$II_QUEUE_TRIGGER" ""
 chkeq "ids stored" "$II_QUEUE_IDS" "single"
 state_clear
 
+# ===========================================================================
+echo
+echo "=== Test 7: state_save_cursor preserves fields when REASON/TRIGGER empty ==="
+# Regression: state_save_cursor used to read the prior fields via a
+# tab-joined printf piped into `IFS=$'\t' read`. Tab is IFS-whitespace, so
+# a run of adjacent tabs (two empty fields in a row) collapsed to a single
+# delimiter and the timestamp shifted out of STARTED_AT into REASON. This
+# is the common case — the scheduler opens every queue with empty
+# reason/trigger — so it corrupted essentially every queue.sh.
+state_save "pkupd webserver locale" 0 "" ""
+started_before=$(_state_read_field II_QUEUE_STARTED_AT "$(_state_file)")
+state_save_cursor 0
+unset II_QUEUE_IDS II_QUEUE_CURSOR II_QUEUE_REASON II_QUEUE_TRIGGER II_QUEUE_STARTED_AT
+state_load
+chkeq "cursor written"            "$II_QUEUE_CURSOR"     "0"
+chkeq "ids intact"                "$II_QUEUE_IDS"        "pkupd webserver locale"
+chkeq "REASON stays empty"        "$II_QUEUE_REASON"     ""
+chkeq "TRIGGER stays empty"       "$II_QUEUE_TRIGGER"    ""
+chkeq "STARTED_AT not swapped into REASON" "$II_QUEUE_STARTED_AT" "$started_before"
+state_clear
+
 echo
 echo "=== Done ==="

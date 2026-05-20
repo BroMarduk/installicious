@@ -101,9 +101,23 @@ apt_ensure_fresh() {
 }
 
 # apt_dist_upgrade_fresh - run apt-get dist-upgrade if the cached run is stale.
+# dist-upgrade installs new packages and removes obsolete ones as needed —
+# so it WILL pull a new-ABI kernel (which arrives as a brand-new
+# linux-image-X.Y.Z package).
 apt_dist_upgrade_fresh() {
   _apt_run_with_cache "PKUPD_UPGRADE_RUN" \
     sudo "${_APT_ENV[@]}" apt-get dist-upgrade --yes
+}
+
+# apt_upgrade_fresh - run apt-get upgrade if the cached run is stale.
+# Plain `upgrade` upgrades installed packages in place but never installs
+# NEW packages or removes any — so a new-ABI kernel stays held back until
+# the user runs a deliberate dist-upgrade. Shares the PKUPD_UPGRADE_RUN
+# cache key with apt_dist_upgrade_fresh so switching modes between runs
+# doesn't double-upgrade within the freshness window.
+apt_upgrade_fresh() {
+  _apt_run_with_cache "PKUPD_UPGRADE_RUN" \
+    sudo "${_APT_ENV[@]}" apt-get upgrade --yes
 }
 
 # apt_autoremove_fresh - run apt-get autoremove (with --purge) if the cached run is stale.
