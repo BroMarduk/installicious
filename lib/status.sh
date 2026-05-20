@@ -78,29 +78,30 @@ status_write_atomic() {
   mv -f "$tmp" "$file"
 }
 
-# config_hash <config_file> -> sha256 of a config file (empty if missing).
+# config_hash <file>... -> sha256 over the given config/override file(s)
+# PLUS the two global config-override layers. Empty string if nothing
+# exists. Missing files are silently skipped.
+#
+# Every call also folds in, after the caller's files:
+#   overrides/configuration.override   hand-authored editable-config defaults
+#   $PATH_STATE/menu-config.sh         the in-menu editor's output
+# so a change to ANY input — a config file, an installer's own override
+# file (e.g. overrides/weewx.override) passed by the caller, the
+# configuration.override, or a menu edit — flips the hash and makes
+# status_should_skip re-run the installer.
+#
+# Slightly over-eager (touching any key re-runs every installer that
+# hashes config) but the re-runs are idempotent, and that beats
+# per-installer "which keys do I care about" bookkeeping.
 config_hash() {
-  local file="$1"
-  local overrides="${PATH_STATE:-state}/menu-config.sh"
-
-  # Combine the on-disk config file with the runtime menu overrides so a
-  # change to either invalidates skip-if-current. Without this, editing a
-  # value in the menu editor would persist to menu-config.sh but the
-  # installer's status would still show "completed at this config_hash" —
-  # the rendered output (cron file, /etc edits, etc.) would keep the
-  # stale value.
-  #
-  # Slightly over-eager (touching any key in menu-config.sh re-runs every
-  # installer that hashes a config), but the re-runs are idempotent and
-  # the alternative (per-installer "which keys do I care about" tracking)
-  # adds substantial complexity for marginal precision gain.
-  local input=""
-  [[ -f $file ]] && input="$(cat "$file")"
-  if [[ -f $overrides ]]; then
-    input+=$'\n--- menu-config.sh ---\n'
-    input+="$(cat "$overrides")"
-  fi
-
+  local input="" f
+  for f in "$@" \
+           "${PATH_OVERRIDES:-overrides}/configuration.override" \
+           "${PATH_STATE:-state}/menu-config.sh"; do
+    [[ -n $f && -f $f ]] || continue
+    input+="--- $f ---"$'\n'
+    input+="$(cat "$f")"$'\n'
+  done
   if [[ -z $input ]]; then
     echo ""
     return 0
@@ -128,14 +129,21 @@ status_state() {
   status_get "$file" "${prefix}STATE"
 }
 
-# status_should_skip <id> <expected_version> [config_file]
-# Returns 0 (skip) if the recorded state is "completed" AND the recorded version
-# matches expected_version AND (if config_file given) the recorded config hash
-# matches the current hash of config_file. Otherwise returns 1 (run).
+# status_should_skip <id> <expected_version> [<config_file>...]
+# Returns 0 (skip) if the recorded state is "completed" AND the recorded
+# version matches expected_version AND (if any non-empty config_file is
+# given) the recorded config hash still matches config_hash over those
+# files. Otherwise returns 1 (run).
+#
+# Pass every file whose contents should re-trigger this installer — its
+# config/<id>.config AND any override file it consumes (e.g.
+# overrides/weewx.override). config_hash additionally folds in the global
+# configuration.override + menu-config.sh layers, so a change to any of
+# them busts the skip too.
 status_should_skip() {
   local id="$1"
   local expected_version="$2"
-  local config_file="$3"
+  shift 2
   local file
   file=$(status_file_for "$id")
   if [[ ! -f $file ]]; then
@@ -154,9 +162,15 @@ status_should_skip() {
       return 1
     fi
   fi
-  if [[ -n $config_file ]]; then
+  # Hash-check only when the caller passed at least one non-empty file
+  # path (matches the historical "config_file given?" gate).
+  local have_files=0 a
+  for a in "$@"; do
+    [[ -n $a ]] && have_files=1
+  done
+  if [[ $have_files -eq 1 ]]; then
     recorded_hash=$(status_get "$file" "${prefix}CONFIG_HASH")
-    current_hash=$(config_hash "$config_file")
+    current_hash=$(config_hash "$@")
     if [[ $recorded_hash != "$current_hash" ]]; then
       return 1
     fi
@@ -176,17 +190,19 @@ status_mark_started() {
   status_set "$file" "${prefix}LAST_ERROR" ""
 }
 
-# status_mark_complete <id> <version> [config_file]
+# status_mark_complete <id> <version> [<config_file>...]
 # Records framework state=completed, version, config hash, FINISHED_AT.
+# Pass the SAME file list given to status_should_skip so the recorded
+# hash and the next run's comparison hash line up.
 status_mark_complete() {
   local id="$1"
   local version="$2"
-  local config_file="$3"
+  shift 2
   local file prefix ts hash
   file=$(status_file_for "$id")
   prefix=$(_status_var_prefix "$id")
   ts=$(date '+%Y-%m-%d %T.%5N')
-  hash=$(config_hash "$config_file")
+  hash=$(config_hash "$@")
   status_set "$file" "${prefix}STATE" "completed"
   status_set "$file" "${prefix}VERSION" "$version"
   status_set "$file" "${prefix}CONFIG_HASH" "$hash"

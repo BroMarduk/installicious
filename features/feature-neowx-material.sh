@@ -200,7 +200,10 @@ apply_skin_overrides() {
 }
 
 do_install() {
-  if status_should_skip "$II_ID" "$II_VERSION" "$FILE_CONFIG_NEOWX"; then
+  # Hash the neowx-material.config AND the resolved skin override file,
+  # so editing overrides/neowx-material-skin.override re-triggers the
+  # skin merge instead of being silently skipped.
+  if status_should_skip "$II_ID" "$II_VERSION" "$FILE_CONFIG_NEOWX" "$OVERRIDE_FILE"; then
     log_info "neowx-material already installed at recorded version + config. Skipping."
     return 0
   fi
@@ -298,7 +301,7 @@ do_install() {
     sudo systemctl start weewx || log_warn "weewx restart returned non-zero."
   fi
 
-  status_mark_complete "$II_ID" "$II_VERSION" "$FILE_CONFIG_NEOWX"
+  status_mark_complete "$II_ID" "$II_VERSION" "$FILE_CONFIG_NEOWX" "$OVERRIDE_FILE"
   log_ok "neowx-material installed."
   echo -e "[  \e[0;32mOK\e[0m  ] NeoWX Material skin installed (lang=${NEOWX_LANG}, HTML_ROOT=${NEOWX_HTML_ROOT})."
   return 0

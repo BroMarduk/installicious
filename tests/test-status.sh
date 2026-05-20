@@ -91,5 +91,55 @@ set -e
 chkrc "source rc=0" $src_rc 0
 [[ -s $TMPDIR/err.log ]] && fail "source stderr: $(cat "$TMPDIR/err.log")" || ok "no syntax errors when sourced"
 
+# ===========================================================================
+echo
+echo "=== Test 7: config_hash multi-file + override-busts-skip ==="
+set +e   # Test 6 left set -e on; status_should_skip returning 1 is expected here
+# config_hash hashes every file passed PLUS configuration.override and
+# menu-config.sh. status_should_skip must stop skipping when ANY of them
+# changes — that's what makes editing overrides/weewx.override re-trigger
+# the merge instead of being silently skipped.
+HCFG=$(mktemp -d)
+export PATH_OVERRIDES="$HCFG/ov" PATH_STATE="$HCFG/st"
+mkdir -p "$PATH_OVERRIDES" "$PATH_STATE"
+cfg="$HCFG/feat.config"; ovr="$HCFG/feat.override"
+echo 'KEY=base' > "$cfg"
+echo 'KEY=ovr'  > "$ovr"
+
+h_cfg_only=$(config_hash "$cfg")
+h_cfg_ovr=$(config_hash "$cfg" "$ovr")
+[[ -n $h_cfg_only && $h_cfg_only != "$h_cfg_ovr" ]] \
+  && ok "adding an override file changes the hash" \
+  || fail "override file did not affect hash"
+
+# Editing the override file flips the hash.
+h_before=$(config_hash "$cfg" "$ovr")
+echo 'KEY=ovr-edited' > "$ovr"
+h_after=$(config_hash "$cfg" "$ovr")
+[[ $h_before != "$h_after" ]] && ok "editing the override file flips the hash" \
+  || fail "edit not reflected in hash"
+
+# configuration.override is folded in automatically.
+h_no_global=$(config_hash "$cfg")
+echo 'GLOBAL=1' > "$PATH_OVERRIDES/configuration.override"
+h_with_global=$(config_hash "$cfg")
+[[ $h_no_global != "$h_with_global" ]] \
+  && ok "configuration.override folded into the hash" \
+  || fail "configuration.override ignored by config_hash"
+
+# Round-trip: mark complete with [cfg, ovr], then editing ovr un-skips.
+export PATH_STATUS="$HCFG/status"; mkdir -p "$PATH_STATUS"
+echo 'KEY=ovr-v1' > "$ovr"
+status_mark_complete "feat" "1" "$cfg" "$ovr"
+status_should_skip "feat" "1" "$cfg" "$ovr"; rc=$?
+chkrc "skip when nothing changed" $rc 0
+echo 'KEY=ovr-v2' > "$ovr"
+status_should_skip "feat" "1" "$cfg" "$ovr"; rc=$?
+chkrc "do NOT skip after override edited" $rc 1
+
+rm -rf "$HCFG"
+unset PATH_OVERRIDES PATH_STATE
+export PATH_STATUS="$TMPDIR/status"
+
 echo
 echo "=== Done ==="

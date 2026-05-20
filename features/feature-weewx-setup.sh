@@ -181,7 +181,10 @@ apply_overrides() {
 }
 
 do_install() {
-  if status_should_skip "$II_ID" "$II_VERSION" "$FILE_CONFIG_WEEWX"; then
+  # Hash the shared weewx.config AND the resolved override file, so
+  # editing overrides/weewx.override (or weewx.conf) re-triggers the
+  # merge instead of being silently skipped.
+  if status_should_skip "$II_ID" "$II_VERSION" "$FILE_CONFIG_WEEWX" "$OVERRIDE_FILE"; then
     log_info "weewx-setup already applied at recorded version + config. Skipping."
     return 0
   fi
@@ -230,7 +233,7 @@ do_install() {
     sudo systemctl start weewx || log_warn "weewx restart returned non-zero."
   fi
 
-  status_mark_complete "$II_ID" "$II_VERSION" "$FILE_CONFIG_WEEWX"
+  status_mark_complete "$II_ID" "$II_VERSION" "$FILE_CONFIG_WEEWX" "$OVERRIDE_FILE"
   log_ok "weewx-setup applied."
   echo -e "[  \e[0;32mOK\e[0m  ] WeeWX station configured non-interactively (weewx.conf updated)."
   return 0
