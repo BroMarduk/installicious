@@ -47,6 +47,13 @@ chmod 755 dependencies/*.sh features/*.sh packages/*.sh roles/*.sh scripts/*.sh 
 # don't want to nuke. The user's menu_edit_config overrides live in
 # state/menu-config.sh, kept by the state/ exclusion. backup snapshots
 # created during prior --install runs stay too.
+#
+# *.dan is also excluded: those are the user's personal override files
+# (e.g. overrides/weewx.conf.dan) — gitignored, so they're never in the
+# downloaded source tree. Without this exclude, `--delete` would wipe
+# them on every re-sync. The exclude protects them in BOTH directions:
+# rsync neither copies nor deletes them, so they persist untouched at
+# $DEST exactly like state/menu-config.sh does.
 if [[ "$SCRIPT_DIR" != "$DEST" ]]; then
   echo "[setup] Syncing to $DEST"
   sudo mkdir -p "$DEST"
@@ -56,6 +63,7 @@ if [[ "$SCRIPT_DIR" != "$DEST" ]]; then
       --exclude='/status/' \
       --exclude='/logs/' \
       --exclude='/backup/' \
+      --exclude='*.dan' \
       "$SCRIPT_DIR"/ "$DEST"/
   else
     # Fallback: cp + manual prune of common framework dirs so renamed
