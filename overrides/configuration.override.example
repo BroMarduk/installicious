@@ -39,86 +39,86 @@
 # ----------------------------------------------------------------------------
 # Package updates — feature-pkupd
 # ----------------------------------------------------------------------------
-#PKUPD_UPGRADE_MODE="dist-upgrade"   # dist-upgrade (pulls kernels) | upgrade (in-place only)
-#PKUPD_SKIP_WINDOW_MIN="60"          # minutes; skip a re-run within this window of a success. 0 disables
-#PKUPD_AUTOREMOVE="true"             # true | false — run apt-get autoremove --purge after the upgrade
+#PKUPD_UPGRADE_MODE="dist-upgrade"          # dist-upgrade (pulls kernels) | upgrade (in-place only)
+#PKUPD_SKIP_WINDOW_MIN="60"                 # minutes; skip a re-run within this window of a success. 0 disables
+#PKUPD_AUTOREMOVE="true"                    # true | false — run apt-get autoremove --purge after the upgrade
 
 # ----------------------------------------------------------------------------
 # Localization — feature-locale
 # (blank value = keep whatever the system already has)
 # ----------------------------------------------------------------------------
-#LOCALE_LANG="en_US.UTF-8"           # system locale
-#LOCALE_TIMEZONE=""                  # e.g. "America/New_York"
-#LOCALE_KEYBOARD_LAYOUT="us"         # keyboard country code
-#LOCALE_KEYBOARD_MODEL="pc104"       # keyboard hardware model
-#LOCALE_WIFI_COUNTRY=""              # 2-letter ISO 3166 code, e.g. "US"
+#LOCALE_LANG="en_US.UTF-8"                  # system locale
+#LOCALE_TIMEZONE=""                         # e.g. "America/New_York"
+#LOCALE_KEYBOARD_LAYOUT="us"                # keyboard country code
+#LOCALE_KEYBOARD_MODEL="pc104"              # keyboard hardware model
+#LOCALE_WIFI_COUNTRY=""                     # 2-letter ISO 3166 code, e.g. "US"
 
 # ----------------------------------------------------------------------------
 # Login MOTD — feature-motd / motd-weather / motd-updates
 # ----------------------------------------------------------------------------
-#MOTD_NAME="dannet"                  # MOTD title
-#MOTD_SMALL_SIZE="79"                # terminal width below which the compact MOTD shows
-#MOTD_IP_URL="https://api.ipify.org" # service queried for the external IP
-#MOTD_WEATHER_API_KEY=""             # AccuWeather API token — REQUIRED for motd-weather
-#MOTD_WEATHER_LOC_CODE="1945_PC"     # AccuWeather location key
-#MOTD_WEATHER_ZIP_CODE="05255"       # label shown on the weather row (cosmetic)
+#MOTD_NAME="dannet"                         # MOTD title
+#MOTD_SMALL_SIZE="79"                       # terminal width below which the compact MOTD shows
+#MOTD_IP_URL="https://api.ipify.org"        # service queried for the external IP
+#MOTD_WEATHER_API_KEY=""                    # AccuWeather API token — REQUIRED for motd-weather
+#MOTD_WEATHER_LOC_CODE="1945_PC"            # AccuWeather location key
+#MOTD_WEATHER_ZIP_CODE="05255"              # label shown on the weather row (cosmetic)
 
 # ----------------------------------------------------------------------------
 # Web server — feature-webserver / webserver-ssl
 # ----------------------------------------------------------------------------
-#WEBSERVER_DOC_ROOT="/var/www/html"  # document root the chosen backend serves
-#WEBSERVER_SERVER_NAME=""            # vhost name; blank = the Pi's hostname at install time
-#WEBSERVER_PORT="80"                 # HTTP listen port
-#WEBSERVER_UC_TEMPLATE="midnight-editor"  # under-construction page slug (resources/html-index-<slug>.html)
-#WEBSERVER_SSL_EMAIL=""              # Let's Encrypt registration email (webserver-ssl)
-#WEBSERVER_SSL_METHOD="dns-cloudflare"    # dns-cloudflare | http
-#WEBSERVER_SSL_CF_TOKEN=""           # Cloudflare API token — required when method=dns-cloudflare
-#WEBSERVER_SSL_HTTP_POLICY="redirect-all" # redirect-all | redirect-name | deny-http
-#CADDY_HTTP_POLICY="redirect-all"    # same three values, for the caddy backend
+#WEBSERVER_DOC_ROOT="/var/www/html"         # document root the chosen backend serves
+#WEBSERVER_SERVER_NAME=""                   # vhost name; blank = the Pi's hostname at install time
+#WEBSERVER_PORT="80"                        # HTTP listen port
+#WEBSERVER_UC_TEMPLATE="midnight-editor"    # under-construction page slug (resources/html-index-<slug>.html)
+#WEBSERVER_SSL_EMAIL=""                     # Let's Encrypt registration email (webserver-ssl)
+#WEBSERVER_SSL_METHOD="dns-cloudflare"      # dns-cloudflare | http
+#WEBSERVER_SSL_CF_TOKEN=""                  # Cloudflare API token — required when method=dns-cloudflare
+#WEBSERVER_SSL_HTTP_POLICY="redirect-all"   # redirect-all | redirect-name | deny-http
+#CADDY_HTTP_POLICY="redirect-all"           # same three values, for the caddy backend
 
 # ----------------------------------------------------------------------------
 # WeeWX station — feature-weewx-setup
 # (blank lat/lon/altitude/location = keep the weewx package default)
 # ----------------------------------------------------------------------------
-#WEEWX_STATION_LOCATION=""           # human-readable location, e.g. "Manchester Center, VT"
-#WEEWX_LATITUDE=""                   # decimal degrees; South is negative
-#WEEWX_LONGITUDE=""                  # decimal degrees; West is negative, e.g. "-73.032"
-#WEEWX_ALTITUDE=""                   # bare number; unit is WEEWX_ALTITUDE_UNITS
-#WEEWX_ALTITUDE_UNITS="foot"         # foot | meter
-#WEEWX_STATION_TYPE="Simulator"      # Simulator | Vantage | AcuRite | FineOffsetUSB | TE923 | …
-#WEEWX_UNITS="us"                    # us | metric | metricwx
-#WEEWX_REGISTER_STATION="false"      # true publishes to the weewx.com registry
-#WEEWX_STATION_URL=""                # public station URL; required when REGISTER_STATION=true
+#WEEWX_STATION_LOCATION=""                  # human-readable location, e.g. "Manchester Center, VT"
+#WEEWX_LATITUDE=""                          # decimal degrees; South is negative
+#WEEWX_LONGITUDE=""                         # decimal degrees; West is negative, e.g. "-73.032"
+#WEEWX_ALTITUDE=""                          # bare number; unit is WEEWX_ALTITUDE_UNITS
+#WEEWX_ALTITUDE_UNITS="foot"                # foot | meter
+#WEEWX_STATION_TYPE="Simulator"             # Simulator | Vantage | AcuRite | FineOffsetUSB | TE923 | …
+#WEEWX_UNITS="us"                           # us | metric | metricwx
+#WEEWX_REGISTER_STATION="false"             # true publishes to the weewx.com registry
+#WEEWX_STATION_URL=""                       # public station URL; required when REGISTER_STATION=true
 
 # ----------------------------------------------------------------------------
 # WeeWX web root + RAM/disk tuning — weewx-webroot / weewx-site-ram / weewx-database-ram
 # ----------------------------------------------------------------------------
-#WEEWX_WEB_DIR="/var/www/html/weewx" # directory the WeeWX reports render into
-#WEEWX_TMPFS_SIZE="128M"             # tmpfs size for the weewx-site-ram mount
-#WEEWX_DB_DIR="/var/lib/weewx"       # live DB mount point (zram-backed by weewx-database-ram)
-#WEEWX_DB_HDD_DIR="/var/lib/weewx.hdd"    # SD-card mirror the live DB snapshots to
-#WEEWX_DB_ROTATIONS="5"              # how many rotated DB snapshots to keep
-#WEEWX_DB_ZRAM_SIZE="AUTO"           # zram device size, e.g. "1024M"; AUTO = compute from DB size
+#WEEWX_WEB_DIR="/var/www/html/weewx"        # directory the WeeWX reports render into
+#WEEWX_TMPFS_SIZE="128M"                    # tmpfs size for the weewx-site-ram mount
+#WEEWX_DB_DIR="/var/lib/weewx"              # live DB mount point (zram-backed by weewx-database-ram)
+#WEEWX_DB_HDD_DIR="/var/lib/weewx.hdd"      # SD-card mirror the live DB snapshots to
+#WEEWX_DB_ROTATIONS="5"                     # how many rotated DB snapshots to keep
+#WEEWX_DB_ZRAM_SIZE="AUTO"                  # zram device size, e.g. "1024M"; AUTO = compute from DB size
 
 # ----------------------------------------------------------------------------
 # NeoWX Material skin — feature-neowx-material
 # ----------------------------------------------------------------------------
-#NEOWX_LANG="en"                     # skin language: ca de en es fi fr it nl pl se sk
-#NEOWX_LOCALE=""                     # locale for date/time rendering, e.g. "en_US.UTF-8"; blank = system LANG
-#NEOWX_HTML_ROOT="/var/www/html/weewx"    # where the skin writes its generated HTML
+#NEOWX_LANG="en"                            # skin language: ca de en es fi fr it nl pl se sk
+#NEOWX_LOCALE=""                            # locale for date/time rendering, e.g. "en_US.UTF-8"; blank = system LANG
+#NEOWX_HTML_ROOT="/var/www/html/weewx"      # where the skin writes its generated HTML
 
 # ----------------------------------------------------------------------------
 # RAM logging — feature-ram-logging
 # (blank = per-Pi auto-tune; set a value only to override the auto-pick)
 # ----------------------------------------------------------------------------
-#RAMLOG_PROFILE=""                   # blank → zram-both; or tmpfs-volatile/-shutdown/-periodic/-both, zram-*
-#RAMLOG_SIZE_MB=""                   # blank → auto (256 / 128 / 48 by RAM tier)
-#RAMLOG_COMPRESSION_ALGO=""          # blank → zstd (Pi 4/5) or lz4 (Pi 3/Zero 2)
+#RAMLOG_PROFILE=""                          # blank → zram-both; or tmpfs-volatile/-shutdown/-periodic/-both, zram-*
+#RAMLOG_SIZE_MB=""                          # blank → auto (256 / 128 / 48 by RAM tier)
+#RAMLOG_COMPRESSION_ALGO=""                 # blank → zstd (Pi 4/5) or lz4 (Pi 3/Zero 2)
 
 # ----------------------------------------------------------------------------
 # Compressed swap — feature-compressed-swap (zram)
 # (blank = per-Pi auto-tune)
 # ----------------------------------------------------------------------------
-#ZRAM_PERCENT_OF_RAM=""              # blank → 50 (≥1.8 GB RAM) / 40 (<1.8 GB)
-#ZRAM_COMPRESSION_ALGO=""            # blank → zstd (Pi 4/5) or lz4 (Pi 3/Zero 2)
-#ZRAM_SWAP_PRIORITY=""               # blank → 100
+#ZRAM_PERCENT_OF_RAM=""                     # blank → 50 (≥1.8 GB RAM) / 40 (<1.8 GB)
+#ZRAM_COMPRESSION_ALGO=""                   # blank → zstd (Pi 4/5) or lz4 (Pi 3/Zero 2)
+#ZRAM_SWAP_PRIORITY=""                      # blank → 100
