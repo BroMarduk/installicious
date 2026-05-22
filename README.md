@@ -202,11 +202,12 @@ separately in [docs/webserver-ssl-policy-matrix.md](docs/webserver-ssl-policy-ma
 ### WeeWx
 
 WeeWx-role-only features (hidden in the Custom flow via
-`II_RESTRICT_TO_ROLES="weewx"`). All five are default-on under the WeeWx
-role; the role also makes `webserver` required, pulls in `skyfield`
-(which transitively installs the `weewx` apt package + `weewx-setup`),
-and pre-checks `ram-logging` (log2ram) since a station Pi is a strict win
-for offloading `/var/log` writes to RAM.
+`II_RESTRICT_TO_ROLES="weewx"`). The first five are default-on under the
+WeeWx role; `weewx-onedrive-backup` is opt-in (default-off — it needs a
+one-time manual rclone setup). The role also makes `webserver` required,
+pulls in `skyfield` (which transitively installs the `weewx` apt package +
+`weewx-setup`), and pre-checks `ram-logging` (log2ram) since a station Pi
+is a strict win for offloading `/var/log` writes to RAM.
 
 **WeeWX isn't in the Debian / Raspberry Pi OS archive** (RPi OS doesn't
 mirror it) — so the `weewx` package installer
@@ -224,9 +225,13 @@ backend, including Caddy, is in the stock archive.
 | `weewx-site-ram`        | WeeWX site on tmpfs (with boot loading page)     | off*    | conditional |
 | `weewx-database-ram`    | WeeWX database on zram (validated snapshots)     | off*    | conditional |
 | `neowx-material`        | NeoWX Material WeeWX skin                        | off*    | never       |
+| `weewx-onedrive-backup` | WeeWX database backup to OneDrive                | off     | never       |
 
 *`II_DEFAULT_SELECTED="off"` at the feature level — but the WeeWx role's
-`ROLE_FEATURES_DEFAULT` checks all five on by default for that role.
+`ROLE_FEATURES_DEFAULT` checks the five `*`-marked features on by default
+for that role. `weewx-onedrive-backup` carries no `*`: it's a role
+**OPTIONAL** (default-off everywhere) because it needs a manual rclone
+prerequisite — see its bullet below.
 Naming note: `weewx-site-ram` actually uses **tmpfs** (uncompressed RAM —
 no benefit from compression on tiny static HTML), `weewx-database-ram`
 uses **zram** (compressed RAM block device — meaningful saves on the
@@ -326,11 +331,47 @@ symmetry; the underlying mechanism differs by file.
   removes the extension via the WeeWX CLI (which strips the skin dir +
   its `weewx.conf` section), removes the locale drop-in, and restores
   `weewx.conf` from snapshot.
+- **weewx-onedrive-backup** — schedules off-site backups of the WeeWX
+  SQLite DB to OneDrive via rclone + systemd timers. Default-off and a
+  role **OPTIONAL** (not default) because of a one-time manual step:
+  rclone's OneDrive remote is configured on a desktop machine and the
+  resulting `rclone.conf` copied to the Pi — the headless OAuth flow is
+  fragile, so the feature never attempts it. Walkthrough:
+  [`scripts/weewx-onedrive-setup.md`](scripts/weewx-onedrive-setup.md).
+  - **Install** — checks the rclone config (at `WEEWX_BACKUP_RCLONE_CONF`)
+    exists and its OneDrive remote is reachable, **failing fast** with a
+    pointer to the setup guide if not. Then creates the OneDrive folder
+    tree, writes `/etc/weewx-onedrive-backup.conf` + the runtime script
+    `/usr/local/sbin/weewx-onedrive-backup`, and installs three
+    service+timer pairs: daily 02:30, weekly Sun 03:30, monthly 1st 04:30
+    (±10 min jitter, chained `After=` so they never run concurrently).
+  - **Each run** — always backs up a **disk** copy of the DB, never the
+    volatile zram device. If `weewx-database-ram` is installed it flushes
+    RAM→disk (`weewx-ram-save`) and uses the SD-card mirror; otherwise it
+    uses the plain on-disk DB. It then takes a consistent snapshot with
+    the SQLite online-backup API (`sqlite3 .backup` — safe even on a
+    live DB), verifies the snapshot (`WEEWX_BACKUP_VERIFY` —
+    `integrity`/`quick`/`off`), compresses with zstd (level auto-tuned
+    per Pi model), uploads to the tier folder, then prunes that folder
+    to its newest N files.
+  - `II_DEPS="weewx"` — only the `weewx` package is required. The
+    zram-vs-disk detection happens per run inside the runtime script, so
+    `weewx-database-ram` is **not** a dependency — adding or removing it
+    later is picked up automatically with no re-install.
+  - Editable: `WEEWX_BACKUP_RCLONE_CONF`, `WEEWX_BACKUP_DB_PATH`
+    (`/var/lib/weewx/weewx.sdb` — update this if a future WeeWX-database
+    option renames the file), `WEEWX_BACKUP_KEEP_DAILY` (7),
+    `WEEWX_BACKUP_KEEP_WEEKLY` (8), `WEEWX_BACKUP_KEEP_MONTHLY` (12) —
+    count-based retention per tier. `WEEWX_BACKUP_VERIFY` and the
+    OneDrive remote name + folder root are config-file-only knobs in
+    `config/weewx-onedrive-backup.config`. Uninstall stops + removes the
+    timers, units, runtime script and config, then reverts the apt
+    packages — but deliberately leaves `rclone.conf` and any
+    already-uploaded backups in OneDrive intact.
 
 Still freestanding under `scripts/` (not yet first-class features):
-`weewx-onedrive-backup.sh`, `weewx-nginx-ssl.sh` (cert issuance is now
-covered by `feature-webserver-ssl` — only the WeeWX-specific config
-glue remains).
+`weewx-nginx-ssl.sh` (cert issuance is now covered by
+`feature-webserver-ssl` — only the WeeWX-specific config glue remains).
 
 ---
 

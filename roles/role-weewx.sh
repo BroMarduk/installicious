@@ -49,8 +49,14 @@
 # sub-screen; default state there comes from each child's own
 # II_DEFAULT_SELECTED.
 #
-# OPTIONAL exposes Pi-tuning toggles (rconf, compressed-swap) — neither
-# default-on.
+# OPTIONAL exposes Pi-tuning toggles (rconf, compressed-swap) plus
+# weewx-onedrive-backup — all default-off. weewx-onedrive-backup is
+# default-off because it needs a one-time manual prerequisite: an
+# rclone.conf authored on a desktop machine and copied to the Pi (see
+# scripts/weewx-onedrive-setup.md). It backs up a disk copy of the WeeWX
+# DB — flushing + reading weewx-database-ram's SD-card mirror when that
+# feature is present, or the plain on-disk DB when it isn't — so it does
+# not depend on weewx-database-ram.
 #
 # ROLE_CONFIG points at config/weewx.config so the in-menu editor sees
 # the shared WEEWX_* defaults — the webroot / ramdisk knobs (WEB_DIR,
@@ -63,7 +69,7 @@
 #
 # Still freestanding under scripts/ (not yet first-class features):
 # weewx-nginx-ssl (subsumed by feature-webserver-ssl for cert issuance —
-# only the weewx-specific config glue is left), weewx-onedrive-backup.
+# only the weewx-specific config glue is left).
 
 # === II_ROLE_BEGIN ===
 ROLE_ID="weewx"
@@ -71,7 +77,7 @@ ROLE_TITLE="WeeWx"
 ROLE_DESCRIPTION="Weather station software + Skyfield extension."
 ROLE_FEATURES_REQUIRED="pkupd webserver"
 ROLE_FEATURES_DEFAULT="weewx-setup weewx-webroot weewx-site-ram weewx-database-ram neowx-material locale bash motd skyfield ram-logging"
-ROLE_FEATURES_OPTIONAL="rconf compressed-swap"
+ROLE_FEATURES_OPTIONAL="rconf compressed-swap weewx-onedrive-backup"
 ROLE_CONFIG="config/weewx.config"
 ROLE_EDITABLE_CONFIG=""
 # === II_ROLE_END ===
