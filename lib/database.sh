@@ -138,7 +138,13 @@ database_provision_local() {
     "GRANT ALL PRIVILEGES ON \`${DATABASE_NAME}\`.* TO '${DATABASE_USER}'@'localhost';" \
     "FLUSH PRIVILEGES;")
   log_info "Provisioning database \`${DATABASE_NAME}\` and user '${DATABASE_USER}'@'localhost' (idempotent CREATE IF NOT EXISTS)."
-  if ! sudo mysql -u root <<< "$sql" 2>&1 | tee -a "$FILE_LOG_INSTALLER" >/dev/null; then
+  # Capture mysql's exit code and output separately, then tee the output.
+  # `if ! cmd | tee ...` would test tee's exit (~always 0), masking a real
+  # mysql failure and silently returning success here.
+  local out rc
+  out=$(sudo mysql -u root <<< "$sql" 2>&1); rc=$?
+  [[ -n $out ]] && printf '%s\n' "$out" | tee -a "$FILE_LOG_INSTALLER" >/dev/null
+  if [[ $rc -ne 0 ]]; then
     log_fail "Root socket auth into mysql/mariadb failed."
     return 2
   fi
@@ -151,7 +157,11 @@ database_provision_local() {
 # Empty list is a no-op (SQLite case).
 database_install_python_bindings() {
   local db_type="$1" status_file="$2" varname pkgs
-  varname="DATABASE_$(echo "$db_type" | tr 'a-z' 'A-Z')_PYTHON_PACKAGES"
+  # ${db_type^^} = uppercase via Bash 4 parameter expansion (no fork).
+  # ${!varname} = indirect expansion -- read the variable whose NAME is
+  # held in $varname (e.g. DATABASE_MYSQL_PYTHON_PACKAGES). The per-role
+  # sidecar (config/database-<role>.config) sets these.
+  varname="DATABASE_${db_type^^}_PYTHON_PACKAGES"
   pkgs="${!varname:-}"
   if [[ -z $pkgs ]]; then
     log_info "No Python bindings configured for DB type '$db_type' under role '$(database_active_role)' — skipping."
@@ -256,8 +266,13 @@ database_uninstall_mysql_family() {
       "DROP DATABASE IF EXISTS \`${DATABASE_NAME:-weewx}\`;" \
       "DROP USER IF EXISTS '${DATABASE_USER:-weewx}'@'localhost';" \
       "FLUSH PRIVILEGES;")
-    sudo mysql -u root <<< "$sql" 2>&1 | tee -a "$FILE_LOG_INSTALLER" >/dev/null \
-      || log_warn "DROP DATABASE/USER returned non-zero (continuing uninstall)."
+    # Same exit-code-vs-tee separation as database_provision_local: `cmd |
+    # tee || ...` would only fire log_warn on tee failure, never on a real
+    # mysql error.
+    local drop_out drop_rc
+    drop_out=$(sudo mysql -u root <<< "$sql" 2>&1); drop_rc=$?
+    [[ -n $drop_out ]] && printf '%s\n' "$drop_out" | tee -a "$FILE_LOG_INSTALLER" >/dev/null
+    [[ $drop_rc -ne 0 ]] && log_warn "DROP DATABASE/USER returned non-zero (continuing uninstall)."
 
     log_info "Stopping $service."
     sudo systemctl stop "$service" 2>/dev/null || true

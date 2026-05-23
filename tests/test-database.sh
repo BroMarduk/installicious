@@ -7,11 +7,13 @@ source lib/log.sh
 log_init "test-database" "/tmp/test-database.log"
 
 # Pull in PATH_* so DATABASE_STATE_FILE / CREDS_FILE resolve to the
-# tempdir we control below (NOT /etc/installicious).
-TMPDIR=$(mktemp -d)
-trap "rm -rf $TMPDIR" EXIT
-export PATH_STATE="$TMPDIR/state"
-export PATH_CONFIG="$TMPDIR/config"
+# tempdir we control below (NOT /etc/installicious). Use a uniquely-named
+# variable -- TMPDIR is mktemp's own env var; assigning to it would
+# poison any subsequent mktemp call in the sourced lib / subshells.
+TEST_TMPDIR=$(mktemp -d)
+trap "rm -rf $TEST_TMPDIR" EXIT
+export PATH_STATE="$TEST_TMPDIR/state"
+export PATH_CONFIG="$TEST_TMPDIR/config"
 mkdir -p "$PATH_STATE" "$PATH_CONFIG"
 
 source lib/database.sh
