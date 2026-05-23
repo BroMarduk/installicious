@@ -27,7 +27,6 @@ source lib/log.sh
 source lib/status.sh
 
 DATABASE_STATE_FILE="${PATH_STATE:-/etc/installicious/state}/database.state"
-DATABASE_CREDS_FILE="${PATH_STATE:-/etc/installicious/state}/database.creds"
 
 MODE="install"
 while [[ $# -gt 0 ]]; do

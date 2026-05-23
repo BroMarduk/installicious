@@ -61,6 +61,14 @@ fi
 log_init "$II_TITLE" "$FILE_LOG_INSTALLER"
 
 if [[ $MODE == "install" ]]; then
+  # status_should_skip / status_mark_complete are deliberately called with
+  # only 2 args here (no config-file path). The parent has no install work
+  # tied to any DATABASE_* key — those are owned by the picked child
+  # (database-sqlite / -mysql / -mariadb), whose own status_should_skip
+  # invocation passes config/database.config so that edits to DATABASE_HOST
+  # / NAME / USER / PASS / INNODB_TUNE re-trigger the child. Same pattern as
+  # feature-webserver.sh (parent records its existence; backends own the
+  # real config-hash + re-run logic).
   if status_should_skip "$II_ID" "$II_VERSION"; then
     log_info "Database (parent) already recorded at version $II_VERSION. Skipping."
     exit 0

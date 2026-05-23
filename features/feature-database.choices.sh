@@ -34,7 +34,11 @@ _database_picked_type() {
   esac
 }
 
-# Shared body — true (rc=0) only when picked DB is mysql or mariadb.
+# _database_key_visible_for_mysql_family — rc=0 only when the picked
+# radio child is mysql or mariadb. Used by all five _applies_DATABASE_*
+# helpers below to hide the editable keys when SQLite (or nothing yet) is
+# picked — none of DATABASE_HOST / NAME / USER / PASS / INNODB_TUNE apply
+# to SQLite. One shared implementation, one place to evolve the gate.
 _database_key_visible_for_mysql_family() {
   local t; t=$(_database_picked_type)
   [[ $t == mysql || $t == mariadb ]]
