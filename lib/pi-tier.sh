@@ -19,6 +19,7 @@
 
 pi_tier_size_for() {
   local sizes="$1"
+  local small mid large xl
   read -r small mid large xl <<< "$sizes"
 
   local model=""

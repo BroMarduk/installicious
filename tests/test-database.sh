@@ -104,11 +104,15 @@ echo "=== Test 9: InnoDB tune off + missing file -> no-op ==="
 # helper would try to `sudo rm` it; we skip exercising that here.)
 DATABASE_INNODB_TUNE="off"
 DATABASE_HOST="SELF"
-# Replace sudo + systemctl with no-ops so the helper can run.
+# Replace sudo + systemctl with no-ops so the helper can run in the test
+# environment. NOTE: these stubs remain active for the rest of this file.
+# This is OK only because Test 9 is the LAST section before `=== Done ===`.
+# If you add tests below, either `unset -f sudo systemctl` first, or reset
+# them at the top of each new section.
 sudo() { "$@"; }
 systemctl() { :; }
-rm_path=/tmp/installicious-pi-test-noexist.cnf
-[[ ! -f $rm_path ]] && ok "drop-in absent precondition met" || rm -f "$rm_path"
+absent_conf=/tmp/installicious-pi-test-noexist.cnf
+[[ ! -f $absent_conf ]] && ok "drop-in absent precondition met" || rm -f "$absent_conf"
 # database_apply_innodb_tune writes /etc/mysql/conf.d/installicious-pi.cnf
 # unconditionally on a real system; we just confirm the early-return on
 # TUNE=off doesn't blow up.
