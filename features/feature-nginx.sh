@@ -177,7 +177,21 @@ do_uninstall() {
   return 0
 }
 
-do_verify() { verify_generic "$II_ID"; }
+do_verify() {
+  verify_require_completed_state "$II_ID" || return 2
+  local rc=0 err
+
+  if ! err=$(verify_dpkg_installed nginx 2>&1); then echo "$err"; rc=1; fi
+  if ! err=$(verify_systemd_active nginx 2>&1); then echo "$err"; rc=1; fi
+  if ! err=$(sudo -n nginx -t 2>&1); then
+    echo "nginx -t: $(printf '%s' "$err" | head -1)"
+    rc=1
+  fi
+  if ! err=$(verify_port_listening "${WEBSERVER_PORT:-80}" tcp 2>&1); then
+    echo "$err"; rc=1
+  fi
+  return $rc
+}
 
 if [[ $MODE == "install" ]]; then
   do_install
