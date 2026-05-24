@@ -382,6 +382,30 @@ do_install() {
   fi
   status_mark_started "$II_ID"
 
+  # --- DB-type self-skip --------------------------------------------------
+  # weewx-database-ram is SQLite-specific (it manages the .sdb file on a
+  # zram device with hourly validated snapshots). If feature-database
+  # recorded a non-SQLite backend in /etc/installicious/state/database.state,
+  # this feature has nothing meaningful to do. Mark complete and exit so
+  # the user doesn't see a FAIL or end up with a half-built ramdisk.
+  local _db_state="${PATH_STATE:-/etc/installicious/state}/database.state"
+  if [[ -f $_db_state ]]; then
+    local _db_type
+    # shellcheck disable=SC1090
+    _db_type=$(source "$_db_state" 2>/dev/null; printf '%s' "${DATABASE_TYPE:-}")
+    case "$_db_type" in
+      ""|sqlite)
+        : # proceed normally
+        ;;
+      *)
+        log_info "DATABASE_TYPE=$_db_type — weewx-database-ram is SQLite-only, skipping."
+        status_mark_complete "$II_ID" "$II_VERSION"
+        echo -e "[  \e[0;32mOK\e[0m  ] weewx-database-ram: not applicable for DATABASE_TYPE=$_db_type (skipped)."
+        return 0
+        ;;
+    esac
+  fi
+
   # Refuse to install on a system that doesn't have /var/lib/weewx yet —
   # weewx hasn't been set up, so there's nothing to migrate. The user
   # should install weewx (via the package or a manual run) first.

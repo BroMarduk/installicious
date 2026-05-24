@@ -73,7 +73,7 @@
 II_ID="weewx-onedrive-backup"
 II_TITLE="WeeWX database backup to OneDrive"
 II_CATEGORY="feature"
-II_VERSION="1"
+II_VERSION="2"
 II_DEPS="weewx"
 II_REQUIRES_REBOOT="never"
 II_DEFAULT_SELECTED="off"
@@ -226,6 +226,21 @@ case "$TIER" in
   monthly)  KEEP="${KEEP_MONTHLY:-12}" ;;
   *) echo "Usage: $0 {daily|weekly|monthly}" >&2; exit 2 ;;
 esac
+
+# Per-run DB-type self-skip: this script reads SQLite files via
+# `sqlite3 .backup`. If the WeeWX backend is mysql/mariadb (per
+# feature-database), there's nothing for us to do here today (a
+# mysqldump branch is a planned follow-up).
+if [[ -f /etc/installicious/state/database.state ]]; then
+  # shellcheck disable=SC1091
+  source /etc/installicious/state/database.state
+  case "${DATABASE_TYPE:-sqlite}" in
+    ""|sqlite) : ;;
+    *)
+      logger -t weewx-onedrive "[$TIER] DATABASE_TYPE=$DATABASE_TYPE -- SQLite-only backup, skipping."
+      exit 0 ;;
+  esac
+fi
 
 REMOTE_PATH="${REMOTE_ROOT}/${TIER}"
 DB_PATH="${DB_PATH:-/var/lib/weewx/weewx.sdb}"
@@ -469,6 +484,29 @@ do_install() {
     return 0
   fi
   status_mark_started "$II_ID"
+
+  # --- DB-type self-skip --------------------------------------------------
+  # weewx-onedrive-backup uses sqlite3 .backup to make a consistent
+  # snapshot of the WeeWX SQLite file. If feature-database recorded a
+  # non-SQLite backend, this feature has nothing to do today (a mysqldump
+  # branch is a planned follow-up). Mark complete and exit cleanly.
+  local _db_state="${PATH_STATE:-/etc/installicious/state}/database.state"
+  if [[ -f $_db_state ]]; then
+    local _db_type
+    # shellcheck disable=SC1090
+    _db_type=$(source "$_db_state" 2>/dev/null; printf '%s' "${DATABASE_TYPE:-}")
+    case "$_db_type" in
+      ""|sqlite)
+        : # proceed normally
+        ;;
+      *)
+        log_info "DATABASE_TYPE=$_db_type — weewx-onedrive-backup is SQLite-only, skipping."
+        status_mark_complete "$II_ID" "$II_VERSION"
+        echo -e "[  \e[0;32mOK\e[0m  ] weewx-onedrive-backup: not applicable for DATABASE_TYPE=$_db_type (skipped)."
+        return 0
+        ;;
+    esac
+  fi
 
   _sanitize_counts
 
