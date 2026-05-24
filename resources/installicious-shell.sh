@@ -29,51 +29,69 @@ case $- in *i*) ;; *) return 0 ;; esac
 
 _installicious_show_resume_transcript() {
   local transcript="/etc/installicious/state/resume-transcript.log"
-  local svc="installicious-resume.service"
+  local queue="/etc/installicious/state/queue.sh"
   local marker="$HOME/.installicious-transcript-shown"
 
-  # Live attach if the resume service is currently running.
-  if command -v systemctl >/dev/null 2>&1 \
-     && systemctl is-active --quiet "$svc" 2>/dev/null; then
-    local mainpid
-    mainpid=$(systemctl show -p MainPID --value "$svc" 2>/dev/null)
-    if [ -n "$mainpid" ] && [ "$mainpid" != "0" ] \
-       && kill -0 "$mainpid" 2>/dev/null \
-       && [ -f "$transcript" ]; then
-      echo
-      echo "============================================================"
-      echo "  Installicious is still resuming after a reboot."
-      echo "  Watching live; control returns when it completes..."
-      echo "============================================================"
-      # tail --pid exits when the watched process exits; -n +1 starts from
-      # the top so we see anything we missed.
-      tail -n +1 -f --pid="$mainpid" "$transcript" 2>/dev/null
-
-      # tail --pid has a known race: when MainPID (the bash running
-      # resume.sh) exits, tail may bail before tee finishes flushing
-      # the final lines (in our case the Queue Summary block) into
-      # the transcript file. Without this fallback the user sees the
-      # whole resume except its summary, and the marker file below
-      # then suppresses any replay on subsequent logins.
-      #
-      # Sleep briefly to let the tee subprocess drain, then re-print
-      # the Queue Summary section unconditionally. Duplicates a few
-      # lines in the common no-race case (acceptable), guarantees
-      # the summary is visible in the racy case.
-      sleep 0.3
-      if grep -q '^  Queue Summary$' "$transcript" 2>/dev/null; then
-        echo
-        awk '/^  Queue Summary$/{flag=1} flag' "$transcript" 2>/dev/null
-      fi
-      echo
-      touch "$marker" 2>/dev/null
-      return 0
+  # Queue in progress -> live-tail until queue.sh disappears.
+  #
+  # Why queue.sh and not `systemctl is-active` + MainPID:
+  #   - Type=oneshot units have a race where MainPID briefly reads as 0
+  #     while the service is technically "active", dropping us into the
+  #     fall-through branch and showing the user a static snapshot
+  #     ("output stops after a chunk") even though more output is on its
+  #     way. queue.sh is the canonical "queue still has outstanding
+  #     work" signal -- written by state_save / cleared by state_clear,
+  #     persists across as many chained reboots as the install needs.
+  #   - On a multi-reboot install (e.g. kernel update then a
+  #     reboot-required feature), queue.sh survives between reboots; a
+  #     reconnect after any reboot in the chain re-enters this loop and
+  #     tails the new cycle's transcript naturally.
+  #
+  # `tail -F` (capital F) handles transcript truncation between chained
+  # resume cycles (resume.sh truncates the transcript on each start).
+  if [ -f "$queue" ]; then
+    echo
+    echo "============================================================"
+    echo "  Installicious is resuming after a reboot."
+    echo "  Watching live; control returns when the queue clears..."
+    echo "============================================================"
+    # Race guard: profile.d may fire before resume.sh has had time to
+    # truncate / create the transcript. Wait briefly for it.
+    local waited=0
+    while [ ! -f "$transcript" ] && [ -f "$queue" ] && [ "$waited" -lt 30 ]; do
+      sleep 1
+      waited=$((waited + 1))
+    done
+    if [ -f "$transcript" ]; then
+      tail -n +1 -F "$transcript" 2>/dev/null &
+      local tpid=$!
+      # Poll queue.sh. When it disappears the queue has fully cleared;
+      # grace 2s so the post-scheduler footer in resume.sh (printed
+      # AFTER queue.sh is removed) gets flushed into the transcript
+      # before we kill tail.
+      while kill -0 "$tpid" 2>/dev/null; do
+        if [ ! -f "$queue" ]; then
+          sleep 2
+          break
+        fi
+        sleep 1
+      done
+      kill "$tpid" 2>/dev/null
+      wait "$tpid" 2>/dev/null
     fi
+    echo
+    echo "============================================================"
+    echo "  Installicious resume complete."
+    echo "============================================================"
+    echo
+    touch "$marker" 2>/dev/null
+    return 0
   fi
 
-  # Replay completed transcript if this user hasn't seen it yet. Compare
-  # mtimes so a transcript from THIS reboot is always shown once per user,
-  # but already-seen transcripts don't replay every time you open a shell.
+  # No queue in progress -> replay completed transcript if this user
+  # hasn't seen it yet. Compare mtimes so a transcript from THIS reboot
+  # is always shown once per user, but already-seen transcripts don't
+  # replay every time you open a shell.
   if [ -s "$transcript" ]; then
     if [ ! -f "$marker" ] || [ "$transcript" -nt "$marker" ]; then
       echo
