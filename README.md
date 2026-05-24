@@ -202,12 +202,14 @@ separately in [docs/webserver-ssl-policy-matrix.md](docs/webserver-ssl-policy-ma
 ### WeeWx
 
 WeeWx-role-only features (hidden in the Custom flow via
-`II_RESTRICT_TO_ROLES="weewx"`). The first five are default-on under the
-WeeWx role; `weewx-onedrive-backup` is opt-in (default-off — it needs a
-one-time manual rclone setup). The role also makes `webserver` required,
-pulls in `skyfield` (which transitively installs the `weewx` apt package +
-`weewx-setup`), and pre-checks `ram-logging` (log2ram) since a station Pi
-is a strict win for offloading `/var/log` writes to RAM.
+`II_RESTRICT_TO_ROLES="weewx"`). The first six are default-on under the
+WeeWx role (`database` leads — the sqlite/mysql/mariadb radio runs first,
+before `weewx-setup` writes `weewx.conf`); `weewx-onedrive-backup` is
+opt-in (default-off — it needs a one-time manual rclone setup). The role
+also makes `webserver` required, pulls in `skyfield` (which transitively
+installs the `weewx` apt package + `weewx-setup`), and pre-checks
+`ram-logging` (log2ram) since a station Pi is a strict win for offloading
+`/var/log` writes to RAM.
 
 **WeeWX isn't in the Debian / Raspberry Pi OS archive** (RPi OS doesn't
 mirror it) — so the `weewx` package installer
@@ -220,6 +222,7 @@ backend, including Caddy, is in the stock archive.
 
 | ID                      | Title                                            | Default | Reboot      |
 |---|---|---|---|
+| `database`              | Database backend (sqlite/mysql/mariadb radio)    | off*    | never       |
 | `weewx-setup`           | WeeWX station setup (non-interactive config)     | off*    | never       |
 | `weewx-webroot`         | WeeWX as default web root                        | off*    | never       |
 | `weewx-site-ram`        | WeeWX site on tmpfs (with boot loading page)     | off*    | conditional |
@@ -228,7 +231,7 @@ backend, including Caddy, is in the stock archive.
 | `weewx-onedrive-backup` | WeeWX database backup to OneDrive                | off     | never       |
 
 *`II_DEFAULT_SELECTED="off"` at the feature level — but the WeeWx role's
-`ROLE_FEATURES_DEFAULT` checks the five `*`-marked features on by default
+`ROLE_FEATURES_DEFAULT` checks the six `*`-marked features on by default
 for that role. `weewx-onedrive-backup` carries no `*`: it's a role
 **OPTIONAL** (default-off everywhere) because it needs a manual rclone
 prerequisite — see its bullet below.
@@ -238,6 +241,31 @@ uses **zram** (compressed RAM block device — meaningful saves on the
 SQLite DB). The `-ram` suffix is uniform with `feature-ram-logging` for
 symmetry; the underlying mechanism differs by file.
 
+- **database** — sqlite/mysql/mariadb radio. SQLite is the default (no-op
+  leaf — `weewx` ships with SQLite already). Picking **MySQL** or
+  **MariaDB** triggers a real install:
+  - Installs the server (`default-mysql-server` or `mariadb-server`) when
+    `DATABASE_HOST=SELF`; skips the server install when `DATABASE_HOST`
+    is a remote IP.
+  - Provisions `${DATABASE_NAME}` + `${DATABASE_USER}@localhost` with a
+    persisted random password (`/etc/installicious/state/database.creds`,
+    mode 0600). AUTO sentinels resolve to `weewx`/`weewx`/random. AUTO
+    creds + remote `DATABASE_HOST` is a hard error.
+  - Installs the role-specific Python bindings
+    (`python3-pymysql` under the WeeWx role).
+  - Optional InnoDB Pi-tuning: `DATABASE_INNODB_TUNE=on` writes
+    `/etc/mysql/conf.d/installicious-pi.cnf` with
+    `innodb_flush_log_at_trx_commit=2` and a Pi-RAM-tier-sized
+    `innodb_buffer_pool_size`. `off` removes the drop-in on re-run.
+  - Writes `/etc/installicious/state/database.state` for downstream
+    features. `feature-weewx-setup` reads it and overlays
+    `weewx.conf`'s `[DataBindings]/[Databases]/[DatabaseTypes]` to point
+    WeeWX at the picked backend.
+  - `feature-weewx-database-ram` and `feature-weewx-onedrive-backup`
+    self-skip cleanly when `DATABASE_TYPE != sqlite` (they're
+    SQLite-only).
+  - Uninstall drops the DB + user, removes the server packages and the
+    tune drop-in. **Existing data is destroyed** — logged loudly.
 - **weewx-setup** — configures WeeWX non-interactively so the apt
   package never has to prompt. Two layers:
   - **Install-critical settings** (the per-Pi-unique bits) live as

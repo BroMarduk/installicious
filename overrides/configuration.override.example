@@ -114,6 +114,18 @@
 #WEEWX_BACKUP_KEEP_MONTHLY="12"             # monthly backup files kept
 
 # ----------------------------------------------------------------------------
+# Database backend — feature-database (sqlite/mysql/mariadb radio)
+# (DATABASE_TYPE itself is the radio pick, not an editable key. The five
+#  keys below appear on the in-menu Edit Configuration screen ONLY when
+#  MySQL or MariaDB is picked.)
+# ----------------------------------------------------------------------------
+#DATABASE_HOST="SELF"                       # SELF = install + run locally on this Pi; an IP = remote (no server install)
+#DATABASE_NAME="AUTO"                       # AUTO -> per-role default ("weewx" under the WeeWx role)
+#DATABASE_USER="AUTO"                       # AUTO -> same as resolved DATABASE_NAME
+#DATABASE_PASS="AUTO"                       # AUTO -> 24-char random, persisted root-readable
+#DATABASE_INNODB_TUNE="off"                 # on = drop /etc/mysql/conf.d/installicious-pi.cnf (flush=2 + Pi-tier buffer pool)
+
+# ----------------------------------------------------------------------------
 # NeoWX Material skin — feature-neowx-material
 # ----------------------------------------------------------------------------
 #NEOWX_LANG="en"                            # skin language: ca de en es fi fr it nl pl se sk
