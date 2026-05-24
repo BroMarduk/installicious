@@ -19,6 +19,11 @@
 #                                     # under any role not in this list (e.g.
 #                                     # skyfield with "weewx" hides under
 #                                     # custom / pihole / homeassistant / etc.).
+#   II_SERVICE="<systemd-unit>"       # optional. If set, --verify's generic
+#                                     # fallback runs `systemctl is-active <unit>`
+#                                     # as part of the liveness check. Skip when
+#                                     # the feature owns no long-running service
+#                                     # (e.g. a one-shot config tweak).
 #   II_OPTIONAL_GROUP_MODE=""         # only meaningful on a parent that also
 #                                     # declares II_OPTIONAL_GROUP. Values:
 #                                     #   "" / "multi"  → checklist (default;
