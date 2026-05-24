@@ -16,6 +16,13 @@
 #   lib/log.sh lib/status.sh lib/state.sh lib/apt.sh lib/installer_apt.sh
 #   config/installicious.config
 # and to have done log_init + status_mark_started.
+#
+# DATABASE_PASS reuse contract: database.creds holds only DATABASE_PASS,
+# NOT the USER it was minted for. If you change DATABASE_USER between
+# runs, the new user is CREATEd with the persisted password (so the new
+# user works), and the OLD user is left in place with that same password
+# (we don't auto-drop). Drop the stale user by hand if you care; the
+# common case (USER never changes after first install) is unaffected.
 
 DATABASE_STATE_FILE="${PATH_STATE:-/etc/installicious/state}/database.state"
 DATABASE_CREDS_FILE="${PATH_STATE:-/etc/installicious/state}/database.creds"
@@ -129,6 +136,12 @@ database_resolve_credentials() {
 # (IF NOT EXISTS). Returns rc=0 on success, rc=2 if socket auth is
 # unavailable (caller should fail with a clear pointer to the manual
 # provisioning path).
+#
+# Charset: no explicit CHARACTER SET on the CREATE — relies on the
+# server default. mariadb-server on Bookworm/Trixie defaults to
+# utf8mb4 (utf8mb4_general_ci collation) which WeeWX 5 handles
+# without complaint. If a future weewx version needs an explicit
+# CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci, add it here.
 database_provision_local() {
   local sql
   sql=$(printf '%s\n' \

@@ -261,6 +261,14 @@ do_install() {
       ;;
     mysql|mariadb)
       _db_host_resolved="$DATABASE_HOST"
+      # SELF / self / empty -> "localhost" (weewx wants a host string).
+      # An explicit 127.0.0.1 is left as-is; weewx will TCP-connect to
+      # 127.0.0.1 rather than going through the unix socket. Behavior is
+      # correct either way -- mariadb-server listens on both. The
+      # asymmetry with lib/database.sh's database_is_local (which DOES
+      # treat 127.0.0.1 as local-for-install-purposes) is intentional:
+      # the install check is about "do we own this server?", the weewx
+      # config write is about "what string does WeeWX use to connect?".
       case "$_db_host_resolved" in SELF|self|"") _db_host_resolved="localhost" ;; esac
 
       # Guard mktemp: a failure (full disk, broken /tmp) would leave
