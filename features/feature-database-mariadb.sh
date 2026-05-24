@@ -37,7 +37,7 @@ FILE_CONFIG_DB="${PATH_CONFIG:-config}/database.config"
 [[ -f $FILE_CONFIG_DB ]] && source "$FILE_CONFIG_DB"
 state_apply_menu_overrides
 
-SERVICE="mariadb"
+SERVICE="mariadb"   # systemd unit shipped by the mariadb-server package
 
 MODE="install"
 while [[ $# -gt 0 ]]; do
