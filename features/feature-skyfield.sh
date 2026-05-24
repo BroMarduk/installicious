@@ -210,7 +210,21 @@ do_uninstall() {
   return 0
 }
 
-do_verify() { verify_generic "$II_ID"; }
+do_verify() {
+  verify_require_completed_state "$II_ID" || return 2
+  local rc=0 err
+  # Skyfield is a weewx extension -- install body uses weectl/wee_extension
+  # to register it. Presence of extension dir OR user/skyfieldalmanac.py
+  # is the smoke test (weewx 5 vs weewx 4 differ in location).
+  if ! err=$(verify_file_exists /etc/weewx/skins/SkyfieldAlmanac 2>&1); then
+    if ! verify_file_exists /usr/share/weewx/user/skyfieldalmanac.py 2>/dev/null; then
+      echo "$err"
+      echo "skyfield extension not registered in either skins/SkyfieldAlmanac or user/skyfieldalmanac.py"
+      rc=1
+    fi
+  fi
+  return $rc
+}
 
 if [[ $MODE == "install" ]]; then
   do_install

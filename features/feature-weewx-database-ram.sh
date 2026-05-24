@@ -557,7 +557,25 @@ do_uninstall() {
   return 0
 }
 
-do_verify() { verify_generic "$II_ID"; }
+do_verify() {
+  verify_require_completed_state "$II_ID" || return 2
+  # Self-skip respects DATABASE_TYPE (matches the do_install skip logic).
+  local _db_state="${PATH_STATE:-/etc/installicious/state}/database.state"
+  if [[ -f $_db_state ]]; then
+    local _db_type
+    _db_type=$(source "$_db_state" 2>/dev/null; printf '%s' "${DATABASE_TYPE:-}")
+    case "$_db_type" in
+      ""|sqlite) : ;;
+      *) echo "DATABASE_TYPE=$_db_type — SQLite-only, not applicable"; return 0 ;;
+    esac
+  fi
+
+  local rc=0 err
+  if ! err=$(verify_systemd_active weewx-ramdisk 2>&1); then echo "$err"; rc=1; fi
+  if ! err=$(verify_file_exists /etc/weewx-ramdisk.conf 2>&1); then echo "$err"; rc=1; fi
+  if ! err=$(verify_file_exists "${WEEWX_DB_DIR:-/var/lib/weewx}" 2>&1); then echo "$err"; rc=1; fi
+  return $rc
+}
 
 if [[ $MODE == "install" ]]; then
   do_install

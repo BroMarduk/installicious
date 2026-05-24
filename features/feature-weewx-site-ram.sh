@@ -252,7 +252,16 @@ do_uninstall() {
   return 0
 }
 
-do_verify() { verify_generic "$II_ID"; }
+do_verify() {
+  verify_require_completed_state "$II_ID" || return 2
+  local rc=0 err
+  if ! err=$(verify_file_exists "${WEEWX_WEB_DIR:-/var/www/html/weewx}" 2>&1); then echo "$err"; rc=1; fi
+  if ! findmnt -n -t tmpfs "${WEEWX_WEB_DIR:-/var/www/html/weewx}" >/dev/null 2>&1; then
+    echo "tmpfs mount missing at ${WEEWX_WEB_DIR:-/var/www/html/weewx}"
+    rc=1
+  fi
+  return $rc
+}
 
 if [[ $MODE == "install" ]]; then
   do_install

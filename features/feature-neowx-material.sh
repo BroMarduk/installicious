@@ -375,7 +375,16 @@ do_uninstall() {
   return 0
 }
 
-do_verify() { verify_generic "$II_ID"; }
+do_verify() {
+  verify_require_completed_state "$II_ID" || return 2
+  local rc=0 err
+  if ! err=$(verify_file_exists /etc/weewx/skins/neowx-material/skin.conf 2>&1); then echo "$err"; rc=1; fi
+  if ! grep -q '\[\[neowx-material\]\]' /etc/weewx/weewx.conf 2>/dev/null; then
+    echo "/etc/weewx/weewx.conf: no [[neowx-material]] section under [StdReport]"
+    rc=1
+  fi
+  return $rc
+}
 
 if [[ $MODE == "install" ]]; then
   do_install
