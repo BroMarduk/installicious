@@ -60,7 +60,24 @@ log_init "$II_TITLE" "$FILE_LOG_INSTALLER"
 
 STATUS_FILE=$(status_file_for "$II_ID")
 
-do_verify() { verify_generic "$II_ID"; }
+do_verify() {
+  verify_require_completed_state "$II_ID" || return 2
+  local rc=0 err
+
+  if [[ "${DATABASE_HOST:-SELF}" =~ ^(SELF|self|localhost|127\.0\.0\.1|)$ ]]; then
+    if ! err=$(verify_dpkg_installed mariadb-server 2>&1); then echo "$err"; rc=1; fi
+    if ! err=$(verify_systemd_active "$SERVICE" 2>&1); then echo "$err"; rc=1; fi
+    if ! sudo -n mysql -u root -e "SELECT 1;" >/dev/null 2>&1; then
+      echo "mysql -u root socket-auth SELECT 1 failed (server up but root socket auth broken)"
+      rc=1
+    fi
+  else
+    echo "remote DATABASE_HOST=$DATABASE_HOST — skipped local server checks"
+  fi
+
+  if ! err=$(verify_dpkg_installed python3-pymysql 2>&1); then echo "$err"; rc=1; fi
+  return $rc
+}
 if [[ $MODE == "verify" ]]; then do_verify; exit $?; fi
 
 if [[ $MODE == "install" ]]; then
