@@ -37,15 +37,20 @@ cd "$INSTALLICIOUS_DIR" || {
 # normal first-run should be `sudo bash installicious.sh`, which gives us
 # both root privileges AND a SUDO_USER value for downstream installers
 # (install-bash etc.) that need to know the original user's home.
-if [[ $EUID -ne 0 ]]; then
-  echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Installicious must run as root."
-  echo
-  echo "  Re-run with sudo:"
-  echo "      sudo bash $0 $*"
-  echo
-  echo "  Reason: installicious manages /etc/* config files, /boot/firmware,"
-  echo "  systemd units, and apt — all of which require root privileges."
-  exit 1
+# Bypass the root-priv gate for read-only --verify (existing dispatcher
+# is in lib/verify.sh and most checks are read-only; do_verify bodies
+# that need root sudo -n themselves).
+if [[ "${1:-}" != "--verify" ]]; then
+  if [[ $EUID -ne 0 ]]; then
+    echo "$(date '+%Y-%m-%d %T.%5N') - FAIL - [$MODULE] Installicious must run as root."
+    echo
+    echo "  Re-run with sudo:"
+    echo "      sudo bash $0 $*"
+    echo
+    echo "  Reason: installicious manages /etc/* config files, /boot/firmware,"
+    echo "  systemd units, and apt — all of which require root privileges."
+    exit 1
+  fi
 fi
 
 # ---- Force C locale for the installicious run ----
@@ -174,6 +179,23 @@ if [[ "${1:-}" == "--uninstall" ]]; then
   echo "============================================================"
   echo
   exit $overall_rc
+fi
+
+# --- --verify dispatcher ----------------------------------------------------
+# Bypasses the menu, the resume hand-off, and the whiptail dep check
+# (verify must work even on a half-broken box). Sources the lean set of
+# libs needed: log, status, manifest, verify. The dispatcher itself
+# lives in lib/verify.sh (extracted for tests).
+if [[ "${1:-}" == "--verify" ]]; then
+  shift
+  source config/installicious.config || exit 1
+  source lib/log.sh
+  source lib/status.sh
+  source lib/manifest.sh
+  source lib/verify.sh
+  log_init "installicious --verify" "$PATH_LOGS/installicious.log"
+  verify_dispatch_main "$@"
+  exit $?
 fi
 
 # Make sure the logging directory variable can be found.
