@@ -30,6 +30,13 @@
 # verify_dpkg_installed <pkg> -> rc 0 if dpkg-query reports "ok installed".
 # Prints "dpkg: <pkg> not installed (status=<status-or-missing>)" to stderr
 # on failure for the caller to capture + forward.
+#
+# The substring match is intentional: dpkg's status field is the three
+# space-separated columns "want flag status". We treat any "X ok installed"
+# as installed -- "install ok installed" (normal) AND "hold ok installed"
+# (apt-mark holds) both mean the package is present and usable. "deinstall
+# ok config-files" (purged-but-config-kept) does NOT contain "ok installed"
+# and correctly fails the check.
 verify_dpkg_installed() {
   local pkg="$1" status
   status=$(dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null)
@@ -131,10 +138,15 @@ verify_generic() {
 
   if [[ -n "$apt_packages" ]]; then
     for pkg in $apt_packages; do
-      pre_var="${pkg^^}"
-      pre_var="${pre_var//-/_}"
-      pre_var="${pre_var//./_}"
-      pre_var="${pre_var}_FW_PRE_INSTALLED"
+      # Must match installer_apt_record_install's variable-name transform
+      # (lib/installer_apt.sh): `tr 'a-z-' 'A-Z_'`. That's uppercase + hyphen
+      # -> underscore, NOTHING ELSE. Dots are passed through unchanged --
+      # which is technically an invalid bash variable name, but no
+      # installicious package today contains a dot (python3-pymysql, not
+      # python3.pymysql). Aligning here so both sides agree on the lookup
+      # key; if dotted package support ever lands, fix the transform in
+      # BOTH places.
+      pre_var=$(printf '%s' "$pkg" | tr 'a-z-' 'A-Z_')_FW_PRE_INSTALLED
       pre_val=""
       if [[ -f "$status_file" ]]; then
         pre_val=$(
