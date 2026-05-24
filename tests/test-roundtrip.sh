@@ -15,11 +15,13 @@ TMPBACKUP=$(mktemp -d)
 TMPETC=$(mktemp -d)
 TMPSYS=$(mktemp -d)
 
-cp config/installicious.config config/installicious.config.bak
-trap "mv -f config/installicious.config.bak config/installicious.config; rm -rf $STUB $TMPSTATUS $TMPBACKUP $TMPETC $TMPSYS" EXIT
+trap "rm -rf $STUB $TMPSTATUS $TMPBACKUP $TMPETC $TMPSYS" EXIT
 
-sed -i "s|^PATH_STATUS=.*|PATH_STATUS=\"$TMPSTATUS\"|" config/installicious.config
-sed -i "s|^PATH_BACKUP=.*|PATH_BACKUP=\"$TMPBACKUP\"|" config/installicious.config
+# Override the absolute system-wide paths via env vars — installicious.config
+# uses `${VAR:-default}` for these, so exports survive the re-source done by
+# the subshell `bash packages/...` invocations below.
+export PATH_STATUS="$TMPSTATUS"
+export PATH_BACKUP="$TMPBACKUP"
 
 # Redirect feature-zram's /etc paths to a sandbox so the script's own [[ -f ]]
 # checks see the same files our sudo stub creates. Production paths are the
