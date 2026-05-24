@@ -45,6 +45,55 @@ no matter what TTY / SSH session you come back on.
 
 ---
 
+## Verifying an install
+
+`installicious --verify` checks every installer that's been touched on
+this box and prints **OK** / **FAIL** / **NOT INSTALLED** per item with
+a summary block. Read-only — no root required.
+
+```bash
+installicious --verify                  # everything with a status file
+installicious --verify --all            # everything in the registry
+installicious --verify <id> [<id> ...]  # only the named items
+installicious --verify --list           # list known IDs + titles, no checks
+installicious --verify --verbose        # add per-check details to each row
+```
+
+Sample output:
+
+```
+[  OK  ] nginx                  — nginx
+[ FAIL ] mariadb                — MariaDB database server
+           systemctl is-active mariadb: inactive
+[ NOT  ] motd-weather           — MOTD weather panel
+           state=uninstalled
+============================================================
+  Verify summary
+============================================================
+  OK:            12
+  FAIL:           1
+  NOT INSTALLED:  3
+============================================================
+```
+
+What it checks per feature: by default, `dpkg-query` for any apt
+package the install body put on the box, plus `systemctl is-active`
+for the unit named in the manifest's optional `II_SERVICE` field.
+Features with richer liveness needs (nginx, apache, lighttpd, caddy,
+mariadb/mysql, the WeeWX family) carry hand-written checks too —
+`nginx -t`, `mysql -u root -e "SELECT 1"`, weewx service liveness,
+tmpfs mount presence, etc. A feature with nothing to check prints
+`(no liveness checks declared)`.
+
+Exit codes:
+- `0` — zero FAILs (NOT INSTALLED rows are not failures).
+- `1` — at least one FAIL.
+- `2` — you passed an unknown ID on the command line.
+
+The full design + per-installer contract: [docs/superpowers/specs/2026-05-24-verify-installed-design.md](docs/superpowers/specs/2026-05-24-verify-installed-design.md).
+
+---
+
 ## Roles
 
 | ID              | Title              | Notes                                                      |
