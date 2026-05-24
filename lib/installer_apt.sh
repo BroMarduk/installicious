@@ -35,6 +35,7 @@ source config/installicious.config 2>/dev/null || true
 source lib/log.sh    2>/dev/null
 source lib/status.sh 2>/dev/null
 source lib/apt.sh    2>/dev/null
+source lib/verify.sh 2>/dev/null
 
 # installer_apt_main "$@"
 # Full lifecycle for an apt-only installer. Reads II_ID, II_TITLE, II_VERSION,
@@ -47,6 +48,7 @@ installer_apt_main() {
     case "$1" in
       --install)   mode="install" ;;
       --uninstall) mode="uninstall" ;;
+      --verify)    mode="verify" ;;
       *) echo "Unknown argument: $1" >&2; return 2 ;;
     esac
     shift
@@ -67,8 +69,10 @@ installer_apt_main() {
 
   if [[ $mode == "install" ]]; then
     _installer_apt_do_install
-  else
+  elif [[ $mode == "uninstall" ]]; then
     _installer_apt_do_uninstall
+  elif [[ $mode == "verify" ]]; then
+    _installer_apt_do_verify
   fi
 }
 
@@ -181,6 +185,13 @@ _installer_apt_do_install() {
   log_ok "$II_TITLE installed."
   echo -e "[  \e[0;32mOK\e[0m  ] Installicious successfully installed $II_TITLE."
   return 0
+}
+
+# _installer_apt_do_verify — invoked when installer_apt_main sees --verify.
+# Pure passthrough to verify_generic; every package-*.sh is identical at
+# the verify layer (apt-package liveness only, no custom checks).
+_installer_apt_do_verify() {
+  verify_generic "$II_ID"
 }
 
 _installer_apt_do_uninstall() {
