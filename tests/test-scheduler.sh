@@ -212,5 +212,17 @@ mk_installer skyfield-fake "weewx-fake"
 got=$(scheduler_resolve_deps skyfield-fake | sort | tr "\n" ",")
 chkeq "skyfield-fake -> skyfield-fake,weewx-fake" "$got" "skyfield-fake,weewx-fake,"
 
+
+# ===========================================================================
+echo
+echo "=== Test 17: weewx-setup -> database dep resolves cleanly ==="
+# weewx-setup gets II_DEPS="weewx database" in Phase 5. Confirm the
+# scheduler orders database (and its picked child via II_OPTIONAL_GROUP)
+# ahead of weewx-setup when both are requested.
+mk_installer database-fake ""
+mk_installer weewx-setup-fake "database-fake"
+got=$(scheduler_resolve_deps weewx-setup-fake | sort | tr "\n" ",")
+chkeq "weewx-setup-fake -> database-fake,weewx-setup-fake" "$got" "database-fake,weewx-setup-fake,"
+
 echo
 echo "=== Done ==="

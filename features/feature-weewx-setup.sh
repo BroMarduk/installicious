@@ -35,7 +35,7 @@ II_ID="weewx-setup"
 II_TITLE="WeeWX station setup (non-interactive config)"
 II_CATEGORY="feature"
 II_VERSION="1"
-II_DEPS="weewx"
+II_DEPS="weewx database"
 II_REQUIRES_REBOOT="never"
 II_DEFAULT_SELECTED="off"
 II_RESTRICT_TO_ROLES="weewx"
@@ -212,6 +212,14 @@ do_install() {
     backup_create "$II_ID" "$WEEWX_CONF" >/dev/null || log_warn "backup_create failed; continuing."
   fi
 
+  # Restore the pristine pre-install weewx.conf snapshot before re-applying
+  # any overlay, so DB-type switches between runs do not leave stale
+  # [DataBindings]/[Databases]/[DatabaseTypes] sections behind.
+  if [[ -n $(backup_latest "$II_ID") ]]; then
+    backup_restore_latest "$II_ID" "$WEEWX_CONF" \
+      || log_warn "restore-from-snapshot returned non-zero; continuing."
+  fi
+
   # 1. Critical settings via weewx's own reconfigure CLI.
   if ! run_reconfigure; then
     log_fail "weewx reconfigure pass failed."
@@ -227,6 +235,59 @@ do_install() {
     status_mark_failed "$II_ID" "override merge failed"
     return 1
   fi
+
+  # --- Database overlay -----------------------------------------------------
+  # Sourced from /etc/installicious/state/database.state (written by the
+  # feature-database-* child that just ran). When DATABASE_TYPE is mysql or
+  # mariadb, overlay the right [DataBindings]/[Databases]/[DatabaseTypes]
+  # sections onto /etc/weewx/weewx.conf so WeeWX uses the picked backend.
+  # SQLite is a no-op -- weewx ships with archive_sqlite as the default
+  # binding.
+  DATABASE_STATE_FILE="${PATH_STATE:-/etc/installicious/state}/database.state"
+  DATABASE_CREDS_FILE="${PATH_STATE:-/etc/installicious/state}/database.creds"
+  if [[ -f $DATABASE_STATE_FILE ]]; then
+    # shellcheck disable=SC1090
+    source "$DATABASE_STATE_FILE"
+    [[ -f $DATABASE_CREDS_FILE ]] && source "$DATABASE_CREDS_FILE"
+  fi
+
+  case "${DATABASE_TYPE:-sqlite}" in
+    ""|sqlite)
+      log_info "DATABASE_TYPE=${DATABASE_TYPE:-sqlite} - no weewx.conf DB overlay needed."
+      ;;
+    mysql|mariadb)
+      _db_host_resolved="$DATABASE_HOST"
+      case "$_db_host_resolved" in SELF|self|"") _db_host_resolved="localhost" ;; esac
+
+      _db_overlay=$(mktemp)
+      cat > "$_db_overlay" <<INI
+# Auto-generated overlay (DATABASE_TYPE=$DATABASE_TYPE) -- merged onto
+# /etc/weewx/weewx.conf by feature-weewx-setup.
+[DataBindings]
+    [[wx_binding]]
+        database = archive_mysql
+[Databases]
+    [[archive_mysql]]
+        database_name = $DATABASE_NAME
+        database_type = MySQL
+[DatabaseTypes]
+    [[MySQL]]
+        host     = $_db_host_resolved
+        port     = ${DATABASE_PORT:-3306}
+        user     = $DATABASE_USER
+        password = $DATABASE_PASS
+        driver   = weedb.mysql
+INI
+      log_info "Merging DB overlay onto $WEEWX_CONF (host=$_db_host_resolved type=$DATABASE_TYPE)."
+      sudo python3 "$MERGE_HELPER" "$WEEWX_CONF" "$_db_overlay" 2>&1 | tee -a "$FILE_LOG_INSTALLER" \
+        || log_warn "weewx-merge-overrides.py returned non-zero for the DB overlay."
+      rm -f "$_db_overlay"
+      unset _db_host_resolved _db_overlay
+      ;;
+    *)
+      log_warn "Unknown DATABASE_TYPE='$DATABASE_TYPE' - no DB overlay."
+      ;;
+  esac
 
   if [[ $weewx_was_active == "true" ]]; then
     log_info "Restarting weewx."
