@@ -56,6 +56,7 @@ source lib/state.sh
 source lib/reboot.sh
 source lib/apt.sh
 source lib/backup.sh
+source lib/verify.sh
 
 MODE="install"
 while [[ $# -gt 0 ]]; do
@@ -63,6 +64,7 @@ while [[ $# -gt 0 ]]; do
     --install)        MODE="install" ;;
     --uninstall)      MODE="uninstall" ;;
     --restore-backup) MODE="uninstall" ;;
+    --verify)         MODE="verify" ;;
     *) echo "Unknown argument: $1" >&2; exit 2 ;;
   esac
   shift
@@ -373,8 +375,12 @@ do_uninstall() {
   return 0
 }
 
+do_verify() { verify_generic "$II_ID"; }
+
 if [[ $MODE == "install" ]]; then
   do_install
+elif [[ $MODE == "verify" ]]; then
+  do_verify
 else
   do_uninstall
 fi

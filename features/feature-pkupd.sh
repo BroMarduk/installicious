@@ -47,6 +47,7 @@ source lib/log.sh
 source lib/status.sh
 source lib/state.sh
 source lib/apt.sh
+source lib/verify.sh
 
 # pkupd's own config, then any menu-config.sh overrides on top.
 FILE_CONFIG_PKUPD="${PATH_CONFIG:-config}/pkupd.config"
@@ -61,6 +62,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --install)   MODE="install" ;;
     --uninstall) MODE="uninstall" ;;
+    --verify)    MODE="verify" ;;
     *) echo "Unknown argument: $1" >&2; exit 2 ;;
   esac
   shift
@@ -84,6 +86,10 @@ else
   log_warn "PKUPD_SKIP_WINDOW_MIN ('$PKUPD_SKIP_WINDOW_MIN') is not a number; falling back to 60."
   ACCEPTABLE_TIME_DELTA_SEC=3600
 fi
+
+do_verify() { verify_generic "$II_ID"; }
+
+if [[ $MODE == "verify" ]]; then do_verify; exit $?; fi
 
 if [[ $MODE == "uninstall" ]]; then
   log_info "pkupd is not reversible (apt update/upgrade/autoremove cannot be undone). Marking uninstalled."

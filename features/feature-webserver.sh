@@ -42,12 +42,14 @@ II_RESTRICT_TO_ROLES=""
 source config/installicious.config || exit 1
 source lib/log.sh
 source lib/status.sh
+source lib/verify.sh
 
 MODE="install"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --install)   MODE="install" ;;
     --uninstall) MODE="uninstall" ;;
+    --verify)    MODE="verify" ;;
     *) echo "Unknown argument: $1" >&2; exit 2 ;;
   esac
   shift
@@ -59,6 +61,9 @@ else
   FILE_LOG_INSTALLER="$PATH_LOGS/$FILE_LOG_INSTALLICIOUS"
 fi
 log_init "$II_TITLE" "$FILE_LOG_INSTALLER"
+
+do_verify() { verify_generic "$II_ID"; }
+if [[ $MODE == "verify" ]]; then do_verify; exit $?; fi
 
 if [[ $MODE == "install" ]]; then
   if status_should_skip "$II_ID" "$II_VERSION"; then

@@ -39,6 +39,7 @@ source lib/state.sh
 source lib/apt.sh
 source lib/installer_apt.sh
 source lib/database.sh
+source lib/verify.sh
 
 FILE_CONFIG_DB="${PATH_CONFIG:-config}/database.config"
 [[ -f $FILE_CONFIG_DB ]] && source "$FILE_CONFIG_DB"
@@ -51,6 +52,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --install)   MODE="install" ;;
     --uninstall) MODE="uninstall" ;;
+    --verify)    MODE="verify" ;;
     *) echo "Unknown argument: $1" >&2; exit 2 ;;
   esac
   shift
@@ -64,6 +66,9 @@ fi
 log_init "$II_TITLE" "$FILE_LOG_INSTALLER"
 
 STATUS_FILE=$(status_file_for "$II_ID")
+
+do_verify() { verify_generic "$II_ID"; }
+if [[ $MODE == "verify" ]]; then do_verify; exit $?; fi
 
 if [[ $MODE == "install" ]]; then
   if status_should_skip "$II_ID" "$II_VERSION" "$FILE_CONFIG_DB"; then

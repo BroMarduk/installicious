@@ -41,6 +41,7 @@ source lib/log.sh
 source lib/status.sh
 source lib/state.sh
 source lib/apt.sh
+source lib/verify.sh
 [[ -f config/locale.config ]] && source config/locale.config
 state_apply_menu_overrides
 
@@ -49,6 +50,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --install)   MODE="install" ;;
     --uninstall) MODE="uninstall" ;;
+    --verify)    MODE="verify" ;;
     *) echo "Unknown argument: $1" >&2; exit 2 ;;
   esac
   shift
@@ -257,8 +259,12 @@ do_uninstall() {
   return 0
 }
 
+do_verify() { verify_generic "$II_ID"; }
+
 if [[ $MODE == "install" ]]; then
   do_install
+elif [[ $MODE == "verify" ]]; then
+  do_verify
 else
   do_uninstall
 fi

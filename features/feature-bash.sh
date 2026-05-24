@@ -36,6 +36,7 @@ source lib/status.sh
 source lib/backup.sh
 source lib/block.sh
 source lib/post_install.sh
+source lib/verify.sh
 
 # os.status carries II_INSTALLICIOUS_USER, set by installicious.sh from
 # $SUDO_USER. Survives nested sudo + post-reboot resume.
@@ -49,6 +50,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --install)         MODE="install" ;;
     --uninstall)       MODE="uninstall" ;;
+    --verify)          MODE="verify" ;;
     --restore-backup)  RESTORE_BACKUP=1 ;;
     --target-user=*)   TARGET_USER="${1#*=}" ;;
     -h|--help)
@@ -366,8 +368,12 @@ do_uninstall() {
   return 0
 }
 
+do_verify() { verify_generic "$II_ID"; }
+
 if [[ $MODE == "install" ]]; then
   do_install
+elif [[ $MODE == "verify" ]]; then
+  do_verify
 else
   do_uninstall
 fi
