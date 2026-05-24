@@ -215,6 +215,9 @@ do_install() {
   # Restore the pristine pre-install weewx.conf snapshot before re-applying
   # any overlay, so DB-type switches between runs do not leave stale
   # [DataBindings]/[Databases]/[DatabaseTypes] sections behind.
+  # NOTE: any manual edits to /etc/weewx/weewx.conf made after the first
+  # installicious run are reverted here. Put persistent customizations in
+  # overrides/weewx.override -- those are deep-merged back on top below.
   if [[ -n $(backup_latest "$II_ID") ]]; then
     backup_restore_latest "$II_ID" "$WEEWX_CONF" \
       || log_warn "restore-from-snapshot returned non-zero; continuing."
@@ -243,6 +246,7 @@ do_install() {
   # sections onto /etc/weewx/weewx.conf so WeeWX uses the picked backend.
   # SQLite is a no-op -- weewx ships with archive_sqlite as the default
   # binding.
+  local DATABASE_STATE_FILE DATABASE_CREDS_FILE _db_host_resolved _db_overlay
   DATABASE_STATE_FILE="${PATH_STATE:-/etc/installicious/state}/database.state"
   DATABASE_CREDS_FILE="${PATH_STATE:-/etc/installicious/state}/database.creds"
   if [[ -f $DATABASE_STATE_FILE ]]; then
@@ -259,8 +263,11 @@ do_install() {
       _db_host_resolved="$DATABASE_HOST"
       case "$_db_host_resolved" in SELF|self|"") _db_host_resolved="localhost" ;; esac
 
-      _db_overlay=$(mktemp)
-      cat > "$_db_overlay" <<INI
+      # Guard mktemp: a failure (full disk, broken /tmp) would leave
+      # $_db_overlay empty and `cat > ""` would silently dump to the cwd.
+      # Skip the overlay with a clear warn instead.
+      if _db_overlay=$(mktemp 2>/dev/null) && [[ -n $_db_overlay ]]; then
+        cat > "$_db_overlay" <<INI
 # Auto-generated overlay (DATABASE_TYPE=$DATABASE_TYPE) -- merged onto
 # /etc/weewx/weewx.conf by feature-weewx-setup.
 [DataBindings]
@@ -278,11 +285,13 @@ do_install() {
         password = $DATABASE_PASS
         driver   = weedb.mysql
 INI
-      log_info "Merging DB overlay onto $WEEWX_CONF (host=$_db_host_resolved type=$DATABASE_TYPE)."
-      sudo python3 "$MERGE_HELPER" "$WEEWX_CONF" "$_db_overlay" 2>&1 | tee -a "$FILE_LOG_INSTALLER" \
-        || log_warn "weewx-merge-overrides.py returned non-zero for the DB overlay."
-      rm -f "$_db_overlay"
-      unset _db_host_resolved _db_overlay
+        log_info "Merging DB overlay onto $WEEWX_CONF (host=$_db_host_resolved type=$DATABASE_TYPE)."
+        sudo python3 "$MERGE_HELPER" "$WEEWX_CONF" "$_db_overlay" 2>&1 | tee -a "$FILE_LOG_INSTALLER" \
+          || log_warn "weewx-merge-overrides.py returned non-zero for the DB overlay."
+        rm -f "$_db_overlay"
+      else
+        log_warn "mktemp failed; skipping DB overlay (weewx.conf may not pick up DATABASE_TYPE=$DATABASE_TYPE on this run)."
+      fi
       ;;
     *)
       log_warn "Unknown DATABASE_TYPE='$DATABASE_TYPE' - no DB overlay."
