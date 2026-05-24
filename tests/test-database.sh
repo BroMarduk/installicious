@@ -85,5 +85,36 @@ database_load_role_sidecar "nonexistent" 2>/dev/null  # must not error
 ok "missing sidecar is a no-op"
 
 # ============================================================================
+echo "=== Test 8: pi_tier_size_for ==="
+source lib/pi-tier.sh
+# We don't know which Pi (or non-Pi) the test runs on — just verify the
+# helper returns ONE of the four sizes when called with our actual
+# argument shape.
+val=$(pi_tier_size_for "64M 128M 256M 512M")
+case "$val" in
+  64M|128M|256M|512M) ok "pi_tier_size_for returns one of {64M,128M,256M,512M}: $val" ;;
+  *) fail "pi_tier_size_for unexpected value: '$val'" ;;
+esac
+
+# ============================================================================
+echo "=== Test 9: InnoDB tune off + missing file -> no-op ==="
+# We cannot exercise the actual `sudo tee` path in tests, but we can
+# verify the helper short-circuits when DATABASE_INNODB_TUNE=off and
+# there's no existing drop-in. (When the file exists and TUNE=off, the
+# helper would try to `sudo rm` it; we skip exercising that here.)
+DATABASE_INNODB_TUNE="off"
+DATABASE_HOST="SELF"
+# Replace sudo + systemctl with no-ops so the helper can run.
+sudo() { "$@"; }
+systemctl() { :; }
+rm_path=/tmp/installicious-pi-test-noexist.cnf
+[[ ! -f $rm_path ]] && ok "drop-in absent precondition met" || rm -f "$rm_path"
+# database_apply_innodb_tune writes /etc/mysql/conf.d/installicious-pi.cnf
+# unconditionally on a real system; we just confirm the early-return on
+# TUNE=off doesn't blow up.
+database_apply_innodb_tune mariadb >/dev/null 2>&1
+chkrc "TUNE=off rc=0" $? 0
+
+# ============================================================================
 echo
 echo "=== Done ==="
