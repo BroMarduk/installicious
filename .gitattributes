@@ -1,0 +1,11 @@
+# Normalize all text files to LF on commit and check them out as LF on every
+# platform. CRLF breaks the manifest/role parsers that read `KEY="value"`
+# lines field-by-field — the trailing \r defeats the quote-strip and turns
+# every field into an unmatchable literal. See commit c5dc147 for the
+# parser-side defensive fix; this file is the source-side fix that keeps
+# the in-tree data clean regardless of who edits it on which OS.
+#
+# `text=auto` tells git to auto-detect binary content and exempt those
+# files from the normalization (no binaries in the repo today, but the
+# rule is forward-compatible).
+* text=auto eol=lf
