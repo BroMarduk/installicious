@@ -11,6 +11,107 @@ codes, etc.
 
 ---
 
+## Pre-install quick-start <a id="quick-start"></a>
+
+If you're about to run `installicious` and just want the **minimum** to make
+the `weewx-onedrive-backup` feature install cleanly, do these five steps
+**before** you check the `weewx-onedrive-backup` row in the menu. The
+installer reads `sudo rclone listremotes`; if the `onedrive:` remote isn't
+there, the install **fails fast** with a pointer back to this doc — it never
+tries an interactive OAuth flow on the Pi.
+
+### 1. Configure rclone on Windows (not the Pi)
+
+```powershell
+winget install Rclone.Rclone
+rclone config
+```
+
+Key answers (the rest can be the defaults):
+
+| Prompt | Answer |
+|---|---|
+| new remote? | `n` |
+| name | `onedrive` — exactly this, or set `WEEWX_BACKUP_REMOTE_NAME=<your-name>` in `overrides/configuration.override` before installing |
+| Storage | `onedrive` |
+| `client_id` / `client_secret` | leave blank — uses rclone's built-in app, fine for personal use. (Step 1 below has the Azure-app path if you want your own.) |
+| `region` | `1` (Microsoft Cloud Global) |
+| `tenant` | blank (Enter) — personal accounts don't have one |
+| Edit advanced config? | `n` |
+| Use web browser? | `y` |
+| *(browser opens, sign in, click Accept)* | |
+| `config_type` | `1` (OneDrive Personal) |
+| Select drive | the row labeled `OneDrive (personal)` with a short hex drive ID (NOT a long `b!...` ID — those are SharePoint libraries) |
+| Drive OK? | `y` |
+| Keep this remote? | `y` |
+| final menu | `q` |
+
+Verify on Windows:
+
+```powershell
+rclone lsd onedrive:
+```
+
+Should list your real OneDrive top-level folders (Documents, Pictures, etc.).
+If it doesn't, see Step 2 below for the full walkthrough.
+
+### 2. Copy `rclone.conf` to the Pi
+
+```powershell
+scp $env:APPDATA\rclone\rclone.conf <user>@<pi-hostname>:/tmp/rclone.conf
+```
+
+### 3. Move it into root's config dir on the Pi
+
+```bash
+sudo mkdir -p /root/.config/rclone
+sudo mv /tmp/rclone.conf /root/.config/rclone/rclone.conf
+sudo chown root:root /root/.config/rclone/rclone.conf
+sudo chmod 600       /root/.config/rclone/rclone.conf
+```
+
+The `root:root` ownership matters — the systemd backup timers run as root, so
+the OAuth refresh has to work in that context.
+
+### 4. Smoke-test as root
+
+```bash
+sudo rclone listremotes        # expect: onedrive:
+sudo rclone lsd onedrive:      # expect: your real OneDrive folders listed
+```
+
+If `sudo rclone lsd onedrive:` works, the OAuth setup is complete and portable.
+If it fails here, the installer will fail the same way — fix it now (see the
+troubleshooting tables further down) before clicking the feature.
+
+### 5. Run installicious
+
+Pick the **weewx role**, then on the optional-features picker (step 4b)
+**check** the `weewx-onedrive-backup` row (it's default-off precisely because
+it needs this rclone setup). Continue through the rest of the menu — the
+feature installs its preflight check, OneDrive folder tree, runtime script,
+and three timer pairs (daily / weekly / monthly).
+
+Optional overrides — set these in `overrides/configuration.override` **before**
+running installicious if you want non-defaults:
+
+| Key | Default | Notes |
+|---|---|---|
+| `WEEWX_BACKUP_RCLONE_CONF` | `/root/.config/rclone/rclone.conf` | If you keep rclone.conf somewhere else |
+| `WEEWX_BACKUP_REMOTE_NAME` | `onedrive` | Must match the remote name you used in step 1 |
+| `WEEWX_BACKUP_REMOTE_ROOT` | `Documents-Private/Backups/WeeWX/Database` | OneDrive folder path |
+| `WEEWX_BACKUP_KEEP_DAILY` | `7` | Days to retain in the daily tier |
+| `WEEWX_BACKUP_KEEP_WEEKLY` | `8` | Weeks to retain in the weekly tier |
+| `WEEWX_BACKUP_KEEP_MONTHLY` | `12` | Months to retain in the monthly tier |
+
+That's the whole pre-install checklist. The rest of this document explains
+each piece in detail — see the section index below for the full path
+(including the optional Azure-app registration in Step 1) or jump directly
+to "Step 4 — Install the backup timers" for what the installer does for you
+under the hood, and "Verify end-to-end" for post-install smoke-tests.
+
+---
+
 ## What this gives you
 
 Three rolling tiers of off-site backups of your WeeWX SQLite database, each

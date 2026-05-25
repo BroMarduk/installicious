@@ -423,8 +423,12 @@ symmetry; the underlying mechanism differs by file.
   role **OPTIONAL** (not default) because of a one-time manual step:
   rclone's OneDrive remote is configured on a desktop machine and the
   resulting `rclone.conf` copied to the Pi — the headless OAuth flow is
-  fragile, so the feature never attempts it. Walkthrough:
-  [`scripts/weewx-onedrive-setup.md`](scripts/weewx-onedrive-setup.md).
+  fragile, so the feature never attempts it.
+  **Before** you check this feature in the menu, follow the
+  [pre-install quick-start (5 steps)](scripts/weewx-onedrive-setup.md#quick-start)
+  in [`scripts/weewx-onedrive-setup.md`](scripts/weewx-onedrive-setup.md).
+  That file also has the full Azure-app walkthrough, restoration recipe,
+  and uninstall guide if you need them.
   - **Install** — checks the rclone config (at `WEEWX_BACKUP_RCLONE_CONF`)
     exists and its OneDrive remote is reachable, **failing fast** with a
     pointer to the setup guide if not. Then creates the OneDrive folder
