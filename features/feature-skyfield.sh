@@ -60,7 +60,10 @@ source lib/installer_apt.sh
 source lib/verify.sh
 
 SKYFIELD_EXTENSION_URL="${SKYFIELD_EXTENSION_URL:-https://github.com/roe-dl/weewx-skyfield-almanac/archive/refs/heads/master.zip}"
-SKYFIELD_EXTENSION_NAME="${SKYFIELD_EXTENSION_NAME:-SkyfieldAlmanac}"
+# Must match what `weectl extension list` reports for the registered
+# extension — that's the same name `weectl extension uninstall <name>`
+# expects. roe-dl ships it as "Skyfield almanac" (space, lowercase 'a').
+SKYFIELD_EXTENSION_NAME="${SKYFIELD_EXTENSION_NAME:-Skyfield almanac}"
 
 # _weewx_ext_tool — echo the WeeWX extension CLI on this box:
 # "weectl" (weewx 5), "wee_extension" (weewx 4), or "" if neither is on
@@ -212,18 +215,23 @@ do_uninstall() {
 
 do_verify() {
   verify_require_completed_state "$II_ID" || return 2
-  local rc=0 err
-  # Skyfield is a weewx extension -- install body uses weectl/wee_extension
-  # to register it. Presence of extension dir OR user/skyfieldalmanac.py
-  # is the smoke test (weewx 5 vs weewx 4 differ in location).
-  if ! err=$(verify_file_exists /etc/weewx/skins/SkyfieldAlmanac 2>&1); then
-    if ! verify_file_exists /usr/share/weewx/user/skyfieldalmanac.py 2>/dev/null; then
-      echo "$err"
-      echo "skyfield extension not registered in either skins/SkyfieldAlmanac or user/skyfieldalmanac.py"
-      rc=1
+  # Source of truth is weectl's own bookkeeping — that's the same registry
+  # `weectl extension uninstall` consults, so if it lists Skyfield we know
+  # the extension is actually wired up. Fallback to the user-module file in
+  # case weectl is missing (PATH issues, partially-broken weewx).
+  local tool
+  tool=$(_weewx_ext_tool)
+  if [[ -n $tool ]]; then
+    if sudo -n "$tool" extension list 2>/dev/null | grep -iq 'skyfield'; then
+      return 0
     fi
+    echo "$tool extension list: no skyfield entry"
   fi
-  return $rc
+  if verify_file_exists /etc/weewx/bin/user/skyfieldalmanac.py 2>/dev/null; then
+    return 0
+  fi
+  echo "skyfield extension not registered (weectl/wee_extension reports nothing) and /etc/weewx/bin/user/skyfieldalmanac.py is missing"
+  return 1
 }
 
 if [[ $MODE == "install" ]]; then
