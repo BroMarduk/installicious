@@ -71,6 +71,10 @@ _role_read_block_into() {
   fi
   local _line _in=0 _result=""
   while IFS= read -r _line; do
+    # See _manifest_read_block_into for the rationale — strip a trailing
+    # CR so CRLF-checked-out role files don't poison every tier list with
+    # a stray '\r'.
+    _line=${_line%$'\r'}
     case $_line in
       "# === II_ROLE_BEGIN ==="*) _in=1; continue;;
       "# === II_ROLE_END ==="*)   _in=0; continue;;
@@ -87,6 +91,8 @@ _role_parse_field() {
   local _block="$1" _field="$2" _out="$3"
   local _line _value=""
   while IFS= read -r _line; do
+    # Defense in depth — see _manifest_parse_field for the same rationale.
+    _line=${_line%$'\r'}
     if [[ $_line == "${_field}="* ]]; then
       _value=${_line#"${_field}"=}
       if [[ ${_value:0:1} == '"' && ${_value: -1} == '"' ]]; then

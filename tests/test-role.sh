@@ -164,5 +164,21 @@ chkeq "webserver required" "$ws_req" "pkupd webserver"
 chkeq "webserver default"  "$ws_def" "locale bash motd"
 chkeq "webserver optional" "$ws_opt" "rconf compressed-swap ram-logging"
 
+# ===========================================================================
+echo
+echo "=== Test: role parser tolerates CRLF line endings ==="
+# Regression for the parsing bug that turned CRLF-checked-out roles into
+# empty tier lists (the trailing \r defeated the quote-strip, every
+# downstream `for id in $role_required` then split on the literal quotes).
+CRLF_DIR=$(mktemp -d)
+trap "rm -rf $TMPDIR $CRLF_DIR" EXIT
+printf '#!/bin/bash\r\n# === II_ROLE_BEGIN ===\r\nROLE_ID="crlf-role"\r\nROLE_TITLE="CRLF Role"\r\nROLE_FEATURES_REQUIRED="pkupd webserver"\r\nROLE_FEATURES_DEFAULT="locale bash motd"\r\nROLE_FEATURES_OPTIONAL="rconf"\r\n# === II_ROLE_END ===\r\n' > "$CRLF_DIR/role-crlf.sh"
+chkeq "CRLF role ID"        "$(role_get_field "$CRLF_DIR/role-crlf.sh" ROLE_ID)"                "crlf-role"
+chkeq "CRLF role TITLE"     "$(role_get_field "$CRLF_DIR/role-crlf.sh" ROLE_TITLE)"             "CRLF Role"
+chkeq "CRLF role REQUIRED"  "$(role_get_field "$CRLF_DIR/role-crlf.sh" ROLE_FEATURES_REQUIRED)" "pkupd webserver"
+chkeq "CRLF role DEFAULT"   "$(role_get_field "$CRLF_DIR/role-crlf.sh" ROLE_FEATURES_DEFAULT)"  "locale bash motd"
+chkeq "CRLF role OPTIONAL"  "$(role_get_field "$CRLF_DIR/role-crlf.sh" ROLE_FEATURES_OPTIONAL)" "rconf"
+chkeq "CRLF role_path_for"  "$(role_path_for crlf-role "$CRLF_DIR")"                            "$CRLF_DIR/role-crlf.sh"
+
 echo
 echo "=== Done ==="

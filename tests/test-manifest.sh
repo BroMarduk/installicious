@@ -384,5 +384,27 @@ chkrc "real under-construction blocked by site-ram" $? 0
 manifest_is_in_conflict_with weewx-site-ram motd
 chkrc "real site-ram not in conflict with motd"     $? 1
 
+# ===========================================================================
+echo
+echo "=== Test 26: parser tolerates CRLF line endings ==="
+# Regression for the menu-flow breakdown caused by feature-*.sh files being
+# checked in (or extracted) with CRLF endings: the parser would see
+# `II_ID="webserver"\r`, fail to strip quotes (last char is \r, not "), and
+# return a literal string that never matched any lookup — turning steps
+# 3/4a/4b/5 into ghost passes. Synthesizing a CRLF manifest here so a
+# regression on the parser fails this test instead of silently breaking
+# the menu.
+CRLF_TMP=$(mktemp -d)
+trap "rm -rf $TMPDIR $CRLF_TMP" EXIT
+printf '#!/bin/bash\r\n# === II_MANIFEST_BEGIN ===\r\nII_ID="crlf-feat"\r\nII_TITLE="CRLF Feature"\r\nII_CATEGORY="feature"\r\nII_VERSION="1"\r\nII_DEPS="dep-a dep-b"\r\nII_OPTIONAL_GROUP="child-x child-y"\r\nII_OPTIONAL_GROUP_MODE="exclusive"\r\n# === II_MANIFEST_END ===\r\n' > "$CRLF_TMP/feature-crlf.sh"
+chkeq "CRLF ID stripped"          "$(manifest_get_field "$CRLF_TMP/feature-crlf.sh" II_ID)"                 "crlf-feat"
+chkeq "CRLF TITLE stripped"       "$(manifest_get_field "$CRLF_TMP/feature-crlf.sh" II_TITLE)"              "CRLF Feature"
+chkeq "CRLF DEPS stripped"        "$(manifest_get_field "$CRLF_TMP/feature-crlf.sh" II_DEPS)"               "dep-a dep-b"
+chkeq "CRLF OPTIONAL_GROUP"       "$(manifest_get_field "$CRLF_TMP/feature-crlf.sh" II_OPTIONAL_GROUP)"     "child-x child-y"
+chkeq "CRLF OPTIONAL_GROUP_MODE"  "$(manifest_get_field "$CRLF_TMP/feature-crlf.sh" II_OPTIONAL_GROUP_MODE)"  "exclusive"
+# Also exercise path-by-id lookup, which is what the menu's step 3 uses.
+_MANIFEST_BLOCK=(); _MANIFEST_FIELDS=(); _MANIFEST_FILES=(); _MANIFEST_IDS=(); _MANIFEST_PATH=(); _MANIFEST_LOADED=0
+chkeq "CRLF path_for resolves"    "$(manifest_path_for crlf-feat "$CRLF_TMP")"                              "$CRLF_TMP/feature-crlf.sh"
+
 echo
 echo "=== Done ==="

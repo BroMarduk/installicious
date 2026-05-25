@@ -167,6 +167,11 @@ _manifest_read_block_into() {
   fi
   local _line _in=0 _result=""
   while IFS= read -r _line; do
+    # Strip a trailing CR so CRLF-checked-out files parse cleanly. Without
+    # this, every value here picks up a literal '\r' which then poisons
+    # downstream lookups (e.g. `manifest_path_for "webserver"` ends up
+    # comparing against "webserver"<CR> and never matches).
+    _line=${_line%$'\r'}
     case $_line in
       "# === II_MANIFEST_BEGIN ==="*) _in=1; continue;;
       "# === II_MANIFEST_END ==="*)   _in=0; continue;;
@@ -188,6 +193,10 @@ _manifest_parse_field() {
   local _block="$1" _field="$2" _out="$3"
   local _line _value=""
   while IFS= read -r _line; do
+    # Defense in depth: even though _read_block_into strips CR per line
+    # before caching, an externally-supplied block (e.g. from a test) may
+    # still contain CR. Re-stripping here keeps the parser correct.
+    _line=${_line%$'\r'}
     if [[ $_line == "${_field}="* ]]; then
       _value=${_line#"${_field}"=}
       if [[ ${_value:0:1} == '"' && ${_value: -1} == '"' ]]; then
