@@ -100,6 +100,17 @@ source lib/menu.sh
 source lib/scheduler.sh
 source lib/post_install.sh
 
+# Pre-warm the manifest registry in THIS shell. Every `$(manifest_get_field
+# ...)` in the menu flow runs in a subshell that inherits — but cannot
+# write back to — our cache arrays. Without a parent-process warm-up,
+# each subshell's cache starts empty, re-scans every feature/package file
+# from disk, populates the cache *inside the subshell*, and dies — so the
+# next call repeats the full scan. On a Pi that meant ~30s between
+# menu screens with ~100 subshell calls per render. Loading once here
+# populates _MANIFEST_BLOCK / _MANIFEST_PATH in the parent so every
+# downstream subshell starts warm. Disk IO drops to zero after this line.
+_manifest_registry_load
+
 if [[ -z $FILE_LOG_INSTALLICIOUS ]]; then
   FILE_LOG_INSTALLER="$PATH_LOGS/installicious.log"
 else
