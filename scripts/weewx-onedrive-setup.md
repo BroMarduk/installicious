@@ -32,7 +32,7 @@ Key answers (the rest can be the defaults):
 | Prompt | Answer |
 |---|---|
 | new remote? | `n` |
-| name | `onedrive` — exactly this, or set `WEEWX_BACKUP_REMOTE_NAME=<your-name>` in `overrides/configuration.override` before installing |
+| name | `onedrive` — the default; pick any name, then set `WEEWX_BACKUP_REMOTE_NAME=<your-name>` on the in-menu Edit Configuration screen at install time (or pre-set it in `overrides/configuration.override`) |
 | Storage | `onedrive` |
 | `client_id` / `client_secret` | leave blank — uses rclone's built-in app, fine for personal use. (Step 1 below has the Azure-app path if you want your own.) |
 | `region` | `1` (Microsoft Cloud Global) |
@@ -120,14 +120,15 @@ it needs this rclone setup). Continue through the rest of the menu — the
 feature installs its preflight check, OneDrive folder tree, runtime script,
 and three timer pairs (daily / weekly / monthly).
 
-Optional overrides — set these in `overrides/configuration.override` **before**
-running installicious if you want non-defaults:
+Optional overrides — all editable on the in-menu **Edit Configuration**
+screen, OR pre-settable in `overrides/configuration.override` **before**
+running installicious if you'd rather not click through the menu:
 
 | Key | Default | Notes |
 |---|---|---|
 | `WEEWX_BACKUP_RCLONE_CONF` | `/root/.config/rclone/rclone.conf` | If you keep rclone.conf somewhere else |
 | `WEEWX_BACKUP_REMOTE_NAME` | `onedrive` | Must match the remote name you used in step 1 |
-| `WEEWX_BACKUP_REMOTE_ROOT` | `Documents-Private/Backups/WeeWX/Database` | OneDrive folder path |
+| `WEEWX_BACKUP_REMOTE_ROOT` | `Documents-Private/Backups/WeeWX/Database` | OneDrive folder path; installer walks + creates each segment |
 | `WEEWX_BACKUP_KEEP_DAILY` | `7` | Days to retain in the daily tier |
 | `WEEWX_BACKUP_KEEP_WEEKLY` | `8` | Weeks to retain in the weekly tier |
 | `WEEWX_BACKUP_KEEP_MONTHLY` | `12` | Months to retain in the monthly tier |

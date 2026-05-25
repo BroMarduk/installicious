@@ -103,11 +103,13 @@
 # ----------------------------------------------------------------------------
 # WeeWX OneDrive backup — feature-weewx-onedrive-backup
 # (rclone.conf is authored on a desktop machine and copied to the Pi — see
-#  scripts/weewx-onedrive-setup.md. WEEWX_BACKUP_VERIFY and the REMOTE
-#  name/root are config-file-only: set them in
-#  config/weewx-onedrive-backup.config, not here.)
+#  scripts/weewx-onedrive-setup.md, or drop it at overrides/rclone.conf.override
+#  for installicious to place it. WEEWX_BACKUP_VERIFY remains config-file-only:
+#  set it in config/weewx-onedrive-backup.config, not here.)
 # ----------------------------------------------------------------------------
 #WEEWX_BACKUP_RCLONE_CONF="/root/.config/rclone/rclone.conf"   # rclone config path on the Pi; must be root-readable
+#WEEWX_BACKUP_REMOTE_NAME="onedrive"         # rclone remote name (must match the name you used in `rclone config`)
+#WEEWX_BACKUP_REMOTE_ROOT="Documents-Private/Backups/WeeWX/Database"   # OneDrive folder under which daily/weekly/monthly land; installer creates the tree
 #WEEWX_BACKUP_DB_PATH="/var/lib/weewx/weewx.sdb"   # SQLite DB to back up; with zram-DB only the basename is reused
 #WEEWX_BACKUP_KEEP_DAILY="7"                # daily backup files kept in the OneDrive tier folder (newest N)
 #WEEWX_BACKUP_KEEP_WEEKLY="8"               # weekly backup files kept
