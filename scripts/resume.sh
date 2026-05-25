@@ -47,6 +47,17 @@ source lib/reboot.sh
 source lib/scheduler.sh
 source lib/post_install.sh
 
+# Pre-warm the manifest registry in THIS shell. Mirrors the fix in
+# scripts/options.sh (commit 90e8ca0): post_install_print_queue_summary
+# does ~2 subshell-substitution calls per attempted installer to look up
+# titles, and each subshell would cold-load the registry from disk
+# (writes to the cache die with the subshell). On a Pi with a 20+
+# installer queue that's 30+ seconds of summary-printing — long enough
+# that installicious-shell.sh's tail-watcher gives up before the summary
+# lands. One load here populates _MANIFEST_BLOCK / _MANIFEST_PATH in the
+# parent so every subshell starts warm.
+_manifest_registry_load
+
 if [[ -z $FILE_LOG_INSTALLICIOUS ]]; then
   FILE_LOG_INSTALLER="$PATH_LOGS/installicious.log"
 else

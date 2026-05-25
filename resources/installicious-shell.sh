@@ -65,13 +65,19 @@ _installicious_show_resume_transcript() {
     if [ -f "$transcript" ]; then
       tail -n +1 -F "$transcript" 2>/dev/null &
       local tpid=$!
-      # Poll queue.sh. When it disappears the queue has fully cleared;
-      # grace 2s so the post-scheduler footer in resume.sh (printed
-      # AFTER queue.sh is removed) gets flushed into the transcript
-      # before we kill tail.
+      # Wait until installicious-resume.service deactivates. That's the
+      # true end-of-run signal — `queue.sh` disappears mid-flight
+      # (state_clear in scheduler_run_queue runs BEFORE
+      # post_install_apply prints the queue summary), so polling
+      # queue.sh used to kill the tail too early and the user never
+      # saw the summary table. Polling the systemd unit instead
+      # follows the full resume.sh lifetime; one extra second of grace
+      # after deactivation flushes any trailing writes from the tee'd
+      # transcript. queue.sh existence is still the gate that we ever
+      # entered the loop in the first place — checked just above.
       while kill -0 "$tpid" 2>/dev/null; do
-        if [ ! -f "$queue" ]; then
-          sleep 2
+        if ! systemctl is-active --quiet installicious-resume.service 2>/dev/null; then
+          sleep 1
           break
         fi
         sleep 1

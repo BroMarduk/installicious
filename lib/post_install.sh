@@ -400,7 +400,20 @@ post_install_apply() {
   # The attempted-file was written by scheduler_run_queue and survives a
   # reboot, so this works equally well from options.sh (queue completed
   # in one go) and resume.sh (queue completed across a reboot).
-  post_install_print_queue_summary
+  #
+  # Tee the summary to FILE_LOG_INSTALLER (color codes stripped) so a
+  # post-mortem `cat /etc/installicious/logs/installicious.log` shows the
+  # wrap-up table alongside the per-installer log_* lines. Without this,
+  # the table only lived on tty1+resume-transcript and was lost as soon
+  # as the SSH session closed. process-substitution + sed strip ANSI so
+  # the log file stays plain text.
+  if [[ -n ${FILE_LOG_INSTALLER:-} ]]; then
+    post_install_print_queue_summary 2>&1 \
+      | tee >(sed -E 's/\x1b\[[0-9;]*m//g' \
+                | sudo tee -a "$FILE_LOG_INSTALLER" >/dev/null 2>&1)
+  else
+    post_install_print_queue_summary
+  fi
 
   return $rc
 }
