@@ -8,6 +8,15 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 1
 
 source lib/manifest.sh
 
+# Pre-warm the real-tree manifest cache in THIS shell so the explicit-dir
+# `$(manifest_path_for "$id" features packages)` calls in Tests 7-12 hit
+# the cache instead of re-scanning ~40 files per call inside a doomed
+# subshell. Same defect we fix for options.sh in commit 90e8ca0; here it
+# was the dominant cost of the test suite (~260s of the ~500s total).
+# Tests that override PATH_FEATURES/PACKAGES (TMPDIR fixtures) clear and
+# reload as needed — see lines below.
+PATH_FEATURES="features" PATH_PACKAGES="packages" _manifest_registry_load
+
 ok()      { echo "  OK $1"; }
 fail()    { echo "  FAIL $1"; }
 chkeq()   { [[ "$2" == "$3" ]] && ok "$1" || fail "$1 (got '$2', want '$3')"; }

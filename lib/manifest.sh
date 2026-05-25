@@ -142,6 +142,13 @@ _manifest_registry_load() {
       [[ -z $id ]] && continue
       _MANIFEST_IDS+=("$id")
       _MANIFEST_PATH[$id]="$f"
+      # Also seed the per-file field cache so explicit-dir `manifest_path_for`
+      # / `manifest_list_ids` calls (the ones that scan the file list looking
+      # for an ID) skip the read+parse on cached files. Without this, callers
+      # that pass explicit dirs (notably the test suite) re-parse every block
+      # in every subshell since their writes to _MANIFEST_FIELDS die with the
+      # subshell. Costs ~one extra hash store per file at load time.
+      _MANIFEST_FIELDS["$f|II_ID"]="$id"
     done
   done
   _MANIFEST_LOADED=1
