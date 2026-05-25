@@ -21,7 +21,15 @@
 #    can call it directly without forking installicious.sh.
 #
 # Callers must have already sourced:
-#   lib/log.sh lib/status.sh lib/manifest.sh config/installicious.config
+#   lib/log.sh lib/status.sh config/installicious.config
+#
+# lib/manifest.sh is auto-loaded below if it isn't already present: every
+# per-installer script that uses the one-liner `do_verify() { verify_generic
+# "$II_ID"; }` sources lib/verify.sh but not lib/manifest.sh, and the
+# dispatcher forks each --verify check as a fresh subshell. The function-
+# existence guard makes re-sources from callers that DO pre-load it (the
+# main dispatcher in installicious.sh, the test harness) into a no-op.
+declare -F manifest_path_for >/dev/null 2>&1 || source lib/manifest.sh
 
 # ---------------------------------------------------------------------------
 # Primitives

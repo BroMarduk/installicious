@@ -291,5 +291,40 @@ out=$(printf '%s\n' "$raw" | strip_ansi)
 [[ $out == *"verifier returned unexpected exit code 7"* ]] && ok "reason mentions rc=7" || fail "reason: $out"
 chkrc "overall rc=1 because of fail-row" $rc 1
 
+# ============================================================================
+echo "=== Test 15: verify_generic works in a subprocess that did NOT source lib/manifest.sh ==="
+# Regression for the production fork path. Every feature/package script that
+# uses the one-liner `do_verify() { verify_generic "$II_ID"; }` sources
+# lib/verify.sh but NOT lib/manifest.sh. The dispatcher in installicious.sh
+# forks `bash <feature> --verify`, which means manifest_path_for must be
+# resolvable inside that child shell. Until lib/verify.sh started sourcing
+# lib/manifest.sh on its own, every such child silently failed with
+# "installer script not found for id 'X'".
+cat > "$PATH_STATUS/comp.status" <<'EOF'
+COMP_FW_STATE="completed"
+FOO_FW_PRE_INSTALLED=true
+BAR_FW_PRE_INSTALLED=false
+EOF
+_write_stub dpkg-query "install ok installed" 0
+_write_stub systemctl "" 0
+
+# Spawn a fresh bash that sources ONLY the same libs a real feature script
+# does (log/status/verify — intentionally NOT manifest). cwd is already the
+# repo root from the test scaffold, so lib/verify.sh's relative source paths
+# resolve correctly. PATH_FEATURES + PATH_STATUS + PATH on the parent are
+# already exported and inherited by the child.
+sub_out=$(bash -c '
+  source lib/log.sh
+  log_init "sub" "$PATH_LOGS/sub.log"
+  source lib/status.sh
+  source lib/verify.sh
+  verify_generic comp
+' 2>&1); sub_rc=$?
+
+[[ $sub_out == *"installer script not found for id"* ]] \
+  && fail "subprocess hit manifest-not-loaded regression: '$sub_out'" \
+  || ok "subprocess verify_generic resolves manifest path"
+chkrc "subprocess verify_generic rc=0 (all-green)" $sub_rc 0
+
 echo
 echo "=== Done ==="
