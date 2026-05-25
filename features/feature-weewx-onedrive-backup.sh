@@ -38,15 +38,22 @@
 #                1. Installs apt deps (rclone, zstd, sqlite3). Pre-install
 #                   state is recorded per package so --uninstall only
 #                   removes packages we put in place.
-#                2. Verifies the rclone config (WEEWX_BACKUP_RCLONE_CONF)
+#                2. If overrides/rclone.conf.override exists AND the live
+#                   WEEWX_BACKUP_RCLONE_CONF doesn't, seeds the live file
+#                   from the override (root:root, mode 0600). Lets users
+#                   pre-stage their desktop-generated rclone.conf and skip
+#                   the manual scp + chown + chmod dance. Existence check
+#                   only — never overwrites a live config (rclone refreshes
+#                   tokens into it, overwrites would force re-auth).
+#                3. Verifies the rclone config (WEEWX_BACKUP_RCLONE_CONF)
 #                   exists and its OneDrive remote is reachable. rclone is
 #                   configured on a desktop machine and the resulting
 #                   rclone.conf copied to the Pi — see
 #                   scripts/weewx-onedrive-setup.md. The install FAILS with
 #                   a clear message if the config or remote is missing;
 #                   it never tries to run an interactive rclone OAuth flow.
-#                3. Walks + creates the OneDrive folder tree (idempotent).
-#                4. Writes /etc/weewx-onedrive-backup.conf (single source of
+#                4. Walks + creates the OneDrive folder tree (idempotent).
+#                5. Writes /etc/weewx-onedrive-backup.conf (single source of
 #                   truth for the runtime script), installs the runtime
 #                   backup script in /usr/local/sbin/, and installs three
 #                   systemd service + timer pairs (chained with After= so
@@ -534,13 +541,37 @@ do_install() {
     return $rc
   fi
 
+  # Optional seed of the rclone config from overrides/rclone.conf.override.
+  # Lets the user pre-stage a rclone.conf authored on a desktop machine and
+  # skip the manual scp + mv + chown + chmod dance in
+  # scripts/weewx-onedrive-setup.md. Only copies when the LIVE config
+  # doesn't already exist — rclone writes back to rclone.conf on every API
+  # call to refresh the access token, so overwriting it on a re-run would
+  # wipe state and force re-auth. To push an updated override (e.g. you
+  # rotated your Azure client_secret), `sudo rm $WEEWX_BACKUP_RCLONE_CONF`
+  # then re-run installicious. Same force-with-delete pattern as
+  # overrides/weewx.sdb.override.
+  local _rclone_override
+  _rclone_override="${PATH_OVERRIDES:-overrides}/rclone.conf.override"
+  if [[ -f $_rclone_override && ! -f $WEEWX_BACKUP_RCLONE_CONF ]]; then
+    log_info "Seeding $WEEWX_BACKUP_RCLONE_CONF from $_rclone_override."
+    sudo mkdir -p "$(dirname "$WEEWX_BACKUP_RCLONE_CONF")" 2>&1 | tee -a "$FILE_LOG_INSTALLER" \
+      || log_warn "mkdir of rclone config dir returned non-zero."
+    sudo install -o root -g root -m 0600 "$_rclone_override" "$WEEWX_BACKUP_RCLONE_CONF" 2>&1 \
+      | tee -a "$FILE_LOG_INSTALLER" \
+      || log_warn "Seed copy of rclone.conf returned non-zero; the existence check below will surface a clear error."
+  elif [[ -f $_rclone_override && -f $WEEWX_BACKUP_RCLONE_CONF ]]; then
+    log_info "$_rclone_override present, but $WEEWX_BACKUP_RCLONE_CONF already exists — keeping the live file (delete it and re-run to force a re-copy)."
+  fi
+
   # The rclone config is authored on a desktop machine and copied to the Pi
-  # (scripts/weewx-onedrive-setup.md). This feature never runs an interactive
-  # OAuth flow — it fails fast and tells the user to place the file.
+  # (scripts/weewx-onedrive-setup.md, or via rclone.conf.override above).
+  # This feature never runs an interactive OAuth flow — it fails fast and
+  # tells the user to place the file.
   if [[ ! -f $WEEWX_BACKUP_RCLONE_CONF ]]; then
     log_fail "rclone config not found at $WEEWX_BACKUP_RCLONE_CONF."
     status_mark_failed "$II_ID" "rclone.conf missing at $WEEWX_BACKUP_RCLONE_CONF"
-    echo -e "[ \e[0;31mFAIL\e[0m ] No rclone config at $WEEWX_BACKUP_RCLONE_CONF — configure rclone on a desktop and copy rclone.conf there (see scripts/weewx-onedrive-setup.md), or set WEEWX_BACKUP_RCLONE_CONF."
+    echo -e "[ \e[0;31mFAIL\e[0m ] No rclone config at $WEEWX_BACKUP_RCLONE_CONF — configure rclone on a desktop and copy rclone.conf there (see scripts/weewx-onedrive-setup.md), or drop it as overrides/rclone.conf.override and re-run."
     return 1
   fi
 
@@ -652,6 +683,25 @@ do_verify() {
   done
   if ! err=$(verify_file_exists /usr/local/sbin/weewx-onedrive-backup 2>&1); then echo "$err"; rc=1; fi
   if ! err=$(verify_file_exists /etc/weewx-onedrive-backup.conf 2>&1); then echo "$err"; rc=1; fi
+
+  # rclone side — same gates do_install enforces at install time, minus the
+  # network reachability check (`rclone lsd onedrive:` can flake on a
+  # transient blip and --verify shouldn't fail on that). If someone
+  # deleted /root/.config/rclone/rclone.conf or renamed the remote after
+  # install, verify will surface it here so the user knows before the
+  # next backup quietly fails at runtime.
+  if [[ -n ${WEEWX_BACKUP_RCLONE_CONF:-} ]]; then
+    if ! err=$(verify_file_exists "$WEEWX_BACKUP_RCLONE_CONF" 2>&1); then
+      echo "$err"
+      rc=1
+    elif command -v rclone >/dev/null 2>&1; then
+      if ! rclone --config "$WEEWX_BACKUP_RCLONE_CONF" listremotes 2>/dev/null \
+           | grep -qx "${WEEWX_BACKUP_REMOTE_NAME:-onedrive}:"; then
+        echo "rclone: remote '${WEEWX_BACKUP_REMOTE_NAME:-onedrive}:' missing from $WEEWX_BACKUP_RCLONE_CONF"
+        rc=1
+      fi
+    fi
+  fi
   return $rc
 }
 

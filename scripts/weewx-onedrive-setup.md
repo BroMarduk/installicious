@@ -57,11 +57,33 @@ If it doesn't, see Step 2 below for the full walkthrough.
 
 ### 2. Copy `rclone.conf` to the Pi
 
+**Recommended — drop it into `overrides/`** and let installicious place it
+for you:
+
+```powershell
+scp $env:APPDATA\rclone\rclone.conf you@<pi-hostname>:/etc/installicious/overrides/rclone.conf.override
+```
+
+When `feature-weewx-onedrive-backup` runs (step 5 below), it sees the
+override file and — only when `/root/.config/rclone/rclone.conf` doesn't
+already exist — copies it in as `root:root` mode `0600`. No manual mkdir /
+chown / chmod needed. The override file is gitignored via `*.override` and
+ignored by `setup.sh`'s rsync, so it persists across installicious updates.
+
+To force a re-copy later (e.g. you rotated your Azure client_secret and
+updated the override file): `sudo rm /root/.config/rclone/rclone.conf`
+and re-run installicious.
+
+**Alternative — manual placement** (if you'd rather not use the override
+slot, or want to test rclone on the Pi before running the installer):
+
 ```powershell
 scp $env:APPDATA\rclone\rclone.conf <user>@<pi-hostname>:/tmp/rclone.conf
 ```
 
 ### 3. Move it into root's config dir on the Pi
+
+*(only needed if you used the manual-placement path in step 2)*
 
 ```bash
 sudo mkdir -p /root/.config/rclone
@@ -70,10 +92,16 @@ sudo chown root:root /root/.config/rclone/rclone.conf
 sudo chmod 600       /root/.config/rclone/rclone.conf
 ```
 
-The `root:root` ownership matters — the systemd backup timers run as root, so
-the OAuth refresh has to work in that context.
+The `root:root` ownership matters — the systemd backup timers run as root,
+so the OAuth refresh has to work in that context. If you used the
+override-file path in step 2, the installer does this for you.
 
 ### 4. Smoke-test as root
+
+*(Only needed if you used the manual-placement path in steps 2-3. If you
+used the `overrides/rclone.conf.override` path, skip to step 5 — the
+installer's preflight does the same checks and fails fast with a clear
+error if anything's wrong.)*
 
 ```bash
 sudo rclone listremotes        # expect: onedrive:
@@ -342,6 +370,24 @@ The working config is now at:
 ```
 C:\Users\begal\AppData\Roaming\rclone\rclone.conf
 ```
+
+You have two options for getting it onto the Pi. The quick-start near the
+top of this doc covers the override-file path (one `scp`, no further commands
+needed); this section is the manual path for users who'd rather place the
+file themselves and smoke-test rclone before running installicious.
+
+**Option A — let installicious place it** (recommended for fresh installs):
+
+```powershell
+scp $env:APPDATA\rclone\rclone.conf you@<pi-hostname>:/etc/installicious/overrides/rclone.conf.override
+```
+
+That's it for this step — when `feature-weewx-onedrive-backup` runs it sees
+the override, copies it to `/root/.config/rclone/rclone.conf` as `root:root`
+mode `0600` (only when the live file doesn't already exist), then validates.
+Skip Step 4 below; the installer's preflight does the same checks.
+
+**Option B — manual placement** (continue with the original walkthrough):
 
 Copy it to the Pi. From PowerShell:
 

@@ -52,6 +52,7 @@ override to take effect.
 | `weewx.override` | `weewx.conf` | `feature-weewx-setup` | partial `weewx.conf` (ConfigObj/INI) — deep-merged onto `/etc/weewx/weewx.conf` after the apt install + `weectl station reconfigure` pass |
 | `neowx-material-skin.override` | `neowx-material-skin.conf` | `feature-neowx-material` | partial NeoWX Material `skin.conf` (ConfigObj/INI) — deep-merged onto `/etc/weewx/skins/neowx-material/skin.conf` after the extension install |
 | `weewx.sdb.override` | — (binary, no template) | `feature-weewx-setup` | full SQLite archive file — drop-in **replaces** `/var/lib/weewx/weewx.sdb` on first install when the live DB is missing or still the empty WeeWX template (< 100 KiB). Only applied when the database radio picked SQLite |
+| `rclone.conf.override` | — (credentials, no template) | `feature-weewx-onedrive-backup` | full `rclone.conf` file (INI) — copied to `WEEWX_BACKUP_RCLONE_CONF` (default `/root/.config/rclone/rclone.conf`) as `root:root` mode `0600` **only when the live file doesn't exist**. Skipped if `/root/.config/rclone/rclone.conf` already exists (rclone refreshes its tokens into the live file; overwriting would force re-auth). Lets users pre-stage their desktop-generated rclone.conf and skip the manual `scp + chown + chmod` dance. |
 
 An empty (or all-comments) override file is a no-op — the feature skips the
 merge entirely.
@@ -85,6 +86,44 @@ sudo installicious   # or rerun setup.sh
 The seed file itself is gitignored via `*.override` so it never lands in
 a public checkout. No effect when the database radio picked MySQL or
 MariaDB — the seed file is silently ignored on those backends.
+
+## Pre-staging an rclone.conf for OneDrive backup
+
+If you'll be enabling the `weewx-onedrive-backup` feature and you've already
+generated a working `rclone.conf` on a desktop machine (see
+[`scripts/weewx-onedrive-setup.md`](../scripts/weewx-onedrive-setup.md) for
+the OAuth flow), you can drop it here as `rclone.conf.override` and
+installicious will place it for you — no manual `scp` + `chown` + `chmod`.
+
+```bash
+# From your desktop machine:
+scp $env:APPDATA\rclone\rclone.conf you@pi:/etc/installicious/overrides/rclone.conf.override
+```
+
+When `feature-weewx-onedrive-backup` installs:
+
+1. `apt install rclone zstd sqlite3`
+2. **If `overrides/rclone.conf.override` exists AND
+   `WEEWX_BACKUP_RCLONE_CONF` (default `/root/.config/rclone/rclone.conf`)
+   doesn't**, copies the override to `WEEWX_BACKUP_RCLONE_CONF` with
+   owner `root:root` and mode `0600`. Existence check only — never
+   overwrites a live file (rclone writes its refreshed access tokens
+   back into `rclone.conf`; overwriting would force re-auth).
+3. Validates the rclone config, creates the OneDrive folder tree,
+   wires up the timers.
+
+To force a re-copy after updating your override (e.g. you rotated your
+Azure client_secret):
+
+```bash
+sudo rm /root/.config/rclone/rclone.conf
+sudo installicious
+```
+
+The file is gitignored via `*.override`, but it contains your **OAuth
+refresh token and (if you used your own Azure app) client_secret** in
+plaintext — treat it as credentials. Don't email it, don't paste it,
+and `chmod 600` it everywhere it sits.
 
 ## `configuration.override` — set editable-config DEFAULTS from a file
 

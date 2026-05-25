@@ -429,10 +429,15 @@ symmetry; the underlying mechanism differs by file.
   in [`scripts/weewx-onedrive-setup.md`](scripts/weewx-onedrive-setup.md).
   That file also has the full Azure-app walkthrough, restoration recipe,
   and uninstall guide if you need them.
-  - **Install** — checks the rclone config (at `WEEWX_BACKUP_RCLONE_CONF`)
-    exists and its OneDrive remote is reachable, **failing fast** with a
-    pointer to the setup guide if not. Then creates the OneDrive folder
-    tree, writes `/etc/weewx-onedrive-backup.conf` + the runtime script
+  - **Install** — apt-installs `rclone zstd sqlite3`. If
+    `overrides/rclone.conf.override` exists AND the live config at
+    `WEEWX_BACKUP_RCLONE_CONF` doesn't, copies the override in as
+    `root:root` mode `0600` (existence check only — never overwrites a
+    live config, since rclone refreshes its tokens into the file).
+    Then checks the rclone config exists and its OneDrive remote is
+    reachable, **failing fast** with a pointer to the setup guide if
+    not. Creates the OneDrive folder tree, writes
+    `/etc/weewx-onedrive-backup.conf` + the runtime script
     `/usr/local/sbin/weewx-onedrive-backup`, and installs three
     service+timer pairs: daily 02:30, weekly Sun 03:30, monthly 1st 04:30
     (±10 min jitter, chained `After=` so they never run concurrently).
