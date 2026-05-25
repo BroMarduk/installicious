@@ -338,6 +338,16 @@ symmetry; the underlying mechanism differs by file.
   Runs before `skyfield` (skyfield's `II_DEPS` pulls it in) so the
   extension installs onto a fully-configured WeeWX. Uninstall restores
   `weewx.conf` from the pre-install snapshot.
+
+  - **Optional SQLite seed.** If the database radio picked SQLite (the
+    default) and `overrides/weewx.sdb.override` exists, `weewx-setup`
+    copies it to `/var/lib/weewx/weewx.sdb` before WeeWX restarts —
+    handy when migrating archive history from another Pi. Guarded
+    against clobbering real data: the seed only runs when the live
+    `.sdb` is missing or under 100 KiB (WeeWX's empty template is
+    ~40 KiB; anything larger is treated as real archive data and
+    preserved). Skipped silently on MySQL/MariaDB backends. See
+    [`overrides/README.md`](overrides/README.md) for the full how-to.
 - **weewx-webroot** — repoints the active webserver backend's default
   site at `$WEEWX_WEB_DIR` (default `/var/www/html/weewx`) so visitors
   hit the WeeWX page at `/` instead of the backend's stock welcome page.

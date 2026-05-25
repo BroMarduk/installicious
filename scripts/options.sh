@@ -853,10 +853,122 @@ while true; do
         exit 0
       fi
       selected_parents="$selected"
-      # Always route through pick_addons. Its trailing merge folds the
-      # required-parent addons (set earlier in pick_addons_required) into
-      # the final $selected list even when no NON-required parent has
-      # children to prompt about.
+      # Route through pick_addons_optional_exclusive first so any parent
+      # the user picked in step 4a/4b that owns an EXCLUSIVE radio (e.g.
+      # the `database` parent's sqlite/mysql/mariadb sub-menu) gets a
+      # chance to fire its radio before pick_addons (step 5) handles the
+      # non-exclusive checklists. Required-parent radios already fired
+      # in pick_addons_required (step 3); this is the optional-parent
+      # analog. If no optional parent has an exclusive group, the new
+      # stage is a no-op pass-through.
+      stage="pick_addons_optional_exclusive"
+      ;;
+
+    pick_addons_optional_exclusive)
+      # Step 4c (between merge_role and pick_addons): fires the exclusive
+      # (radio) sub-menu for each non-required parent the user selected
+      # in step 4a/4b that declares an exclusive II_OPTIONAL_GROUP.
+      # Without this stage, a non-required exclusive parent (e.g.
+      # `database` under the WeeWX role's DEFAULT tier) silently fell
+      # back to the manifest's II_DEFAULT_SELECTED leaf — so the user
+      # never saw the radio prompt and the install always picked the
+      # default child. Required-parent radios still fire in step 3.
+      log_info "Rendering optional-parent radio sub-menus (step 4c)."
+      _rewind=0
+      declare -a _opt_excl_screens=()
+      for parent_id in $selected_parents; do
+        [[ -z $parent_id ]] && continue
+        # Skip required parents — their exclusive radios already fired
+        # in pick_addons_required (step 3); we don't want to re-prompt.
+        if _id_in_required "$parent_id"; then continue; fi
+        ppath=$(manifest_path_for "$parent_id" 2>/dev/null)
+        [[ -z $ppath ]] && continue
+        pchildren=$(manifest_get_field "$ppath" "II_OPTIONAL_GROUP")
+        [[ -z $pchildren ]] && continue
+        pmode=$(manifest_get_field "$ppath" "II_OPTIONAL_GROUP_MODE")
+        [[ $pmode != "exclusive" ]] && continue
+        _opt_excl_screens+=("$parent_id")
+      done
+
+      # Nothing to prompt: pass through. Forward on forward-entry, back
+      # on back-entry — so a BACK from pick_addons doesn't trap the user
+      # on an empty screen. The back-entry path skips merge_role (which
+      # always forwards) and lands directly on whichever stage populated
+      # selected_parents, otherwise a BACK from pick_addons → us → merge_role
+      # → us would loop forever.
+      if [[ ${#_opt_excl_screens[@]} -eq 0 ]]; then
+        log_info "No optional parents have exclusive II_OPTIONAL_GROUP; auto-advancing past step 4c."
+        if [[ $prev_stage == "pick_addons" ]]; then
+          if [[ -n $role_generic_features ]]; then
+            stage="pick_optional"
+          elif [[ -n $role_specific_features ]]; then
+            stage="pick_role_specific"
+          else
+            stage=$(_pre_addons_stage)
+          fi
+        else
+          stage="pick_addons"
+        fi
+        continue
+      fi
+
+      # Resume at the last screen when re-entered via BACK from pick_addons
+      # (or any later stage). Otherwise start at the first.
+      _idx=0
+      case "$prev_stage" in
+        pick_addons|pick_packages|edit_config|confirm|merge_packages)
+          _idx=$(( ${#_opt_excl_screens[@]} - 1 ))
+          ;;
+      esac
+      while [[ $_idx -lt ${#_opt_excl_screens[@]} ]]; do
+        parent_id="${_opt_excl_screens[$_idx]}"
+        ppath=$(manifest_path_for "$parent_id" 2>/dev/null)
+        pchildren=$(manifest_get_field "$ppath" "II_OPTIONAL_GROUP")
+        ptitle=$(manifest_get_field "$ppath" "II_TITLE")
+
+        # Capture into a temp so a BACK (rc=1|255) doesn't overwrite
+        # addons_picked[$parent_id] with whatever whiptail emitted on
+        # Cancel. Only commit on rc=0.
+        # shellcheck disable=SC2086
+        _picked=$(menu_pick_one_optional "$ptitle" \
+          --previously "${addons_picked[$parent_id]:-}" \
+          $pchildren)
+        rc=$?
+        case $rc in
+          0)
+            addons_picked[$parent_id]="${_picked//\"/}"
+            _persist_selections
+            _idx=$((_idx + 1))
+            ;;
+          1|255)
+            if [[ $_idx -gt 0 ]]; then
+              _idx=$((_idx - 1))
+            else
+              _rewind=1
+              break
+            fi
+            ;;
+          2) _idx=$((_idx + 1)) ;;
+        esac
+      done
+
+      if [[ $_rewind -eq 1 ]]; then
+        # BACK from the first screen → rewind to merge_role's predecessor
+        # so the user can re-pick their optional-features set. Going to
+        # merge_role itself would just re-route forward to here again.
+        stage="merge_role"
+        # But merge_role doesn't prompt — re-route to whatever populated
+        # selected_parents (pick_optional / pick_role_specific / earlier).
+        if [[ -n $role_generic_features ]]; then
+          stage="pick_optional"
+        elif [[ -n $role_specific_features ]]; then
+          stage="pick_role_specific"
+        else
+          stage=$(_pre_addons_stage)
+        fi
+        continue
+      fi
+
       stage="pick_addons"
       ;;
 
@@ -1003,7 +1115,11 @@ while true; do
       done
 
       if [[ $_rewind -eq 1 ]]; then
-        stage=$(_pre_addons_stage)
+        # Step 5 BACK lands on step 4c (optional-parent radios), which
+        # passes through to merge_role's predecessor when it has nothing
+        # to show. Without the 4c hop, a BACK here jumped over the radio
+        # picks and a user couldn't re-pick e.g. the database backend.
+        stage="pick_addons_optional_exclusive"
         continue
       fi
 

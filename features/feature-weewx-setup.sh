@@ -260,6 +260,35 @@ do_install() {
   case "${DATABASE_TYPE:-sqlite}" in
     ""|sqlite)
       log_info "DATABASE_TYPE=${DATABASE_TYPE:-sqlite} - no weewx.conf DB overlay needed."
+
+      # Optional seed: if overrides/weewx.sdb.override exists and the live
+      # weewx.sdb is either missing or still the empty template (< 100 KiB
+      # -- a fresh weewx install lands at ~40 KiB; real archive data hits
+      # MiB territory within a day), copy the override in as the starting
+      # database. Guard prevents clobbering accumulated archive data on
+      # re-runs. weewx is already stopped (the config pass above stopped
+      # it), so the copy doesn't race the daemon.
+      #
+      # Idempotency comes from the size threshold alone: after a successful
+      # seed, the target is the size of the seed file (typically far above
+      # the threshold) and subsequent runs skip the copy. To force a
+      # re-seed, delete /var/lib/weewx/weewx.sdb and re-run the installer.
+      local _seed_src _seed_tgt _seed_threshold _live_size
+      _seed_src="${PATH_OVERRIDES:-overrides}/weewx.sdb.override"
+      _seed_tgt="/var/lib/weewx/weewx.sdb"
+      _seed_threshold=102400  # 100 KiB
+      if [[ -r $_seed_src ]]; then
+        _live_size=0
+        [[ -f $_seed_tgt ]] && _live_size=$(stat -c %s "$_seed_tgt" 2>/dev/null || echo 0)
+        if [[ ! -f $_seed_tgt || $_live_size -lt $_seed_threshold ]]; then
+          log_info "Seeding $_seed_tgt from $_seed_src ($(stat -c %s "$_seed_src" 2>/dev/null) bytes, target was ${_live_size}B)."
+          sudo install -o weewx -g weewx -m 0664 "$_seed_src" "$_seed_tgt" 2>&1 \
+            | tee -a "$FILE_LOG_INSTALLER" \
+            || log_warn "Seed copy failed; leaving live DB alone."
+        else
+          log_info "$_seed_tgt is ${_live_size}B (>= ${_seed_threshold}B threshold); preserving existing archive data."
+        fi
+      fi
       ;;
     mysql|mariadb)
       _db_host_resolved="$DATABASE_HOST"
