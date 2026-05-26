@@ -16,37 +16,18 @@
 #   - Swap percentage: 50% on roomy Pis (≥1.8 GB), 40% on tight-RAM
 #     Pis (<1.8 GB) so we don't crowd out actual workload.
 
+source lib/pi-tier.sh
+
 _default_ZRAM_COMPRESSION_ALGO() {
-  [[ -r /proc/device-tree/model ]] || { echo zstd; return 0; }
-  local pi_model
-  pi_model=$(tr -d '\0' < /proc/device-tree/model 2>/dev/null)
-  case "$pi_model" in
-    *"Pi 5"*|*"Pi 4"*|*"Compute Module 4"*|*"Pi 400"*)
-      echo zstd
-      ;;
-    *"Pi 3"*|*"Pi 2"*|*"Zero 2"*|*"Compute Module 3"*|*"Pi Zero"*|*"Pi Model"*)
-      echo lz4
-      ;;
-    *)
-      # Unknown / future hardware — err toward lz4 (universally supported,
-      # lighter on CPU; modest ratio penalty).
-      echo lz4
-      ;;
-  esac
+  pi_cpu_choice "zstd lz4"
 }
 
+# Swap percentage by RAM tier (small/mid/large/xl) -> 40/50/50/50.
+# Tight-RAM Pis (Pi 3 / Zero 2 W / 3A+) bucket as `small` and get 40%
+# so we don't crowd out the actual workload — over-aggressive zram
+# swap on these can thrash.
 _default_ZRAM_PERCENT_OF_RAM() {
-  [[ -r /proc/meminfo ]] || { echo 50; return 0; }
-  local ram_mb
-  ram_mb=$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo 2>/dev/null)
-  [[ -z $ram_mb ]] && { echo 50; return 0; }
-  if (( ram_mb >= 1800 )); then
-    echo 50
-  else
-    # Tight RAM (Pi 3 / Zero 2 W / 3A+): leave more headroom for the
-    # actual workload — over-aggressive zram swap on these can thrash.
-    echo 40
-  fi
+  pi_tier_size_for "40 50 50 50"
 }
 
 _default_ZRAM_SWAP_PRIORITY() {

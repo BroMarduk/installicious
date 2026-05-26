@@ -7,6 +7,8 @@
 # on `-` to extract backend (tmpfs/zram) and sync (volatile/shutdown/
 # periodic/both) without juggling two separate config keys.
 
+source lib/pi-tier.sh
+
 _choices_RAMLOG_PROFILE() {
   cat <<'EOF'
 tmpfs-volatile	Uncompressed Volatile (tmpfs, no sync)
@@ -24,24 +26,19 @@ _default_RAMLOG_PROFILE() {
   echo "zram-both"
 }
 
-# Auto-tune the /var/log RAM area size based on installed RAM. Lifted
-# from scripts/ramdisk-logging.sh's table:
-#   ≥ 3.5 GB (Pi 4 4GB+ / Pi 5)              -> 256 MB
-#   1.8 - 3.5 GB (Pi 4 2GB / CM4 2GB)         -> 128 MB
-#   < 1.8 GB (Pi 3 / Zero 2 W / 3A+ / older) -> 48  MB
+# Auto-tune the /var/log RAM area size based on installed RAM, via the
+# shared pi_tier_size_for helper. Buckets (small/mid/large/xl) map to:
+#   small (Pi Zero / Pi 3 / <= 1 GB)         -> 48  MB
+#   mid   (Pi 4 2GB / 1-3 GB)                -> 128 MB
+#   large (Pi 4 4GB / 3-6 GB)                -> 256 MB
+#   xl    (Pi 5 / Pi 4 8GB / > 6 GB)         -> 256 MB
+# Collapsed large+xl to 256 MB: /var/log doesn't benefit from more than
+# that on any current Pi, and growing it past 256 MB needlessly chews
+# into RAM the system can use elsewhere.
 _default_RAMLOG_SIZE_MB() {
-  [[ -r /proc/meminfo ]] || { echo 128; return 0; }
-  local ram_mb
-  ram_mb=$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo 2>/dev/null)
-  [[ -z $ram_mb ]] && { echo 128; return 0; }
-  if   (( ram_mb >= 3500 )); then echo 256
-  elif (( ram_mb >= 1800 )); then echo 128
-  else                            echo 48
-  fi
+  pi_tier_size_for "48 128 256 256"
 }
 
-# Same per-Pi-CPU logic as feature-compressed-swap.choices.sh — the
-# choice is a CPU-class characteristic, not a swap-vs-logs concern.
 # Pi 4 / 5 / CM4 / Pi 400 (Cortex-A72/A76) handle zstd's better ratio
 # without breaking a sweat. Older Cortex-A53 and ARMv6 cores get
 # bottlenecked on zstd; lz4 is ~3x faster there for a small ratio
@@ -54,14 +51,7 @@ EOF
 }
 
 _default_RAMLOG_COMPRESSION_ALGO() {
-  [[ -r /proc/device-tree/model ]] || { echo zstd; return 0; }
-  local pi_model
-  pi_model=$(tr -d '\0' < /proc/device-tree/model 2>/dev/null)
-  case "$pi_model" in
-    *"Pi 5"*|*"Pi 4"*|*"Compute Module 4"*|*"Pi 400"*) echo zstd ;;
-    *"Pi 3"*|*"Pi 2"*|*"Zero 2"*|*"Compute Module 3"*|*"Pi Zero"*|*"Pi Model"*) echo lz4 ;;
-    *) echo lz4 ;;
-  esac
+  pi_cpu_choice "zstd lz4"
 }
 
 # RAMLOG_COMPRESSION_ALGO is irrelevant on a tmpfs-backed profile —
