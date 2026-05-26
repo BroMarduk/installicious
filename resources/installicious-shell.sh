@@ -27,6 +27,63 @@ case $- in *i*) ;; *) return 0 ;; esac
 # Resume transcript display
 # ---------------------------------------------------------------------------
 
+# _installicious_session_type — classify the current login as SSH, TTY,
+# or OTHER. Used by the resume banner (so a paste reveals which path
+# the user was on) and by the diagnostic logger below (so journalctl
+# tells the cause of any future "banner didn't fire" report).
+#
+# SSH detection: $SSH_CONNECTION is set by sshd for every interactive
+# SSH session. $SSH_TTY / $SSH_CLIENT are belt-and-suspenders for the
+# rare sshd build that omits SSH_CONNECTION. `sudo` (no flags) keeps
+# these in the env via sudo's env_keep; `sudo -i` (login shell) clears
+# them. An SSH user running `sudo -i` therefore falls through to the
+# tty(1) check and classifies as TTY-PTS — the pty is inherited from
+# the SSH session even though the SSH context is gone. That's still
+# useful information: it distinguishes "elevated from SSH" from "user
+# on the physical Pi console."
+#
+# TTY: /dev/tty[0-9]* are the kernel virtual consoles (physical Pi
+# screen). TTY-PTS: /dev/pts/* — pseudo-ttys used by SSH, screen,
+# tmux, xterm, sudo -i from any of the above.
+#
+# Anything else (cron, scp, non-interactive ssh exec) -> OTHER.
+_installicious_session_type() {
+  if [ -n "${SSH_CONNECTION:-}${SSH_TTY:-}${SSH_CLIENT:-}" ]; then
+    echo "SSH"
+    return
+  fi
+  local dev
+  dev=$(tty 2>/dev/null) || dev=""
+  case "$dev" in
+    /dev/tty[0-9]*) echo "TTY" ;;
+    /dev/pts/*)     echo "TTY-PTS" ;;
+    *)              echo "OTHER" ;;
+  esac
+}
+
+# _installicious_resume_diag_log — one-line dump of every shell-wrapper
+# fire to syslog so a future "banner didn't fire" report can be diagnosed
+# with data instead of guesses. Tag is `installicious-resume-shell`;
+# read with `journalctl -t installicious-resume-shell`. Guarded with
+# `command -v logger` so test hosts without util-linux's logger (Windows
+# git-bash) silently skip.
+_installicious_resume_diag_log() {
+  command -v logger >/dev/null 2>&1 || return 0
+  local queue="$1" transcript="$2" marker="$3"
+  local pid_file="/etc/installicious/state/resume.pid"
+  local sess
+  sess=$(_installicious_session_type)
+  local dev
+  dev=$(tty 2>/dev/null) || dev="-"
+  local q_state=absent t_state=absent p_state=absent m_state=absent
+  [ -f "$queue" ]      && q_state="present(mtime=$(stat -c %Y "$queue"      2>/dev/null))"
+  [ -f "$transcript" ] && t_state="present(mtime=$(stat -c %Y "$transcript" 2>/dev/null))"
+  [ -f "$pid_file" ]   && p_state="present(pid=$(cat "$pid_file" 2>/dev/null))"
+  [ -f "$marker" ]     && m_state="present(mtime=$(stat -c %Y "$marker"     2>/dev/null))"
+  logger -t installicious-resume-shell -- \
+    "user=$(id -un 2>/dev/null) session=$sess tty=$dev queue=$q_state transcript=$t_state resume_pid=$p_state marker=$m_state"
+}
+
 # _installicious_resume_running — primary "is the resume still in flight"
 # signal used by the live-tail loop below. Order of trust:
 #   1. resume.sh writes /etc/installicious/state/resume.pid at start and
@@ -66,6 +123,11 @@ _installicious_show_resume_transcript() {
   local queue="/etc/installicious/state/queue.sh"
   local marker="$HOME/.installicious-transcript-shown"
 
+  # Diagnostic line first thing — captures session type and state on
+  # every fire so journalctl -t installicious-resume-shell tells us
+  # what the wrapper saw, regardless of which branch it takes below.
+  _installicious_resume_diag_log "$queue" "$transcript" "$marker"
+
   # Queue in progress -> live-tail until resume.sh exits.
   #
   # Gate: queue.sh exists. Set by state_save (scheduler_run_queue) when
@@ -81,10 +143,12 @@ _installicious_show_resume_transcript() {
   # `tail -F` handles transcript truncation between chained resume
   # cycles (resume.sh truncates the transcript on each start).
   if [ -f "$queue" ]; then
+    local _sess_type
+    _sess_type=$(_installicious_session_type)
     echo
     echo "============================================================"
     echo "  Installicious is resuming after a reboot."
-    echo "  Watching live; control returns when the queue clears..."
+    echo "  Watching live ($_sess_type session); control returns when the queue clears..."
     echo "============================================================"
     # Race guard: profile.d may fire before resume.sh has had time to
     # truncate / create the transcript. Wait briefly for it.
