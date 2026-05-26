@@ -1004,7 +1004,27 @@ while true; do
       done
       unset -f _push_candidate
 
-      # Filter candidates to those with a non-exclusive optional group.
+      # Queue snapshot used by the conflict filter — IDs locked in
+      # before any step-5 picks. Newly-picked children at step 5
+      # extend this set so later screens in the same stage also see
+      # the live queue.
+      _queue_snapshot=""
+      for _qid in "${!_cand_seen[@]}"; do _queue_snapshot+=" $_qid"; done
+      _queue_snapshot=$(echo "$_queue_snapshot" | tr -s ' ' | sed 's/^ //; s/ $//')
+
+      # Filter candidates to those with a non-exclusive optional group
+      # AND at least one child surviving the conflict filter. Without
+      # the second check, a parent whose children ALL conflict-out at
+      # runtime still gets a slot in _screens — and the inner loop's
+      # "no add-ons left; skipping; _idx++" path silently advances past
+      # it. That's fine on FORWARD entry, but on BACK-entry from
+      # pick_packages we set _idx to the last _screens slot, hoping
+      # to re-prompt — if that slot is a pure-skip, we fall straight
+      # back to pick_packages and the user's BACK is eaten. So:
+      # parents that would auto-skip don't belong in the navigable
+      # screen list. The inner conflict-filter stays as a defensive
+      # second pass for queue extensions mid-loop, but should now be
+      # a rare no-op.
       declare -a _screens=()
       for parent_id in "${_candidates[@]}"; do
         ppath=$(manifest_path_for "$parent_id" 2>/dev/null)
@@ -1013,16 +1033,22 @@ while true; do
         [[ -z $pchildren ]] && continue
         pmode=$(manifest_get_field "$ppath" "II_OPTIONAL_GROUP_MODE")
         [[ $pmode == "exclusive" ]] && continue
+        # Would ANY child of this parent survive the conflict filter?
+        # If not, skip the parent entirely.
+        _has_unfiltered=0
+        for _ch in $pchildren; do
+          # shellcheck disable=SC2086
+          if ! manifest_is_in_conflict_with "$_ch" $_queue_snapshot; then
+            _has_unfiltered=1
+            break
+          fi
+        done
+        if [[ $_has_unfiltered -eq 0 ]]; then
+          log_info "  pre-filter: $parent_id — all children conflict with the locked-in queue; not adding to step-5 screen list."
+          continue
+        fi
         _screens+=("$parent_id")
       done
-
-      # Queue snapshot used by the conflict filter — IDs locked in
-      # before any step-5 picks. Newly-picked children at step 5
-      # extend this set so later screens in the same stage also see
-      # the live queue.
-      _queue_snapshot=""
-      for _qid in "${!_cand_seen[@]}"; do _queue_snapshot+=" $_qid"; done
-      _queue_snapshot=$(echo "$_queue_snapshot" | tr -s ' ' | sed 's/^ //; s/ $//')
 
       # Resume at the last screen if the user came back into this stage
       # via BACK from the immediately-following stage (pick_packages).
