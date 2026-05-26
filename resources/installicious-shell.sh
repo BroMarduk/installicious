@@ -107,7 +107,20 @@ _installicious_show_resume_transcript() {
     fi
     echo
     echo "============================================================"
-    echo "  Installicious resume complete."
+    # Differentiate clean-completion from interruption. resume.sh's
+    # exit only means "this cycle's bash exited" — on a multi-reboot
+    # install the queue continues in a fresh cycle after the reboot.
+    # state_clear (in scheduler_run_queue) removes queue.sh ONLY when
+    # the queue actually empties; an installer returning 255 (reboot
+    # requested) leaves queue.sh in place so the resume can pick up
+    # from the right cursor after reboot. So queue.sh's continued
+    # existence is the canonical "more to do" signal here.
+    if [ -f "$queue" ]; then
+      echo "  Resume paused — queue still has work."
+      echo "  Reconnect after the reboot to watch the continuation."
+    else
+      echo "  Installicious resume complete."
+    fi
     echo "============================================================"
     echo
     touch "$marker" 2>/dev/null
