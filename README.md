@@ -252,12 +252,17 @@ separately in [docs/webserver-ssl-policy-matrix.md](docs/webserver-ssl-policy-ma
 
 WeeWx-role-only features (hidden in the Custom flow via
 `II_RESTRICT_TO_ROLES="weewx"`). The first six are default-on under the
-WeeWx role (`database` leads — the sqlite/mysql/mariadb radio runs first,
-before `weewx-setup` writes `weewx.conf`); `weewx-onedrive-backup` is
-opt-in (default-off — it needs a one-time manual rclone setup). The role
-also makes `webserver` required, pulls in `skyfield` (which transitively
-installs the `weewx` apt package + `weewx-setup`), and pre-checks
-`ram-logging` (log2ram) since a station Pi is a strict win for offloading
+WeeWx role; `weewx-onedrive-backup` is opt-in (default-off — it needs a
+one-time manual rclone setup). The role makes both `webserver` AND
+`database` required, so their radios (apache/nginx/lighttpd/caddy for
+webserver, sqlite/mysql/mariadb for database) fire in step 3 BEFORE the
+optional pickers — that's what lets `weewx-database-ram` and
+`weewx-onedrive-backup` declare `II_CONFLICTS_WITH="database-mysql
+database-mariadb"` and disappear from the menu entirely when the user
+picks a non-SQLite backend (instead of just self-skipping at install
+time). The role pulls in `skyfield` (which transitively installs the
+`weewx` apt package + `weewx-setup`), and pre-checks `ram-logging`
+(log2ram) since a station Pi is a strict win for offloading
 `/var/log` writes to RAM.
 
 **WeeWX isn't in the Debian / Raspberry Pi OS archive** (RPi OS doesn't

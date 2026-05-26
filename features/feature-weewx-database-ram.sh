@@ -40,6 +40,7 @@ II_DEPS="weewx"
 II_REQUIRES_REBOOT="conditional"
 II_DEFAULT_SELECTED="off"
 II_RESTRICT_TO_ROLES="weewx"
+II_CONFLICTS_WITH="database-mysql database-mariadb"
 II_APT_PACKAGES="sqlite3 rsync util-linux zram-tools"
 II_EDITABLE_CONFIG="WEEWX_DB_DIR WEEWX_DB_HDD_DIR WEEWX_DB_ROTATIONS WEEWX_DB_ZRAM_SIZE"
 # === II_MANIFEST_END ===

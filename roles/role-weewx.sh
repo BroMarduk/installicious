@@ -75,17 +75,21 @@
 ROLE_ID="weewx"
 ROLE_TITLE="WeeWx"
 ROLE_DESCRIPTION="Weather station software + Skyfield extension."
-ROLE_FEATURES_REQUIRED="pkupd webserver"
-# DEFAULT now leads with `database` (the sqlite/mysql/mariadb radio
-# parent) so the DB-backend choice is recorded before weewx-setup
-# writes weewx.conf. Default radio pick is sqlite, which is a no-op
-# leaf — weewx ships with SQLite already. The five DATABASE_* editable
-# keys only surface on the Edit Configuration screen when MySQL or
-# MariaDB is picked (gated by feature-database.choices.sh).
-# weewx-database-ram and weewx-onedrive-backup both self-skip when
-# DATABASE_TYPE != sqlite, so they can stay in DEFAULT without
-# footguns.
-ROLE_FEATURES_DEFAULT="database weewx-setup weewx-webroot weewx-site-ram weewx-database-ram neowx-material locale bash motd skyfield ram-logging"
+#
+# `database` is REQUIRED (not DEFAULT) so its sqlite/mysql/mariadb radio
+# fires in step 3 (pick_addons_required) alongside the webserver radio,
+# BEFORE the optional pickers — which is what lets pick_role_specific /
+# pick_optional's conflict filter drop weewx-database-ram and
+# weewx-onedrive-backup from the menu entirely when the user picks
+# MySQL or MariaDB (those features declare
+# II_CONFLICTS_WITH="database-mysql database-mariadb"). Semantically
+# WeeWX requires a database, so REQUIRED is correct anyway.
+ROLE_FEATURES_REQUIRED="pkupd webserver database"
+# DEFAULT no longer leads with `database` — it moved to REQUIRED above.
+# The five DATABASE_* editable keys only surface on the Edit
+# Configuration screen when MySQL or MariaDB is picked (gated by
+# feature-database.choices.sh).
+ROLE_FEATURES_DEFAULT="weewx-setup weewx-webroot weewx-site-ram weewx-database-ram neowx-material locale bash motd skyfield ram-logging"
 ROLE_FEATURES_OPTIONAL="rconf compressed-swap weewx-onedrive-backup"
 ROLE_CONFIG="config/weewx.config"
 ROLE_EDITABLE_CONFIG=""

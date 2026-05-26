@@ -1031,9 +1031,19 @@ while true; do
       # FIRST sub-screen (e.g. motd's) and the user would have to NEXT
       # through it to get back to the screen they actually wanted to
       # edit (e.g. nginx's, where webserver-ssl lives).
+      #
+      # Empty-screens-on-back: if there's nothing to prompt AND we're
+      # entering from a BACK, set _rewind=1 so the loop body skips and
+      # the rewind branch below sends us back to pick_addons_optional_exclusive.
+      # Otherwise we'd just forward to pick_packages again — the
+      # infinite-loop bug the user keeps hitting.
       _idx=0
-      if [[ $prev_stage == "pick_packages" && ${#_screens[@]} -gt 0 ]]; then
-        _idx=$(( ${#_screens[@]} - 1 ))
+      if [[ $prev_stage == "pick_packages" ]]; then
+        if [[ ${#_screens[@]} -gt 0 ]]; then
+          _idx=$(( ${#_screens[@]} - 1 ))
+        else
+          _rewind=1
+        fi
       fi
       while [[ $_idx -lt ${#_screens[@]} ]]; do
         parent_id="${_screens[$_idx]}"
