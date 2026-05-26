@@ -92,8 +92,8 @@ sudo installicious   # or rerun setup.sh
 ```
 
 The seed file itself is gitignored via `*.override` so it never lands in
-a public checkout. No effect when the database radio picked MySQL or
-MariaDB — the seed file is silently ignored on those backends.
+a public checkout. No effect when the database radio picked
+MariaDB / MySQL — the seed file is silently ignored on that backend.
 
 ## Pre-staging an rclone.conf for OneDrive backup
 

@@ -80,7 +80,7 @@ if [[ $MODE == "install" ]]; then
   fi
   status_mark_started "$II_ID"
   status_mark_complete "$II_ID" "$II_VERSION"
-  log_ok "Database parent recorded; backend (sqlite/mysql/mariadb) handles install."
+  log_ok "Database parent recorded; backend leaf (sqlite or mariadb) handles install."
   exit 0
 fi
 

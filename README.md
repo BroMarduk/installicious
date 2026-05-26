@@ -280,7 +280,7 @@ backend, including Caddy, is in the stock archive.
 
 | ID                      | Title                                            | Default | Reboot      |
 |---|---|---|---|
-| `database`              | Database backend (sqlite/mysql/mariadb radio)    | off*    | never       |
+| `database`              | Database backend (SQLite vs MariaDB / MySQL radio) | off*    | never       |
 | `weewx-setup`           | WeeWX station setup (non-interactive config)     | off*    | never       |
 | `weewx-webroot`         | WeeWX as default web root                        | off*    | never       |
 | `weewx-site-ram`        | WeeWX site on tmpfs (with boot loading page)     | off*    | conditional |
@@ -299,10 +299,15 @@ uses **zram** (compressed RAM block device — meaningful saves on the
 SQLite DB). The `-ram` suffix is uniform with `feature-ram-logging` for
 symmetry; the underlying mechanism differs by file.
 
-- **database** — sqlite/mysql/mariadb radio. SQLite is the default (no-op
-  leaf — `weewx` ships with SQLite already). Picking **MySQL** or
-  **MariaDB** triggers a real install:
-  - Installs the server (`default-mysql-server` or `mariadb-server`) when
+- **database** — SQLite vs MariaDB/MySQL radio. SQLite is the default
+  (no-op leaf — `weewx` ships with SQLite already). Picking **MariaDB /
+  MySQL** triggers a real install. The "MySQL" branding is convenience —
+  on Debian Bookworm/Trixie the apt virtual package
+  `default-mysql-server` resolves to **mariadb-server**, and the two
+  speak the same wire protocol, so there's only one underlying install
+  path. (A future Oracle-MySQL repo could plug into the same
+  `database_install_mysql_family` helper without changing the menu.)
+  - Installs `default-mysql-server` (which lands `mariadb-server`) when
     `DATABASE_HOST=SELF`; skips the server install when `DATABASE_HOST`
     is a remote IP.
   - Provisions `${DATABASE_NAME}` + `${DATABASE_USER}@localhost` with a

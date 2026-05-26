@@ -116,10 +116,12 @@
 #WEEWX_BACKUP_KEEP_MONTHLY="12"             # monthly backup files kept
 
 # ----------------------------------------------------------------------------
-# Database backend — feature-database (sqlite/mysql/mariadb radio)
+# Database backend — feature-database (SQLite vs MariaDB / MySQL radio)
 # (DATABASE_TYPE itself is the radio pick, not an editable key. The five
 #  keys below appear on the in-menu Edit Configuration screen ONLY when
-#  MySQL or MariaDB is picked.)
+#  MariaDB / MySQL is picked. On Bookworm/Trixie, MariaDB and MySQL share
+#  the same wire protocol and `default-mysql-server` resolves to
+#  mariadb-server, so the picker offers one combined option.)
 # ----------------------------------------------------------------------------
 #DATABASE_HOST="SELF"                       # SELF = install + run locally on this Pi; an IP = remote (no server install)
 #DATABASE_NAME="AUTO"                       # AUTO -> per-role default ("weewx" under the WeeWx role)
