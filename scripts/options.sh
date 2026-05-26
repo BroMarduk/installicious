@@ -611,6 +611,11 @@ while true; do
         [[ $pmode != "exclusive" ]] && continue
         _screens+=("$parent_id")
       done
+      # Immutable snapshot of the role_required-derived screens — the
+      # rc=0 post-pick rebuild reuses this so legitimate next-parents
+      # (e.g. `database` after `webserver`) survive each pick. The
+      # earlier in-place truncation lost them.
+      declare -a _role_required_screens=("${_screens[@]}")
 
       # Resume at the last screen when re-entered via BACK from any
       # stage forward of this one (pick_role_specific, pick_optional,
@@ -639,23 +644,32 @@ while true; do
           0)
             addons_picked[$parent_id]="${_picked//\"/}"
             _persist_selections
-            picked="$_picked"   # local alias for the post-pick cascade walk below
-            # Append picked children with their OWN exclusive groups (a
-            # cascade of radios; rare but possible) so they fire as the
-            # next screen. Non-exclusive children land in step 5.
-            _screens=("${_screens[@]:0:$((_idx+1))}")
-            for _pid in ${picked//\"/}; do
-              [[ -z $_pid ]] && continue
-              _dup=0
-              for _s in "${_screens[@]}"; do [[ "$_s" == "$_pid" ]] && _dup=1 && break; done
-              [[ $_dup -eq 1 ]] && continue
-              _pp=$(manifest_path_for "$_pid" 2>/dev/null)
+            # Rebuild _screens from the role_required snapshot + cascade
+            # children whose own exclusive groups should fire next. The
+            # OLD code truncated _screens to [0..current_idx] then
+            # appended cascade — that dropped legitimate next-parents
+            # past the current index (e.g. with role_required="pkupd
+            # webserver database", after the webserver pick _screens
+            # became [webserver] and `database`'s radio never fired —
+            # the install used whatever was in addons_picked[database]
+            # from a prior run's selections.sh, silently). Rebuilding
+            # keeps the role_required screens intact AND re-derives
+            # cascade from current addons_picked, so re-picks don't
+            # leave stale cascade entries behind either.
+            _screens=("${_role_required_screens[@]}")
+            for _r in "${_role_required_screens[@]}"; do
+              _pick_for_r="${addons_picked[$_r]:-}"
+              [[ -z $_pick_for_r ]] && continue
+              _pp=$(manifest_path_for "$_pick_for_r" 2>/dev/null)
               [[ -z $_pp ]] && continue
               _pc=$(manifest_get_field "$_pp" "II_OPTIONAL_GROUP")
               [[ -z $_pc ]] && continue
               _pm=$(manifest_get_field "$_pp" "II_OPTIONAL_GROUP_MODE")
               [[ $_pm != "exclusive" ]] && continue
-              _screens+=("$_pid")
+              _dup=0
+              for _s in "${_screens[@]}"; do [[ "$_s" == "$_pick_for_r" ]] && _dup=1 && break; done
+              [[ $_dup -eq 1 ]] && continue
+              _screens+=("$_pick_for_r")
             done
             _idx=$((_idx + 1))
             ;;
