@@ -15,7 +15,7 @@
 
 # === II_MANIFEST_BEGIN ===
 II_ID="database-mariadb"
-II_TITLE="MariaDB"
+II_TITLE="MariaDB / MySQL"
 II_CATEGORY="feature"
 II_VERSION="1"
 II_DEPS=""

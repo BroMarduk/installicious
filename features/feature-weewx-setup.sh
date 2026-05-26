@@ -386,7 +386,7 @@ INI
       # DATABASE_HOST we can't (and shouldn't) reach in and reset.
       if [[ $_db_host_resolved == "localhost" || $_db_host_resolved == "127.0.0.1" ]]; then
         # Wait for mariadb to actually be reachable. The apt-install of
-        # mariadb-server in feature-database-mysql brings the service up
+        # mariadb-server in feature-database-mariadb brings the service up
         # asynchronously; on a fresh boot the socket can lag the systemd
         # "active" state by a couple seconds. Without this wait, weewx's
         # imminent restart would print "Connection refused" and either

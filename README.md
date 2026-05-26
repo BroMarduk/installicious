@@ -255,12 +255,16 @@ WeeWx-role-only features (hidden in the Custom flow via
 WeeWx role; `weewx-onedrive-backup` is opt-in (default-off — it needs a
 one-time manual rclone setup). The role makes both `webserver` AND
 `database` required, so their radios (apache/nginx/lighttpd/caddy for
-webserver, sqlite/mysql/mariadb for database) fire in step 3 BEFORE the
-optional pickers — that's what lets `weewx-database-ram` and
-`weewx-onedrive-backup` declare `II_CONFLICTS_WITH="database-mysql
-database-mariadb"` and disappear from the menu entirely when the user
-picks a non-SQLite backend (instead of just self-skipping at install
-time). The role pulls in `skyfield` (which transitively installs the
+webserver, SQLite vs MariaDB/MySQL for database) fire in step 3 BEFORE
+the optional pickers — that's what lets `weewx-database-ram` and
+`weewx-onedrive-backup` declare
+`II_CONFLICTS_WITH="database-mariadb"` and disappear from the menu
+entirely when the user picks MariaDB / MySQL (instead of just
+self-skipping at install time). On Debian Bookworm/Trixie the
+"MySQL" branding is just convenience — `default-mysql-server` resolves
+to mariadb-server, so the picker offers a single combined
+"MariaDB / MySQL" option that maps to the wire-compatible
+mariadb-server install. The role pulls in `skyfield` (which transitively installs the
 `weewx` apt package + `weewx-setup`), and pre-checks `ram-logging`
 (log2ram) since a station Pi is a strict win for offloading
 `/var/log` writes to RAM.
