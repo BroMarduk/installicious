@@ -507,7 +507,38 @@ echo "II_INSTALLICIOUS_USER=\"${II_INSTALLICIOUS_USER}\"" >> $FILE_STATUS_OS
 # Load Required Variables
 source $FILE_STATUS_OS
 
-if (whiptail --title "$MODULE" --defaultno --no-button "Cancel" --yes-button "OK" --yesno "Do you want to setup $MODULE? $DESCRIPTION\n\n$II_MODEL with $II_FULL_NAME\n\nInstallicious $INSTALLICIOUS_VERSION" 14 80) then
+# Override-directory hint for the main screen.
+#
+# Detect whether the user has staged any `*.override` files under
+# $PATH_OVERRIDES. These are the drop-the-file artifacts that pre-seed
+# config on a fresh Pi (e.g. overrides/weewx.sdb.override,
+# overrides/rclone.conf.override, overrides/configuration.override).
+# A clean checkout has none — only `configuration.override.example`
+# (which the glob deliberately excludes because it ends in `.example`).
+# On a fresh-imaged Pi the user often forgets to copy overrides over;
+# surfacing the absence here saves a "why isn't my AccuWeather key
+# applied?" round-trip later.
+#
+# Only fires the note when count==0. Path is resolved to an absolute
+# location (relative paths in PATH_OVERRIDES expand against the
+# installicious install dir) so the hint tells the user EXACTLY where
+# to drop files.
+shopt -s nullglob
+_override_files=("$PATH_OVERRIDES"/*.override)
+shopt -u nullglob
+_override_note=""
+_main_dialog_height=14
+if [[ ${#_override_files[@]} -eq 0 ]]; then
+  if [[ "$PATH_OVERRIDES" = /* ]]; then
+    _override_dir_abs="$PATH_OVERRIDES"
+  else
+    _override_dir_abs="$INSTALLICIOUS_DIR/$PATH_OVERRIDES"
+  fi
+  _override_note="NOTE: There are currently no overrides in the $_override_dir_abs directory.  You can continue without them but remember to check configuration settings when that menu appears.\n\n"
+  _main_dialog_height=20
+fi
+
+if (whiptail --title "$MODULE" --defaultno --no-button "Cancel" --yes-button "OK" --yesno "Do you want to setup $MODULE? $DESCRIPTION\n\n${_override_note}$II_MODEL with $II_FULL_NAME\n\nInstallicious $INSTALLICIOUS_VERSION" "$_main_dialog_height" 80) then
   echo "$(date '+%Y-%m-%d %T.%5N') - INFO - [$MODULE] Installicious $INSTALLICIOUS_VERSION started by user $CURRENTUSER" | sudo tee --append $FILE_LOG_INSTALLER
   bash "$PATH_SCRIPTS/options.sh"
 else
