@@ -30,8 +30,8 @@ case $- in *i*) ;; *) return 0 ;; esac
 # _installicious_resume_running — primary "is the resume still in flight"
 # signal used by the live-tail loop below. Order of trust:
 #   1. resume.sh writes /etc/installicious/state/resume.pid at start and
-#      removes it on exit (EXIT trap). PID file exists AND `kill -0 $pid`
-#      succeeds -> still running. This is independent of systemd state.
+#      removes it on exit (EXIT trap). PID file exists AND /proc/$pid
+#      exists -> still running. This is independent of systemd state.
 #   2. Fallback: `systemctl is-active installicious-resume.service`. Used
 #      only when the PID file is absent (legacy installs without the
 #      sentinel, or a transient race during resume.sh startup).
@@ -41,12 +41,21 @@ case $- in *i*) ;; *) return 0 ;; esac
 # to inactive, and `tail -F` itself could die from OOM / SIGPIPE / tty
 # hiccups during long apt installs. The PID-file approach removes both
 # failure modes.
+#
+# `[ -d /proc/$pid ]` instead of `kill -0 $pid`: resume.sh runs as root
+# (via systemd), but a non-root SSH'd user sourcing this file can't
+# `kill -0` a root-owned PID — the syscall returns EPERM, which bash
+# surfaces as exit 1, indistinguishable from ESRCH (process gone). That
+# false-negative made the live-tail loop bail one second in, so the
+# non-root user only ever saw a couple banner lines and missed the rest
+# of the resume output. `/proc/$pid` is world-readable for the existence
+# check we actually need, and works regardless of who's polling.
 _installicious_resume_running() {
   local pid_file="/etc/installicious/state/resume.pid"
   local pid
   if [ -f "$pid_file" ]; then
     pid=$(cat "$pid_file" 2>/dev/null)
-    [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && return 0
+    [ -n "$pid" ] && [ -d "/proc/$pid" ] && return 0
     return 1
   fi
   systemctl is-active --quiet installicious-resume.service 2>/dev/null
