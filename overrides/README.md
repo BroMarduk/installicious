@@ -51,7 +51,7 @@ override to take effect.
 |---|---|---|---|
 | `weewx.override` | `weewx.conf` | `feature-weewx-setup` | partial `weewx.conf` (ConfigObj/INI) — deep-merged onto `/etc/weewx/weewx.conf` after the apt install + `weectl station reconfigure` pass |
 | `neowx-material-skin.override` | `neowx-material-skin.conf` | `feature-neowx-material` | partial NeoWX Material `skin.conf` (ConfigObj/INI) — deep-merged onto `/etc/weewx/skins/neowx-material/skin.conf` after the extension install |
-| `weewx.sdb.override` | — (binary, no template) | `feature-weewx-setup` | full SQLite archive file — drop-in **replaces** `/var/lib/weewx/weewx.sdb` on first install when the live DB is missing or still the empty WeeWX template (< 100 KiB). Only applied when the database radio picked SQLite |
+| `weewx.sdb.override` | — (binary, no template) | `feature-weewx-setup` | full SQLite archive file — drop-in **replaces** `/var/lib/weewx/weewx.sdb` on first install when the live DB is missing or has zero rows in its `archive` table. Falls back to a 1 MiB size check if `sqlite3` isn't on PATH. Only applied when the database radio picked SQLite |
 | `rclone.conf.override` | — (credentials, no template) | `feature-weewx-onedrive-backup` | full `rclone.conf` file (INI) — copied to `WEEWX_BACKUP_RCLONE_CONF` (default `/root/.config/rclone/rclone.conf`) as `root:root` mode `0600` **only when the live file doesn't exist**. Skipped if `/root/.config/rclone/rclone.conf` already exists (rclone refreshes its tokens into the live file; overwriting would force re-auth). Lets users pre-stage their desktop-generated rclone.conf and skip the manual `scp + chown + chmod` dance. |
 
 An empty (or all-comments) override file is a no-op — the feature skips the
@@ -72,10 +72,18 @@ scp /var/lib/weewx/weewx.sdb you@new-pi:/etc/installicious/overrides/weewx.sdb.o
 
 On the next install — only if the `database` choice resolved to SQLite —
 `feature-weewx-setup` copies it to `/var/lib/weewx/weewx.sdb` before
-restarting WeeWX. The guard checks the live `.sdb` size: under 100 KiB
-(WeeWX's empty template is ~40 KiB) the seed runs; at or above 100 KiB
-the live DB is treated as real data and left alone. To force a re-seed,
-delete the live `.sdb` and re-run the installer:
+restarting WeeWX. The guard asks "is the live DB actually empty?":
+
+1. **File missing** → seed.
+2. **`sqlite3` available** → `SELECT COUNT(*) FROM archive`. Zero rows
+   = no real data yet, safe to seed. Any rows = live data, preserve.
+   This is the semantic check, independent of schema size — important
+   because WeeWX 5 on Trixie lays down a schema-only `.sdb` at ~512 KiB
+   even with zero rows.
+3. **`sqlite3` unavailable** → 1 MiB size fallback. Above 1 MiB the live
+   DB is treated as real data and left alone.
+
+To force a re-seed, delete the live `.sdb` and re-run the installer:
 
 ```bash
 sudo systemctl stop weewx

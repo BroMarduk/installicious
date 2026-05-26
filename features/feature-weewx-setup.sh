@@ -261,32 +261,70 @@ do_install() {
     ""|sqlite)
       log_info "DATABASE_TYPE=${DATABASE_TYPE:-sqlite} - no weewx.conf DB overlay needed."
 
-      # Optional seed: if overrides/weewx.sdb.override exists and the live
-      # weewx.sdb is either missing or still the empty template (< 100 KiB
-      # -- a fresh weewx install lands at ~40 KiB; real archive data hits
-      # MiB territory within a day), copy the override in as the starting
-      # database. Guard prevents clobbering accumulated archive data on
-      # re-runs. weewx is already stopped (the config pass above stopped
-      # it), so the copy doesn't race the daemon.
+      # Optional seed: if overrides/weewx.sdb.override exists AND the
+      # live DB is empty (no archive rows), copy the override in as the
+      # starting database. weewx is already stopped (the config pass
+      # above stopped it), so the copy doesn't race the daemon.
       #
-      # Idempotency comes from the size threshold alone: after a successful
-      # seed, the target is the size of the seed file (typically far above
-      # the threshold) and subsequent runs skip the copy. To force a
-      # re-seed, delete /var/lib/weewx/weewx.sdb and re-run the installer.
-      local _seed_src _seed_tgt _seed_threshold _live_size
+      # "Empty" check, in order of trust:
+      #   1. Target file missing → seed.
+      #   2. sqlite3 available → query `SELECT COUNT(*) FROM archive`.
+      #      Zero rows = no actual weather data, safe to seed. Any rows
+      #      = real data, preserve. This is the semantic check — what
+      #      we actually care about, independent of schema size.
+      #   3. sqlite3 unavailable → size fallback at 1 MiB. WeeWX 5
+      #      lays down ~512 KiB of schema-only tables (archive +
+      #      archive_day_* per observation) even with zero rows, so the
+      #      original 100 KiB threshold missed every empty-on-Trixie
+      #      install. 1 MiB is well above the schema baseline and well
+      #      below any real-data DB after a few hours of accumulation.
+      #
+      # To force a re-seed after the live DB has accumulated data, stop
+      # weewx, delete /var/lib/weewx/weewx.sdb, and re-run the
+      # installer (and delete /etc/installicious/status/weewx-setup.status
+      # too if the feature would otherwise skip via status_should_skip).
+      local _seed_src _seed_tgt _live_size _rows _should_seed _seed_reason
       _seed_src="${PATH_OVERRIDES:-overrides}/weewx.sdb.override"
       _seed_tgt="/var/lib/weewx/weewx.sdb"
-      _seed_threshold=102400  # 100 KiB
+      _should_seed=false
+      _seed_reason=""
       if [[ -r $_seed_src ]]; then
-        _live_size=0
-        [[ -f $_seed_tgt ]] && _live_size=$(stat -c %s "$_seed_tgt" 2>/dev/null || echo 0)
-        if [[ ! -f $_seed_tgt || $_live_size -lt $_seed_threshold ]]; then
-          log_info "Seeding $_seed_tgt from $_seed_src ($(stat -c %s "$_seed_src" 2>/dev/null) bytes, target was ${_live_size}B)."
+        if [[ ! -f $_seed_tgt ]]; then
+          _should_seed=true
+          _seed_reason="target missing"
+        elif command -v sqlite3 >/dev/null 2>&1; then
+          _rows=$(sqlite3 "$_seed_tgt" 'SELECT COUNT(*) FROM archive' 2>/dev/null)
+          if [[ "$_rows" =~ ^[0-9]+$ ]]; then
+            if [[ "$_rows" -eq 0 ]]; then
+              _should_seed=true
+              _seed_reason="archive table has 0 rows (sqlite3 says empty)"
+            else
+              _seed_reason="archive table has $_rows rows — preserving live data"
+            fi
+          else
+            # sqlite3 ran but returned non-numeric (DB corrupted, locked,
+            # etc.). Fall through to the size check below.
+            _seed_reason=""
+          fi
+        fi
+        # Fall back to size check if the semantic check didn't decide.
+        if [[ $_should_seed == false && -z $_seed_reason ]]; then
+          _live_size=0
+          [[ -f $_seed_tgt ]] && _live_size=$(stat -c %s "$_seed_tgt" 2>/dev/null || echo 0)
+          if [[ $_live_size -lt 1048576 ]]; then
+            _should_seed=true
+            _seed_reason="live DB ${_live_size}B < 1 MiB threshold (sqlite3 fallback)"
+          else
+            _seed_reason="live DB ${_live_size}B >= 1 MiB and sqlite3 unavailable — preserving"
+          fi
+        fi
+        if [[ $_should_seed == true ]]; then
+          log_info "Seeding $_seed_tgt from $_seed_src ($(stat -c %s "$_seed_src" 2>/dev/null) bytes) — $_seed_reason."
           sudo install -o weewx -g weewx -m 0664 "$_seed_src" "$_seed_tgt" 2>&1 \
             | tee -a "$FILE_LOG_INSTALLER" \
             || log_warn "Seed copy failed; leaving live DB alone."
         else
-          log_info "$_seed_tgt is ${_live_size}B (>= ${_seed_threshold}B threshold); preserving existing archive data."
+          log_info "Preserving $_seed_tgt — $_seed_reason."
         fi
       fi
       ;;

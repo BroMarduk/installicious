@@ -344,9 +344,11 @@ symmetry; the underlying mechanism differs by file.
     copies it to `/var/lib/weewx/weewx.sdb` before WeeWX restarts —
     handy when migrating archive history from another Pi. Guarded
     against clobbering real data: the seed only runs when the live
-    `.sdb` is missing or under 100 KiB (WeeWX's empty template is
-    ~40 KiB; anything larger is treated as real archive data and
-    preserved). Skipped silently on MySQL/MariaDB backends. See
+    DB is missing, OR when `sqlite3` reports the `archive` table has
+    zero rows (the semantic "empty" check; independent of WeeWX's
+    schema-only ~512 KiB baseline on Trixie). Falls back to a 1 MiB
+    size threshold when `sqlite3` isn't on PATH. Skipped silently on
+    MySQL/MariaDB backends. See
     [`overrides/README.md`](overrides/README.md) for the full how-to.
 - **weewx-webroot** — repoints the active webserver backend's default
   site at `$WEEWX_WEB_DIR` (default `/var/www/html/weewx`) so visitors

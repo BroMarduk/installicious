@@ -36,6 +36,18 @@ else
   exec > >(stdbuf -oL tee -a "$_RESUME_TRANSCRIPT_FILE") 2>&1
 fi
 
+# PID sentinel — written before any further work, removed on exit (any
+# exit, including signals via the EXIT trap). Lets installicious-shell.sh
+# detect end-of-resume by polling `kill -0 $pid`, which is more reliable
+# than `systemctl is-active` (which can flake on transient daemon-reloads
+# triggered by package postinsts during apt installs) or `kill -0 $tail_pid`
+# (which exits early if tail itself dies for any reason — OOM, SIGPIPE,
+# tty hiccup). Hardcoded path because PATH_STATE isn't sourced yet here
+# and the path is invariant across installs.
+_RESUME_PID_FILE="/etc/installicious/state/resume.pid"
+echo "$$" > "$_RESUME_PID_FILE" 2>/dev/null
+trap 'rm -f "$_RESUME_PID_FILE" 2>/dev/null' EXIT
+
 II_TITLE="Installicious Resume"
 
 source config/installicious.config || exit 1

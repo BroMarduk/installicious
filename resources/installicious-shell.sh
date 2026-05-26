@@ -27,28 +27,50 @@ case $- in *i*) ;; *) return 0 ;; esac
 # Resume transcript display
 # ---------------------------------------------------------------------------
 
+# _installicious_resume_running — primary "is the resume still in flight"
+# signal used by the live-tail loop below. Order of trust:
+#   1. resume.sh writes /etc/installicious/state/resume.pid at start and
+#      removes it on exit (EXIT trap). PID file exists AND `kill -0 $pid`
+#      succeeds -> still running. This is independent of systemd state.
+#   2. Fallback: `systemctl is-active installicious-resume.service`. Used
+#      only when the PID file is absent (legacy installs without the
+#      sentinel, or a transient race during resume.sh startup).
+# Prior versions relied on `systemctl is-active` alone or on `kill -0`
+# of `tail -F`'s PID; both could false-positive "done" mid-resume — a
+# daemon-reload triggered by an apt postinst would briefly flip is-active
+# to inactive, and `tail -F` itself could die from OOM / SIGPIPE / tty
+# hiccups during long apt installs. The PID-file approach removes both
+# failure modes.
+_installicious_resume_running() {
+  local pid_file="/etc/installicious/state/resume.pid"
+  local pid
+  if [ -f "$pid_file" ]; then
+    pid=$(cat "$pid_file" 2>/dev/null)
+    [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && return 0
+    return 1
+  fi
+  systemctl is-active --quiet installicious-resume.service 2>/dev/null
+}
+
 _installicious_show_resume_transcript() {
   local transcript="/etc/installicious/state/resume-transcript.log"
   local queue="/etc/installicious/state/queue.sh"
   local marker="$HOME/.installicious-transcript-shown"
 
-  # Queue in progress -> live-tail until queue.sh disappears.
+  # Queue in progress -> live-tail until resume.sh exits.
   #
-  # Why queue.sh and not `systemctl is-active` + MainPID:
-  #   - Type=oneshot units have a race where MainPID briefly reads as 0
-  #     while the service is technically "active", dropping us into the
-  #     fall-through branch and showing the user a static snapshot
-  #     ("output stops after a chunk") even though more output is on its
-  #     way. queue.sh is the canonical "queue still has outstanding
-  #     work" signal -- written by state_save / cleared by state_clear,
-  #     persists across as many chained reboots as the install needs.
-  #   - On a multi-reboot install (e.g. kernel update then a
-  #     reboot-required feature), queue.sh survives between reboots; a
-  #     reconnect after any reboot in the chain re-enters this loop and
-  #     tails the new cycle's transcript naturally.
+  # Gate: queue.sh exists. Set by state_save (scheduler_run_queue) when
+  # the first installer in a queue starts; removed by state_clear when
+  # the queue empties. Survives chained reboots, so a reconnect after
+  # any reboot in the chain re-enters this loop and tails the new
+  # cycle's transcript naturally. queue.sh is removed mid-flight
+  # (state_clear runs BEFORE post_install_apply prints the queue
+  # summary), so it's only used as the entry gate — the loop body uses
+  # _installicious_resume_running (PID-file based) for the actual
+  # liveness check so we still see the trailing summary.
   #
-  # `tail -F` (capital F) handles transcript truncation between chained
-  # resume cycles (resume.sh truncates the transcript on each start).
+  # `tail -F` handles transcript truncation between chained resume
+  # cycles (resume.sh truncates the transcript on each start).
   if [ -f "$queue" ]; then
     echo
     echo "============================================================"
@@ -65,23 +87,21 @@ _installicious_show_resume_transcript() {
     if [ -f "$transcript" ]; then
       tail -n +1 -F "$transcript" 2>/dev/null &
       local tpid=$!
-      # Wait until installicious-resume.service deactivates. That's the
-      # true end-of-run signal — `queue.sh` disappears mid-flight
-      # (state_clear in scheduler_run_queue runs BEFORE
-      # post_install_apply prints the queue summary), so polling
-      # queue.sh used to kill the tail too early and the user never
-      # saw the summary table. Polling the systemd unit instead
-      # follows the full resume.sh lifetime; one extra second of grace
-      # after deactivation flushes any trailing writes from the tee'd
-      # transcript. queue.sh existence is still the gate that we ever
-      # entered the loop in the first place — checked just above.
-      while kill -0 "$tpid" 2>/dev/null; do
-        if ! systemctl is-active --quiet installicious-resume.service 2>/dev/null; then
-          sleep 1
-          break
+      # Loop until _installicious_resume_running reports done (PID file
+      # gone OR process dead). If tail itself dies mid-flight (OOM,
+      # SIGPIPE, IO error during a long apt install), respawn it with
+      # `-n 0` so the user doesn't re-see the backlog they already
+      # watched — a small gap of missed lines beats a false "complete"
+      # banner. The 1-second post-loop sleep gives the tee subshell a
+      # chance to flush trailing writes before we kill tail.
+      while _installicious_resume_running; do
+        if ! kill -0 "$tpid" 2>/dev/null; then
+          tail -n 0 -F "$transcript" 2>/dev/null &
+          tpid=$!
         fi
         sleep 1
       done
+      sleep 1
       kill "$tpid" 2>/dev/null
       wait "$tpid" 2>/dev/null
     fi
