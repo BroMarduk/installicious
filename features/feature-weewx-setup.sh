@@ -27,6 +27,17 @@
 #              under DEBIAN_FRONTEND=noninteractive (set in lib/apt.sh's
 #              _APT_ENV); this feature does the post-install config pass.
 #
+#              Local-MySQL/MariaDB schema sanity: when DATABASE_TYPE is
+#              mysql or mariadb AND the server is local, this feature
+#              waits up to 30s for mariadb's root-socket to respond,
+#              then queries the live `archive` table row count. Empty or
+#              missing → DROP + CREATE the database so weewx initializes
+#              the schema cleanly on its next start. Any rows → leave the
+#              data alone. Works around weewx 5's _initialize_day_tables
+#              emitting bare `CREATE TABLE` (no IF NOT EXISTS), which
+#              crashes on the next start if a prior install left even a
+#              fully-built schema in place across a reboot.
+#
 #              Symmetric --uninstall: restores /etc/weewx/weewx.conf from
 #              the pre-install snapshot via lib/backup.
 
@@ -368,6 +379,50 @@ INI
         rm -f "$_db_overlay"
       else
         log_warn "mktemp failed; skipping DB overlay (weewx.conf may not pick up DATABASE_TYPE=$DATABASE_TYPE on this run)."
+      fi
+
+      # --- Local-MySQL/MariaDB schema sanity --------------------------------
+      # Only meaningful when the server is local (we own it). For remote
+      # DATABASE_HOST we can't (and shouldn't) reach in and reset.
+      if [[ $_db_host_resolved == "localhost" || $_db_host_resolved == "127.0.0.1" ]]; then
+        # Wait for mariadb to actually be reachable. The apt-install of
+        # mariadb-server in feature-database-mysql brings the service up
+        # asynchronously; on a fresh boot the socket can lag the systemd
+        # "active" state by a couple seconds. Without this wait, weewx's
+        # imminent restart would print "Connection refused" and either
+        # sleep-60-and-retry (ok-ish) or die from a SIGTERM mid-sleep
+        # (what bit the user on this Pi).
+        local _db_wait=0
+        while [[ $_db_wait -lt 30 ]]; do
+          if sudo -n mysql -u root -e "SELECT 1;" >/dev/null 2>&1; then
+            break
+          fi
+          sleep 1
+          _db_wait=$((_db_wait + 1))
+        done
+        if ! sudo -n mysql -u root -e "SELECT 1;" >/dev/null 2>&1; then
+          log_warn "mariadb root-socket ping still failing after ${_db_wait}s; weewx restart may race."
+        fi
+
+        # weewx 5's _initialize_day_tables emits bare `CREATE TABLE` (no
+        # IF NOT EXISTS), so an upgrade or interrupted prior install that
+        # left a half-built or fully-built schema in mariadb makes the
+        # next weewx start crash with "table already exists". Workaround:
+        # before restarting weewx, query the live `archive` row count.
+        # Empty (or missing) → DROP + CREATE the database so weewx
+        # rebuilds the schema cleanly on first connect. Any rows → leave
+        # it alone (real data, never wipe).
+        local _archive_rows
+        _archive_rows=$(sudo -n mysql -u root -N -e "USE \`${DATABASE_NAME:-weewx}\`; SELECT COUNT(*) FROM archive;" 2>/dev/null)
+        if [[ -z $_archive_rows || $_archive_rows == "0" ]]; then
+          log_info "Resetting empty weewx schema (DROP/CREATE DATABASE \`${DATABASE_NAME:-weewx}\`) so weewx initializes cleanly on restart — no real archive data to preserve."
+          sudo -n mysql -u root <<SQL 2>&1 | tee -a "$FILE_LOG_INSTALLER" >/dev/null
+DROP DATABASE IF EXISTS \`${DATABASE_NAME:-weewx}\`;
+CREATE DATABASE \`${DATABASE_NAME:-weewx}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+SQL
+        else
+          log_info "weewx archive table has ${_archive_rows} rows — preserving live data (no schema reset)."
+        fi
       fi
       ;;
     *)
