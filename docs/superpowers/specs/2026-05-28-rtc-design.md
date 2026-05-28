@@ -61,6 +61,10 @@ features/feature-rtc-pcf8563.sh      PCF8563 chip-child (curated)
 features/feature-rtc-ds1307.sh       DS1307 chip-child (curated)
 features/feature-rtc-pi5-builtin.sh  Pi 5 on-board PCF85063A (Pi-5-only)
 features/feature-rtc-extended.sh     "More chips..." gateway (extended-set picker)
+packages/package-i2c-tools.sh        i2c-tools (apt) — auto-required when an
+                                     I2C-RTC chip is selected; otherwise
+                                     surfaced as an optional toggle on the
+                                     pick_packages screen
 config/rtc.config                    shared defaults
 lib/boot-config.sh                   shared /boot/firmware/config.txt manager
 lib/rtc.sh                           shared RTC install/uninstall/verify
@@ -309,6 +313,32 @@ The Pi-5-builtin child declares `II_REQUIRES_INTERNAL_RTC="==true"`
 in its manifest. Phase 0's matcher (consumed by `pick_addons_optional_exclusive`)
 filters it out of the radio entirely on non-Pi-5 hardware. See
 "Pi-5 gating" section.
+
+### Package wiring: `i2c-tools`
+
+`i2c-tools` (apt package) is a new packages-tier installer
+(`packages/package-i2c-tools.sh`, `II_CATEGORY="package"`). The
+five curated I²C chip-children each declare `II_DEPS="i2c-tools"`,
+which routes through the existing `_required_packages_from_features`
+logic in `scripts/options.sh` (lines ~272-301). The behaviour the
+user sees on the `pick_packages` step (step 6 of the menu flow):
+
+- **Selected an I²C-RTC chip** → `i2c-tools` appears in the
+  "required by features" header at the top of `pick_packages` —
+  auto-installed, NOT toggleable (consistent with how `zram` is
+  surfaced when feature-compressed-swap is selected).
+- **No I²C-RTC chip selected** → `i2c-tools` appears in the
+  toggleable optional-package checklist on the same screen, off by
+  default. User who wants the diagnostic tools (`i2cdetect`,
+  `i2cget`, `i2cset`) for unrelated reasons can opt in.
+- **Pi-5-builtin selected, no other I²C-RTC** → `i2c-tools` is NOT
+  auto-required (Pi 5's internal RTC isn't on a userspace-visible
+  I²C bus). Stays as an optional toggle on `pick_packages`.
+- **SPI extended-chip selected** → same as Pi-5-builtin: `i2c-tools`
+  is optional, not required.
+
+SPI tooling (`spi-tools` for SPI diagnostics) is intentionally NOT
+introduced now — see Open follow-ups.
 
 ### Extended-chip escape hatch
 
@@ -758,6 +788,12 @@ with the same docstring as in `config/rtc.config`.
 
 ## Open follow-ups (deferred, not blocking)
 
+- **spi-tools companion package.** If/when the SPI extended-chip path
+  sees real-world use, mirror the `i2c-tools` wiring: add
+  `packages/package-spi-tools.sh` and have the SPI chip-children
+  declare `II_DEPS="spi-tools"`. Out of scope now because the SPI
+  chips are extended (less common) and `spi-tools` is rarely needed
+  for steady-state RTC use — just for initial probing.
 - **DS3231 temperature exposure.** DS3231 has an on-die temperature
   sensor accessible via `/sys/bus/i2c/devices/1-0068/temp_input`.
   Surface as an optional companion (`feature-rtc-ds3231-temp`?). Out
