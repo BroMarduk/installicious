@@ -263,24 +263,10 @@ PATH_FEATURES="$MA_TMPD/features" PATH_PACKAGES="$MA_TMPD/features" \
 PATH_FEATURES="$MA_TMPD/features" PATH_PACKAGES="$MA_TMPD/features" \
   _manifest_registry_load
 
-# Define _filter_by_requires here rather than sourcing scripts/options.sh:
-# options.sh runs a state machine at file scope and would exit before
-# we got to test the helper. The function body is small and mirrors
-# scripts/options.sh::_filter_by_requires verbatim — keep them in sync.
-_filter_by_requires() {
-  local id path
-  for id in "$@"; do
-    [[ -z $id ]] && continue
-    path=$(manifest_path_for "$id" 2>/dev/null)
-    if [[ -z $path ]]; then
-      echo "$id"
-      continue
-    fi
-    if manifest_requires_match "$path"; then
-      echo "$id"
-    fi
-  done
-}
+# _filter_by_requires lives in lib/manifest.sh (already sourced at the
+# top of this test), so we exercise the canonical helper directly here
+# rather than redefining it inline — that prevents the test from
+# silently passing if the lib copy regresses.
 
 # Force a fresh registry load now that the tempdir features exist.
 export PATH_FEATURES="$MA_TMPD/features" PATH_PACKAGES="$MA_TMPD/features"

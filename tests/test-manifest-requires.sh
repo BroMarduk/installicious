@@ -107,11 +107,11 @@ chkrc "INTERNAL_RTC==true on unset = fail" $? 1
 
 # ---- Test 5: multi-dimension AND ----
 echo "=== Test 5: multi-dimension AND ==="
-# NOTE: use FPATH (not PATH) to hold the temp file path. Clobbering PATH
-# breaks every external command (cat/grep/etc) on Windows git-bash and
-# any host where the manifest helpers shell out.
-FPATH="$TMPD/feature-multi.sh"
-cat > "$FPATH" <<EOF
+# Hold the synthetic multi-dim manifest in MULTI_PATH. (The previous
+# FPATH name collided with bash's reserved autoload-search variable;
+# renamed to avoid the confusion.)
+MULTI_PATH="$TMPD/feature-multi.sh"
+cat > "$MULTI_PATH" <<EOF
 #!/bin/bash
 # === II_MANIFEST_BEGIN ===
 II_ID="multi"
@@ -123,13 +123,13 @@ II_REQUIRES_RAM_MB=">=2048"
 II_REQUIRES_OS_BITS="==64"
 # === II_MANIFEST_END ===
 EOF
-II_MODEL_NUM=5 II_MEMORY=4096 II_OS_BITS=64 manifest_requires_match "$FPATH"
+II_MODEL_NUM=5 II_MEMORY=4096 II_OS_BITS=64 manifest_requires_match "$MULTI_PATH"
 chkrc "all-pass = pass" $? 0
-II_MODEL_NUM=5 II_MEMORY=4096 II_OS_BITS=32 manifest_requires_match "$FPATH"
+II_MODEL_NUM=5 II_MEMORY=4096 II_OS_BITS=32 manifest_requires_match "$MULTI_PATH"
 chkrc "one fail (bits) = fail" $? 1
-II_MODEL_NUM=3 II_MEMORY=4096 II_OS_BITS=64 manifest_requires_match "$FPATH"
+II_MODEL_NUM=3 II_MEMORY=4096 II_OS_BITS=64 manifest_requires_match "$MULTI_PATH"
 chkrc "one fail (pi) = fail" $? 1
-II_MODEL_NUM=5 II_MEMORY=1024 II_OS_BITS=64 manifest_requires_match "$FPATH"
+II_MODEL_NUM=5 II_MEMORY=1024 II_OS_BITS=64 manifest_requires_match "$MULTI_PATH"
 chkrc "one fail (ram) = fail" $? 1
 
 # ---- Test 6: case insensitivity on bool ----
@@ -203,4 +203,15 @@ done
 sorted=$(printf '%s\n' "${_so[@]}" | sort -t'|' -k1n -s | awk -F'|' '{print $2}' | tr '\n' ' ')
 sorted=${sorted% }
 chkeq "II_RADIO_ORDER sort 'r3 r1 rlast r2' → 'r1 r2 r3 rlast'" "$sorted" "r1 r2 r3 rlast"
+
+# ---- Test 10: malformed input fails closed ----
+echo "=== Test 10: malformed input fails closed ==="
+F=$(_mkfeat malformed_num "II_REQUIRES_PI_MODEL" ">=abc")
+II_MODEL_NUM=5 manifest_requires_match "$F" 2>/dev/null
+chkrc "malformed numeric expected ('abc') fails closed" $? 1
+
+F=$(_mkfeat malformed_op "II_REQUIRES_LITE" ">=true")
+II_IS_LITE=false manifest_requires_match "$F" 2>/dev/null
+chkrc "unsupported operator on boolean fails closed" $? 1
+
 echo "=== Done ==="

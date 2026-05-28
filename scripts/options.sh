@@ -276,30 +276,13 @@ _any_required_parent_has_radios() {
 # can't accidentally try to deselect them (we filter them out of the
 # toggleable checklist via menu_select_category's exclude param).
 #
-# _filter_by_requires <id...>
-# Echoes the subset of feature IDs whose manifest's II_REQUIRES_* matches
-# current hardware (sourced from $PATH_STATUS/os.status). IDs without a
-# manifest, or whose manifest has no II_REQUIRES_* set, pass through
-# unchanged. Used by every pick_* stage to gate features by Pi model,
-# RAM, OS bit-width, etc.
-_filter_by_requires() {
-  local id path
-  for id in "$@"; do
-    [[ -z $id ]] && continue
-    path=$(manifest_path_for "$id" 2>/dev/null)
-    if [[ -z $path ]]; then
-      # Unknown ID — let downstream code handle it (it'll log_warn).
-      echo "$id"
-      continue
-    fi
-    if manifest_requires_match "$path"; then
-      echo "$id"
-    fi
-  done
-}
-
 # Reads from $selected (which by the time pick_packages runs contains
 # features + their picked addons) so addon deps are accounted for too.
+#
+# Note: _filter_by_requires lives in lib/manifest.sh now; the three
+# call sites below (pick_optional, pick_addons_optional_exclusive,
+# pick_addons) get it via the existing `source lib/manifest.sh` at the
+# top of this file.
 _required_packages_from_features() {
   local id deps dep fpath ppath cat
   declare -A seen=()

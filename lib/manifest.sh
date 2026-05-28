@@ -505,6 +505,15 @@ manifest_filter_by_category() {
 # >= <= == != > <. Empty <op> implies ==.
 _manifest_requires_compare() {
   local op="${1:-==}" actual="$2" expected="$3"
+  # Fail-closed on a non-numeric expected value (e.g. II_REQUIRES_PI_MODEL=">=abc").
+  # Without this, bash's integer compare silently coerces 'abc' to 0 and the
+  # check looks like a pass — the feature would slip past the gate. Per the
+  # RTC spec, malformed expressions must be rejected via log_warn.
+  if ! [[ $expected =~ ^[0-9]+$ ]]; then
+    declare -F log_warn >/dev/null && \
+      log_warn "manifest_requires: non-numeric expected value '$expected' for operator '$op'"
+    return 1
+  fi
   case "$op" in
     "==") [[ $actual -eq $expected ]] ;;
     "!=") [[ $actual -ne $expected ]] ;;
@@ -543,7 +552,12 @@ _manifest_requires_split() {
 # Returns rc=0 iff every II_REQUIRES_* in the file's manifest is
 # satisfied by current hardware (sourced from $PATH_STATUS/os.status).
 # On mismatch, emits one log_info line per failing dimension naming the
-# expected vs. actual value. Side-effect-free apart from the log lines.
+# expected vs. actual value. On MALFORMED input (non-numeric expected
+# value on a numeric dimension; unsupported operator on a boolean
+# dimension) emits a log_warn and fails closed (rc=1) — per the RTC
+# spec, the matcher rejects bad expressions rather than silently
+# treating them as "no constraint". Side-effect-free apart from the
+# log lines.
 manifest_requires_match() {
   local file="$1"
   [[ -f $file ]] || return 1
@@ -594,7 +608,15 @@ manifest_requires_match() {
     case "$op" in
       "==") [[ "$actual" == "$want" ]] && matched=0 ;;
       "!=") [[ "$actual" != "$want" ]] && matched=0 ;;
-      *) matched=1 ;;
+      *)
+        # Unsupported operator on a boolean dimension (e.g. ">=true").
+        # Per the spec, malformed expressions are rejected via log_warn
+        # and fail closed — the silent matched=1 path below would emit
+        # only a routine "needs X but got Y" log_info, hiding the bug.
+        declare -F log_warn >/dev/null && \
+          log_warn "manifest_requires: $(basename "$file") uses unsupported operator '$op' on boolean dimension $fname"
+        matched=1
+        ;;
     esac
     if [[ $matched -ne 0 ]]; then
       declare -F log_info >/dev/null && \
@@ -604,4 +626,32 @@ manifest_requires_match() {
   done
 
   return 0
+}
+
+# _filter_by_requires <id...>
+# Echoes the subset of feature IDs whose manifest's II_REQUIRES_* matches
+# current hardware. Used by scripts/options.sh's pick_* stages (custom,
+# role-specific, optional, exclusive-radio children, non-exclusive
+# children) to gate features by Pi model, RAM, OS bit-width, internal
+# RTC, etc. IDs without a manifest, or whose manifest has no
+# II_REQUIRES_* set, pass through unchanged.
+#
+# Lives in lib/manifest.sh (not scripts/options.sh) so the test suite
+# can source it directly — the prior copy in options.sh forced
+# tests/test-menu-applicability.sh to redefine the helper inline, which
+# was a quiet drift risk.
+_filter_by_requires() {
+  local id path
+  for id in "$@"; do
+    [[ -z $id ]] && continue
+    path=$(manifest_path_for "$id" 2>/dev/null)
+    if [[ -z $path ]]; then
+      # Unknown ID — let downstream code handle it (it'll log_warn).
+      echo "$id"
+      continue
+    fi
+    if manifest_requires_match "$path"; then
+      echo "$id"
+    fi
+  done
 }
