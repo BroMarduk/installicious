@@ -15,7 +15,6 @@ II_TITLE="DS3231 — temp-compensated, most common"
 II_CATEGORY="feature"
 II_VERSION="1"
 II_DEPS="i2c-tools"
-II_OPTIONAL_GROUP="rtc"
 II_DEFAULT_SELECTED="on"
 II_REQUIRES_REBOOT="always"
 II_RADIO_ORDER="1"
@@ -23,16 +22,18 @@ II_EDITABLE_CONFIG="RTC_I2C_BUS RTC_PURGE_FAKE_HWCLOCK"
 # === II_MANIFEST_END ===
 
 source config/installicious.config || exit 1
-[[ -f config/rtc.config ]] && source config/rtc.config
 source lib/log.sh
 source lib/status.sh
+source lib/state.sh
 source lib/reboot.sh
 source lib/boot-config.sh
 source lib/rtc.sh
 
+[[ -f config/rtc.config ]] && source config/rtc.config
+declare -F state_apply_menu_overrides >/dev/null && state_apply_menu_overrides
+
 RTC_CHIP="ds3231"
 RTC_BUS="i2c"
-RTC_OVERLAY_NAME="ds3231"
 
 MODE="install"
 while [[ $# -gt 0 ]]; do

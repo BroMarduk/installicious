@@ -212,6 +212,14 @@ manifest_is_hidden_child lighttpd features packages; chkrc "lighttpd is hidden c
 manifest_is_hidden_child caddy    features packages; chkrc "caddy is hidden child"    $? 0
 manifest_is_hidden_child webserver features packages; chkrc "webserver is NOT hidden" $? 1
 
+# RTC: parent should NOT be hidden, chip-children SHOULD be. Regression for the
+# 2026-05-28 bug where feature-rtc-ds3231 declared II_OPTIONAL_GROUP="rtc" (a
+# back-reference), causing manifest_is_hidden_child to flag the parent 'rtc'
+# as a hidden child of its own child and filter it out of the Custom-role
+# checklist.
+manifest_is_hidden_child rtc         features packages; chkrc "rtc is NOT a hidden child (parent should always show)" $? 1
+manifest_is_hidden_child rtc-ds3231  features packages; chkrc "rtc-ds3231 IS a hidden child (only via radio sub-menu)" $? 0
+
 # Each backend declares its own II_OPTIONAL_GROUP for the post-radio
 # sub-features. nginx / apache / lighttpd offer under-construction +
 # ssl; caddy offers only under-construction (auto-HTTPS).

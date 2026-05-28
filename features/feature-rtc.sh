@@ -8,6 +8,9 @@
 #
 #              Body is a no-op apart from status bookkeeping.
 #              See docs/superpowers/specs/2026-05-28-rtc-design.md.
+#
+# Note: parent has no II_RADIO_ORDER — that's a child-only sort hint
+# consumed by menu_pick_one_optional when rendering the radio.
 
 # === II_MANIFEST_BEGIN ===
 II_ID="rtc"
@@ -25,6 +28,7 @@ II_RESTRICT_TO_ROLES=""
 source config/installicious.config || exit 1
 source lib/log.sh
 source lib/status.sh
+source lib/verify.sh
 
 MODE="install"
 while [[ $# -gt 0 ]]; do
@@ -46,6 +50,10 @@ log_init "$II_TITLE" "$FILE_LOG_INSTALLER"
 
 case "$MODE" in
   install)
+    if status_should_skip "$II_ID" "$II_VERSION"; then
+      log_info "RTC parent already recorded at version $II_VERSION. Skipping."
+      exit 0
+    fi
     status_mark_started "$II_ID"
     status_mark_complete "$II_ID" "$II_VERSION"
     log_ok "RTC parent recorded; chip-child runs the real install."
@@ -57,6 +65,7 @@ case "$MODE" in
     exit 0
     ;;
   verify)
+    declare -F verify_generic >/dev/null && exec verify_generic "$II_ID"
     exit 0
     ;;
 esac
