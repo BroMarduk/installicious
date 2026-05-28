@@ -54,21 +54,33 @@ New files:
 
 ```
 features/feature-rtc.sh              parent (exclusive-group host); body is no-op
-features/feature-rtc-ds3231.sh       DS3231 chip-child (curated)
-features/feature-rtc-pcf8523.sh      PCF8523 chip-child (curated)
-features/feature-rtc-pcf2127.sh      PCF2127 chip-child (curated)
-features/feature-rtc-pcf8563.sh      PCF8563 chip-child (curated)
-features/feature-rtc-ds1307.sh       DS1307 chip-child (curated)
-features/feature-rtc-pi5-builtin.sh  Pi 5 on-board PCF85063A (Pi-5-only)
-features/feature-rtc-extended.sh     "More chips..." gateway (extended-set picker)
+# Curated I²C chip-children (sorted first in the radio):
+features/feature-rtc-ds3231.sh       DS3231 — temp-compensated, most common
+features/feature-rtc-pcf8523.sh      PCF8523 — Adafruit PiRTC
+features/feature-rtc-pcf2127.sh      PCF2127 — industrial, pin-compatible upgrade
+features/feature-rtc-pcf8563.sh      PCF8563 — cheap Chinese modules
+features/feature-rtc-ds1307.sh       DS1307 — basic, legacy
+# Pi 5 built-in (visible only on Pi 5 via II_REQUIRES_INTERNAL_RTC):
+features/feature-rtc-pi5-builtin.sh  Pi 5 on-board PCF85063A
+# Extended I²C chip-children (sorted below curated in the radio):
+features/feature-rtc-pcf85063.sh     PCF85063 — same family as Pi 5's chip
+features/feature-rtc-abx80x.sh       ABx80x — extended autonomous
+features/feature-rtc-rv1805.sh       RV1805 — low-power industrial
+features/feature-rtc-rv3028.sh       RV3028 — industrial
+features/feature-rtc-rv3032.sh       RV3032 — high-accuracy
+features/feature-rtc-mcp7940x.sh     MCP7940x — common in industrial
+features/feature-rtc-m41t62.sh       M41T62 — ST
+# Extended SPI chip-children:
+features/feature-rtc-pcf2123.sh      PCF2123 (SPI)
+features/feature-rtc-max6902.sh      MAX6902 (SPI)
+features/feature-rtc-ds3232-spi.sh   DS3232 in SPI mode
 packages/package-i2c-tools.sh        i2c-tools (apt) — auto-required when an
-                                     I2C-RTC chip is selected; otherwise
+                                     I²C-RTC chip is selected; otherwise
                                      surfaced as an optional toggle on the
                                      pick_packages screen
-packages/package-spi-tools.sh        spi-tools (apt) — auto-required when the
-                                     extended-chip gateway is selected
-                                     (because it may land on an SPI chip);
-                                     otherwise an optional toggle
+packages/package-spi-tools.sh        spi-tools (apt) — auto-required when an
+                                     SPI-RTC chip is selected; otherwise an
+                                     optional toggle
 config/rtc.config                    shared defaults
 lib/boot-config.sh                   shared /boot/firmware/config.txt manager
 lib/rtc.sh                           shared RTC install/uninstall/verify
@@ -298,20 +310,56 @@ case "${1:-}" in
 esac
 ```
 
-Per-chip vars on the other curated children:
+Per-chip vars across all children:
 
 | File | RTC_CHIP | RTC_BUS | RTC_OVERLAY_NAME | II_DEPS |
 |---|---|---|---|---|
+| **Curated I²C** | | | | |
 | feature-rtc-ds3231.sh | ds3231 | i2c | ds3231 | i2c-tools |
 | feature-rtc-pcf8523.sh | pcf8523 | i2c | pcf8523 | i2c-tools |
 | feature-rtc-pcf2127.sh | pcf2127 | i2c | pcf2127 | i2c-tools |
 | feature-rtc-pcf8563.sh | pcf8563 | i2c | pcf8563 | i2c-tools |
 | feature-rtc-ds1307.sh | ds1307 | i2c | ds1307 | i2c-tools |
+| **Pi-5 built-in** | | | | |
 | feature-rtc-pi5-builtin.sh* | pcf85063a | pi5-builtin | (none) | (none) |
+| **Extended I²C** | | | | |
+| feature-rtc-pcf85063.sh | pcf85063 | i2c | pcf85063 | i2c-tools |
+| feature-rtc-abx80x.sh | abx80x | i2c | abx80x | i2c-tools |
+| feature-rtc-rv1805.sh | rv1805 | i2c | rv1805 | i2c-tools |
+| feature-rtc-rv3028.sh | rv3028 | i2c | rv3028 | i2c-tools |
+| feature-rtc-rv3032.sh | rv3032 | i2c | rv3032 | i2c-tools |
+| feature-rtc-mcp7940x.sh | mcp7940x | i2c | mcp7940x | i2c-tools |
+| feature-rtc-m41t62.sh | m41t62 | i2c | m41t62 | i2c-tools |
+| **Extended SPI** | | | | |
+| feature-rtc-pcf2123.sh | pcf2123 | spi | pcf2123 | spi-tools |
+| feature-rtc-max6902.sh | max6902 | spi | max6902 | spi-tools |
+| feature-rtc-ds3232-spi.sh | ds3232 | spi | ds3232 | spi-tools |
 
 *`II_TITLE="Pi 5 built-in (PCF85063A)"`; manifest declares
 `II_REQUIRES_INTERNAL_RTC="==true"` so the entry is hidden on
 non-Pi-5 hardware via Phase-0 menu filtering.
+
+### Radio ordering
+
+The whiptail radio fired by `pick_addons_optional_exclusive` sorts
+entries in this order:
+
+1. Curated I²C chips alphabetically (DS1307, DS3231, PCF8523, PCF2127,
+   PCF8563), with full descriptive titles like
+   "DS3231 — temp-compensated, most common".
+2. Pi-5-builtin entry (only on Pi 5).
+3. Extended I²C chips alphabetically, with terser titles like just
+   "PCF85063".
+4. Extended SPI chips at the bottom, prefix-tagged
+   "(SPI) PCF2123", "(SPI) MAX6902", "(SPI) DS3232".
+
+`II_DEFAULT_SELECTED="on"` is set ONLY on `feature-rtc-ds3231.sh`
+(the most common chip). On Pi 5, that's still the default —
+Pi-5-builtin shows up in the list but isn't preselected, so the user
+who wants the on-board RTC has to deliberately pick it. (If you'd
+rather Pi-5-builtin be the default on Pi 5, we can move
+`II_DEFAULT_SELECTED="on"` there and clear it on DS3231 in a
+follow-up — minor UX call.)
 
 The Pi-5-builtin child declares `II_REQUIRES_INTERNAL_RTC="==true"`
 in its manifest. Phase 0's matcher (consumed by `pick_addons_optional_exclusive`)
@@ -333,53 +381,32 @@ auto-installed, NOT toggleable — same behaviour as `zram` for
 `feature-compressed-swap`). Otherwise the package shows as a
 toggleable optional entry, off by default.
 
-II_DEPS declarations per chip-child:
+Because every chip is a first-class manifest (no install-time
+dispatch), `pick_packages` knows the actual chip the user picked
+and pulls in exactly the right diagnostic toolkit:
 
-| Child | II_DEPS |
-|---|---|
-| feature-rtc-ds3231.sh | `i2c-tools` |
-| feature-rtc-pcf8523.sh | `i2c-tools` |
-| feature-rtc-pcf2127.sh | `i2c-tools` |
-| feature-rtc-pcf8563.sh | `i2c-tools` |
-| feature-rtc-ds1307.sh | `i2c-tools` |
-| feature-rtc-pi5-builtin.sh | (none — internal bus not userspace-visible) |
-| feature-rtc-extended.sh | `i2c-tools spi-tools` (see note below) |
+| User picked | i2c-tools | spi-tools |
+|---|---|---|
+| Any I²C chip (curated or extended) | auto-required | optional toggle |
+| Pi-5-builtin | optional toggle | optional toggle |
+| Any SPI chip | optional toggle | auto-required |
+| No RTC selected | optional toggle | optional toggle |
 
-The extended-gateway dispatches the user's second-radio chip choice
-inside its install body, which runs AFTER `pick_packages`. So at
-pick-packages time we don't yet know whether the user will land on
-an I²C-extended chip or an SPI one. Declaring both deps is the
-simplest honest approach — the user explicitly opted into "More
-chips..." and accepts that both diagnostic toolkits are pre-loaded
-(~700 KiB combined). Saves a "wait, I need spi-tools" surprise after
-the second radio fires.
+Pi-5-builtin declares neither dep: the on-board PCF85063A is on the
+internal I²C bus which isn't exposed to userspace tooling like
+`i2cdetect`, so `i2c-tools` would be useless for it. The user can
+still opt into either toolkit on `pick_packages` if they want them
+for unrelated reasons.
 
-Net user-visible behaviour on `pick_packages`:
+### No install-time dispatch
 
-- **Any curated I²C-RTC chip selected** → `i2c-tools` in the
-  auto-required header; `spi-tools` in the optional toggle list
-  (off by default).
-- **Pi-5-builtin selected** → neither tool auto-required (internal
-  bus); both available as optional toggles.
-- **"More chips..." (extended-gateway) selected** → both `i2c-tools`
-  AND `spi-tools` in the auto-required header. Resolved regardless
-  of which extended chip the user lands on in the second radio.
-- **No RTC parent selected** → neither auto-required; both available
-  as optional toggles.
-
-### Extended-chip escape hatch
-
-`feature-rtc-extended.sh` lives in the curated radio as the last
-entry ("More chips..."). When picked, its install body fires a
-**second** whiptail radio listing the kernel-supported chips not in
-the curated set:
-
-- I²C: PCF85063, ABx80x, RV1805, RV3028, RV3032, MCP7940x, M41T62
-- SPI: PCF2123, MAX6902, DS3232 (in SPI mode)
-
-The user's pick is persisted to `state/rtc.state` (alongside the
-derived `RTC_BUS_TYPE` and `RTC_OVERLAY_NAME`), and the installer
-delegates to `rtc_install` exactly like a curated child.
+Earlier drafts of this spec had a `feature-rtc-extended.sh` gateway
+that fired a SECOND whiptail radio inside its install body. That
+broke the `pick_packages` dependency model — the second-radio chip
+choice happened AFTER `pick_packages` ran, so the framework couldn't
+know which of `i2c-tools` / `spi-tools` to auto-require. Replaced
+with the single-radio approach above: every chip is a manifest, and
+the menu fires exactly one radio.
 
 ## Shared helpers
 
@@ -517,29 +544,25 @@ bus/CS pin if later chips need explicit override).
 3. pick_addons_optional_exclusive: rtc has II_OPTIONAL_GROUP_MODE="exclusive"
    and non-empty children → fire whiptail radio
    ↓
-4. Radio renders curated chips first (DS3231 has II_DEFAULT_SELECTED="on"
-   so it's preselected globally), then "More chips...". Pi-5-builtin
-   entry is filtered out via Phase-0 II_REQUIRES_INTERNAL_RTC on
-   non-Pi-5 hardware; visible (and preselected if no other default
-   wins) on Pi 5.
+4. Radio renders curated I²C chips first (DS3231 has
+   II_DEFAULT_SELECTED="on" so it's preselected globally), then
+   Pi-5-builtin (if on Pi 5), then extended I²C chips, then SPI
+   chips. Pi-5-builtin is filtered out via Phase-0
+   II_REQUIRES_INTERNAL_RTC on non-Pi-5 hardware.
    ↓
-5a. User picks curated chip → state/selections.sh records
-    LAST_ADDONS_PICKED="rtc-<chip>"
+5. User picks one chip → state/selections.sh records
+   LAST_ADDONS_PICKED="rtc-<chip>".
    ↓
-5b. User picks "More chips..." → state/selections.sh records
-    LAST_ADDONS_PICKED="rtc-extended"
+6. pick_packages fires. The picked chip's II_DEPS surfaces the
+   correct toolkit (i2c-tools, spi-tools, or neither) in the
+   auto-required header; the other toolkit appears as an optional
+   toggle.
    ↓
-6. Edit Configuration screen fires for the SELECTED child's
-   II_EDITABLE_CONFIG (chip-specific, may be empty for Pi-5-builtin).
-   User confirms / adjusts knobs.
+7. Edit Configuration screen fires for the picked chip's
+   II_EDITABLE_CONFIG (chip-specific; may be empty for Pi-5-builtin).
    ↓
-7. Queue runs.
-   ↓
-8a. Curated child: rtc_install → write state, apply config.txt changes,
-    purge fake-hwclock, request_reboot, exit 255.
-   ↓
-8b. Extended child: second whiptail radio → persist pick to rtc.state
-    → delegate to rtc_install → same as 8a.
+8. Queue runs. rtc_install → write state, apply config.txt changes,
+   purge fake-hwclock, request_reboot, exit 255.
    ↓
 9. Reboot. Kernel loads new overlay; /dev/rtc0 appears.
    ↓
@@ -766,9 +789,11 @@ Tempdir-isolated. Stubs `/sys/class/rtc/`, `hwclock`, `timedatectl`,
     the foreign line.
 11. Idempotent rerun: two back-to-back `rtc_install` calls produce
     identical state file + config.txt.
-12. Extended-chip flow: stub the second whiptail radio → record
-    pick to `rtc.state` → delegate to `rtc_install` with picked
-    chip.
+12. Full chip coverage: parameterized test iterating every
+    chip-child (curated + extended I²C + SPI + Pi-5-builtin) asserts
+    the chip→overlay mapping, II_DEPS, and RTC_BUS values match the
+    spec table. Single test loop catches regressions if a new chip is
+    added without updating lib/rtc.sh.
 
 ### Existing test impact
 
