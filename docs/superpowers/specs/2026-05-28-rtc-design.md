@@ -65,6 +65,10 @@ packages/package-i2c-tools.sh        i2c-tools (apt) — auto-required when an
                                      I2C-RTC chip is selected; otherwise
                                      surfaced as an optional toggle on the
                                      pick_packages screen
+packages/package-spi-tools.sh        spi-tools (apt) — auto-required when the
+                                     extended-chip gateway is selected
+                                     (because it may land on an SPI chip);
+                                     otherwise an optional toggle
 config/rtc.config                    shared defaults
 lib/boot-config.sh                   shared /boot/firmware/config.txt manager
 lib/rtc.sh                           shared RTC install/uninstall/verify
@@ -314,31 +318,54 @@ in its manifest. Phase 0's matcher (consumed by `pick_addons_optional_exclusive`
 filters it out of the radio entirely on non-Pi-5 hardware. See
 "Pi-5 gating" section.
 
-### Package wiring: `i2c-tools`
+### Package wiring: `i2c-tools` and `spi-tools`
 
-`i2c-tools` (apt package) is a new packages-tier installer
-(`packages/package-i2c-tools.sh`, `II_CATEGORY="package"`). The
-five curated I²C chip-children each declare `II_DEPS="i2c-tools"`,
-which routes through the existing `_required_packages_from_features`
-logic in `scripts/options.sh` (lines ~272-301). The behaviour the
-user sees on the `pick_packages` step (step 6 of the menu flow):
+Two new packages-tier installers, both `II_CATEGORY="package"`:
 
-- **Selected an I²C-RTC chip** → `i2c-tools` appears in the
-  "required by features" header at the top of `pick_packages` —
-  auto-installed, NOT toggleable (consistent with how `zram` is
-  surfaced when feature-compressed-swap is selected).
-- **No I²C-RTC chip selected** → `i2c-tools` appears in the
-  toggleable optional-package checklist on the same screen, off by
-  default. User who wants the diagnostic tools (`i2cdetect`,
-  `i2cget`, `i2cset`) for unrelated reasons can opt in.
-- **Pi-5-builtin selected, no other I²C-RTC** → `i2c-tools` is NOT
-  auto-required (Pi 5's internal RTC isn't on a userspace-visible
-  I²C bus). Stays as an optional toggle on `pick_packages`.
-- **SPI extended-chip selected** → same as Pi-5-builtin: `i2c-tools`
-  is optional, not required.
+- `packages/package-i2c-tools.sh` — apt-installs `i2c-tools`.
+- `packages/package-spi-tools.sh` — apt-installs `spi-tools`.
 
-SPI tooling (`spi-tools` for SPI diagnostics) is intentionally NOT
-introduced now — see Open follow-ups.
+Routing uses the existing `_required_packages_from_features` logic in
+`scripts/options.sh` (lines ~272-301): a feature's `II_DEPS` field
+referencing a package-tier installer surfaces that package in the
+"required by features" header at the top of `pick_packages` (step 6,
+auto-installed, NOT toggleable — same behaviour as `zram` for
+`feature-compressed-swap`). Otherwise the package shows as a
+toggleable optional entry, off by default.
+
+II_DEPS declarations per chip-child:
+
+| Child | II_DEPS |
+|---|---|
+| feature-rtc-ds3231.sh | `i2c-tools` |
+| feature-rtc-pcf8523.sh | `i2c-tools` |
+| feature-rtc-pcf2127.sh | `i2c-tools` |
+| feature-rtc-pcf8563.sh | `i2c-tools` |
+| feature-rtc-ds1307.sh | `i2c-tools` |
+| feature-rtc-pi5-builtin.sh | (none — internal bus not userspace-visible) |
+| feature-rtc-extended.sh | `i2c-tools spi-tools` (see note below) |
+
+The extended-gateway dispatches the user's second-radio chip choice
+inside its install body, which runs AFTER `pick_packages`. So at
+pick-packages time we don't yet know whether the user will land on
+an I²C-extended chip or an SPI one. Declaring both deps is the
+simplest honest approach — the user explicitly opted into "More
+chips..." and accepts that both diagnostic toolkits are pre-loaded
+(~700 KiB combined). Saves a "wait, I need spi-tools" surprise after
+the second radio fires.
+
+Net user-visible behaviour on `pick_packages`:
+
+- **Any curated I²C-RTC chip selected** → `i2c-tools` in the
+  auto-required header; `spi-tools` in the optional toggle list
+  (off by default).
+- **Pi-5-builtin selected** → neither tool auto-required (internal
+  bus); both available as optional toggles.
+- **"More chips..." (extended-gateway) selected** → both `i2c-tools`
+  AND `spi-tools` in the auto-required header. Resolved regardless
+  of which extended chip the user lands on in the second radio.
+- **No RTC parent selected** → neither auto-required; both available
+  as optional toggles.
 
 ### Extended-chip escape hatch
 
@@ -788,12 +815,6 @@ with the same docstring as in `config/rtc.config`.
 
 ## Open follow-ups (deferred, not blocking)
 
-- **spi-tools companion package.** If/when the SPI extended-chip path
-  sees real-world use, mirror the `i2c-tools` wiring: add
-  `packages/package-spi-tools.sh` and have the SPI chip-children
-  declare `II_DEPS="spi-tools"`. Out of scope now because the SPI
-  chips are extended (less common) and `spi-tools` is rarely needed
-  for steady-state RTC use — just for initial probing.
 - **DS3231 temperature exposure.** DS3231 has an on-die temperature
   sensor accessible via `/sys/bus/i2c/devices/1-0068/temp_input`.
   Surface as an optional companion (`feature-rtc-ds3231-temp`?). Out
