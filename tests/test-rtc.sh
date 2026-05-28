@@ -148,22 +148,17 @@ echo "=== Test 5: post-reboot resume + NTP synced → verified ==="
 _reset
 # Stage first.
 rtc_install ds3231 i2c >/dev/null 2>&1
-# Simulate post-reboot env: sysfs present.
+# Simulate post-reboot env: sysfs present via RTC_SYS_RTC0_OVERRIDE.
 mkdir -p "$TMPD/sys/class/rtc/rtc0"
 echo "rtc-ds3231" > "$TMPD/sys/class/rtc/rtc0/name"
-# Override the sysfs path the function reads. lib/rtc.sh uses a hard
-# path; we override by symlinking from a tempdir into /sys via a
-# wrapper — simpler: just temporarily redirect via a function shim.
-# Easiest: stub by overriding the test using an explicit env-var hook.
-# Since lib/rtc.sh reads /sys/class/rtc/rtc0 directly, we set
-# RTC_SKIP_HWCLOCK=true to bypass hardware probe + hwclock call —
-# the state-advancement logic still fires.
 touch "$TMPD/ntp-synced"
-RTC_SKIP_HWCLOCK=true rtc_install ds3231 i2c >/dev/null 2>&1
+RTC_SYS_RTC0_OVERRIDE="$TMPD/sys/class/rtc/rtc0" rtc_install ds3231 i2c >/dev/null 2>&1
 rc=$?
 chkrc "post-reboot install returns 0" $rc 0
 source "$TMPD/state/rtc.state"
 chkeq "state advanced to verified" "$RTC_PHASE" "verified"
+grep -qE "^hwclock --systohc" "$TMPD/calls.log"
+chkrc "hwclock --systohc was invoked" $? 0
 
 # ---- Test 6: Post-reboot + NTP NOT synced → state stays 'staged' ----
 echo "=== Test 6: post-reboot NTP not synced ==="
@@ -186,6 +181,37 @@ chmod +x "$TMPD/bin/timedatectl" "$TMPD/bin/sleep"
 RTC_SKIP_HWCLOCK=true rtc_install ds3231 i2c >/dev/null 2>&1
 source "$TMPD/state/rtc.state"
 chkeq "state stays staged" "$RTC_PHASE" "staged"
+# Hwclock-stub lines start with "hwclock " (literal stub output);
+# log lines start with INFO/WARN/etc. Anchor to avoid matching the
+# WARN message that quotes "hwclock --systohc".
+grep -qE "^hwclock --systohc" "$TMPD/calls.log" \
+  && fail "hwclock --systohc was called despite NTP unsynced" \
+  || ok "hwclock --systohc correctly skipped"
+
+# ---- Test 6.5: chip-name mismatch post-reboot (spec test 6) ----
+echo "=== Test 6.5: chip-name mismatch post-reboot ==="
+_reset
+# Stage first.
+rtc_install ds3231 i2c >/dev/null 2>&1
+# Set up the override sysfs dir with the WRONG chip name.
+mkdir -p "$TMPD/fake-sys/rtc0"
+echo "rtc-ds1307" > "$TMPD/fake-sys/rtc0/name"
+touch "$TMPD/ntp-synced"
+# Sleep no-op for fast test.
+cat > "$TMPD/bin/sleep" <<'EOF'
+#!/bin/bash
+exit 0
+EOF
+chmod +x "$TMPD/bin/sleep"
+# Run post-reboot with override pointing at the mismatched stub.
+RTC_SYS_RTC0_OVERRIDE="$TMPD/fake-sys/rtc0" rtc_install ds3231 i2c >/dev/null 2>&1
+rc=$?
+[[ $rc -ne 0 ]]
+chkrc "mismatch returns non-zero" $? 0
+source "$TMPD/state/rtc.state"
+chkeq "state stays staged on mismatch" "$RTC_PHASE" "staged"
+grep -q "chip name mismatch" "$TMPD/calls.log"
+chkrc "log_fail was emitted" $? 0
 
 # ---- Test 7: Re-run on verified state → no writes, no reboot ----
 echo "=== Test 7: re-run on verified ==="
@@ -243,6 +269,30 @@ RTC_SKIP_HWCLOCK=true rtc_uninstall ds3231 i2c >/dev/null 2>&1
 grep -q "apt-get .* install fake-hwclock" "$TMPD/calls.log" \
   && fail "fake-hwclock reinstalled despite purged=no" \
   || ok "no fake-hwclock reinstall"
+
+# ---- Test 10.5: foreign-overlay comment + uncomment round-trip ----
+echo "=== Test 10.5: foreign-overlay round-trip ==="
+_reset
+# Pre-seed config.txt with an existing dtoverlay we DON'T own.
+cat > "$BOOT_CONFIG_PATH_OVERRIDE" <<EOF
+arm_64bit=1
+dtoverlay=i2c-rtc,ds1307
+gpu_mem=16
+EOF
+RTC_NONINTERACTIVE=true rtc_install pcf8523 i2c >/dev/null 2>&1
+source "$TMPD/state/rtc.state"
+chkeq "state records the commented foreign line" "$RTC_COMMENTED_FOREIGN_OVERLAY" "dtoverlay=i2c-rtc,ds1307"
+grep -q "^#dtoverlay=i2c-rtc,ds1307$" "$BOOT_CONFIG_PATH_OVERRIDE"
+chkrc "foreign overlay is commented" $? 0
+grep -q "^dtoverlay=i2c-rtc,pcf8523$" "$BOOT_CONFIG_PATH_OVERRIDE"
+chkrc "our overlay is added inside fenced block" $? 0
+# Now uninstall and verify the foreign overlay is restored.
+RTC_SKIP_HWCLOCK=true RTC_NONINTERACTIVE=true rtc_uninstall pcf8523 i2c >/dev/null 2>&1
+grep -q "^dtoverlay=i2c-rtc,ds1307$" "$BOOT_CONFIG_PATH_OVERRIDE"
+chkrc "foreign overlay restored at uninstall" $? 0
+grep -q "^#dtoverlay=i2c-rtc,ds1307$" "$BOOT_CONFIG_PATH_OVERRIDE" \
+  && fail "commented form lingered" \
+  || ok "commented form removed"
 
 # ---- Test 11: Idempotent rerun (config.txt byte-identical) ----
 echo "=== Test 11: idempotent rerun ==="
