@@ -155,4 +155,23 @@ boot_config_overlay_has rtc; chkrc "fresh file: no rtc block" $? 1
 boot_config_overlay_add rtc "dtoverlay=i2c-rtc,ds3231"
 boot_config_overlay_has rtc; chkrc "after add: rtc block present" $? 0
 
+# ---- Test 14: fence detection is exact-line, not substring ----
+echo "=== Test 14: fence detection is anchored (regression test) ==="
+_reset_state
+# Pre-seed a comment that contains the fence substring but isn't an actual fence.
+cat > "$BOOT_CONFIG_PATH_OVERRIDE" <<EOF
+# Documentation note: the fence format is # === installicious:rtc begin === / end ===
+arm_64bit=1
+EOF
+# overlay_has must NOT report 'rtc' as present.
+boot_config_overlay_has rtc
+chkrc "overlay_has reports absent despite substring match in comment" $? 1
+# overlay_add must insert the fence cleanly even with the substring-bearing comment present.
+boot_config_overlay_add rtc "dtoverlay=i2c-rtc,ds3231"
+n=$(grep -c "^# === installicious:rtc begin ===$" "$BOOT_CONFIG_PATH_OVERRIDE")
+chkeq "exactly one real begin-fence line after add" "$n" "1"
+# The comment must still be present (unchanged).
+grep -q "^# Documentation note:" "$BOOT_CONFIG_PATH_OVERRIDE"
+chkrc "documentation comment preserved" $? 0
+
 echo "=== Done ==="

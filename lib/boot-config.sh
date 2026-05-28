@@ -12,6 +12,14 @@
 #                                          /etc/installicious/backup/boot-config/<ts>/
 #                                          (one snapshot per installicious run)
 #   boot_config_dtparam_set <k> <v>        idempotent dtparam=k=v
+#                                          Contract: <key> must match
+#                                          [a-zA-Z_][a-zA-Z0-9_]* (the
+#                                          dtparam keys Pi firmware
+#                                          recognizes). Keys containing
+#                                          regex metacharacters are not
+#                                          supported — the match patterns
+#                                          interpolate <key> raw into a
+#                                          regex.
 #   boot_config_dtparam_unset <k>          comment out (preserves for rollback)
 #   boot_config_overlay_add <owner> <line> add fenced block:
 #                                            # === installicious:<owner> begin ===
@@ -163,7 +171,9 @@ boot_config_overlay_add() {
   end="# === installicious:${owner} end ==="
 
   # Already-present block? Compare its content; rewrite if differing.
-  if grep -qF "$begin" <<< "$content"; then
+  # Anchored regex (not substring) so a documentation comment that happens
+  # to quote the fence text doesn't false-positive.
+  if grep -qE "^# === installicious:${owner} begin ===$" <<< "$content"; then
     existing=$(awk -v b="$begin" -v e="$end" '
       $0 == b { inblk = 1; next }
       $0 == e { inblk = 0; next }
@@ -196,7 +206,8 @@ boot_config_overlay_remove() {
   content=$(_boot_config_read "$target")
   begin="# === installicious:${owner} begin ==="
   end="# === installicious:${owner} end ==="
-  grep -qF "$begin" <<< "$content" || return 0
+  # Anchored regex (not substring) — see boot_config_overlay_add.
+  grep -qE "^# === installicious:${owner} begin ===$" <<< "$content" || return 0
   new=$(awk -v b="$begin" -v e="$end" '
     $0 == b { skip=1; next }
     $0 == e { skip=0; next }
@@ -212,5 +223,6 @@ boot_config_overlay_has() {
   local target content
   target=$(boot_config_path)
   content=$(_boot_config_read "$target")
-  grep -qF "# === installicious:${owner} begin ===" <<< "$content"
+  # Anchored regex (not substring) — see boot_config_overlay_add.
+  grep -qE "^# === installicious:${owner} begin ===$" <<< "$content"
 }
