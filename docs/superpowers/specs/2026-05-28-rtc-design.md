@@ -54,26 +54,27 @@ New files:
 
 ```
 features/feature-rtc.sh              parent (exclusive-group host); body is no-op
-# Curated I²C chip-children (sorted first in the radio):
-features/feature-rtc-ds3231.sh       DS3231 — temp-compensated, most common
-features/feature-rtc-pcf8523.sh      PCF8523 — Adafruit PiRTC
-features/feature-rtc-pcf2127.sh      PCF2127 — industrial, pin-compatible upgrade
-features/feature-rtc-pcf8563.sh      PCF8563 — cheap Chinese modules
-features/feature-rtc-ds1307.sh       DS1307 — basic, legacy
-# Pi 5 built-in (visible only on Pi 5 via II_REQUIRES_INTERNAL_RTC):
-features/feature-rtc-pi5-builtin.sh  Pi 5 on-board PCF85063A
-# Extended I²C chip-children (sorted below curated in the radio):
-features/feature-rtc-pcf85063.sh     PCF85063 — same family as Pi 5's chip
-features/feature-rtc-abx80x.sh       ABx80x — extended autonomous
-features/feature-rtc-rv1805.sh       RV1805 — low-power industrial
-features/feature-rtc-rv3028.sh       RV3028 — industrial
-features/feature-rtc-rv3032.sh       RV3032 — high-accuracy
-features/feature-rtc-mcp7940x.sh     MCP7940x — common in industrial
-features/feature-rtc-m41t62.sh       M41T62 — ST
-# Extended SPI chip-children:
-features/feature-rtc-pcf2123.sh      PCF2123 (SPI)
-features/feature-rtc-max6902.sh      MAX6902 (SPI)
-features/feature-rtc-ds3232-spi.sh   DS3232 in SPI mode
+# Files listed in radio-display order (popularity-descending, II_RADIO_ORDER 1-16).
+# Curated I²C — most-common-first:
+features/feature-rtc-ds3231.sh       (1) DS3231 — temp-compensated, most common
+features/feature-rtc-pcf8523.sh      (2) PCF8523 — Adafruit PiRTC
+features/feature-rtc-ds1307.sh       (3) DS1307 — legacy, common in older modules
+features/feature-rtc-pcf8563.sh      (4) PCF8563 — cheap Chinese modules
+features/feature-rtc-pcf2127.sh      (5) PCF2127 — industrial, pin-compat upgrade
+# Pi 5 built-in (II_REQUIRES_INTERNAL_RTC; visible only on Pi 5):
+features/feature-rtc-pi5-builtin.sh  (6) Pi 5 on-board PCF85063A
+# Extended I²C — popularity-descending:
+features/feature-rtc-pcf85063.sh     (7) PCF85063 — same family as Pi 5's chip
+features/feature-rtc-mcp7940x.sh     (8) MCP7940x — Microchip industrial
+features/feature-rtc-rv3028.sh       (9) RV3028 — Micro Crystal industrial
+features/feature-rtc-rv3032.sh       (10) RV3032 — Micro Crystal high-accuracy
+features/feature-rtc-abx80x.sh       (11) ABx80x — Abracon
+features/feature-rtc-rv1805.sh       (12) RV1805 — low-power
+features/feature-rtc-m41t62.sh       (13) M41T62 — ST Micro
+# Extended SPI — popularity-descending, "(SPI)" title prefix:
+features/feature-rtc-pcf2123.sh      (14) (SPI) PCF2123
+features/feature-rtc-max6902.sh      (15) (SPI) MAX6902
+features/feature-rtc-ds3232-spi.sh   (16) (SPI) DS3232 (SPI mode)
 packages/package-i2c-tools.sh        i2c-tools (apt) — auto-required when an
                                      I²C-RTC chip is selected; otherwise
                                      surfaced as an optional toggle on the
@@ -217,6 +218,21 @@ write time. Cached so the matcher doesn't re-shell-out per
 candidate-feature during a menu render. The detector helper itself
 stays the canonical source for any non-menu code path.
 
+### `II_RADIO_ORDER` — sibling addition
+
+Phase 0 also adds one tiny sorting-hint manifest field consumed by
+the same `pick_addons_optional_exclusive` code path:
+
+```bash
+II_RADIO_ORDER=""    # integer; lower = higher in the radio. Empty = sort last.
+```
+
+Used by the RTC feature to surface popular chips at the top of the
+radio (see "Radio ordering" under the architecture section). ~5
+lines in `lib/menu.sh` to sort exclusive-group children by this
+field before rendering the whiptail entries. Test coverage in the
+same `test-manifest-requires.sh` file (or a small companion).
+
 ### Testing
 
 `tests/test-manifest-requires.sh` (new, ~150 lines):
@@ -312,28 +328,28 @@ esac
 
 Per-chip vars across all children:
 
-| File | RTC_CHIP | RTC_BUS | RTC_OVERLAY_NAME | II_DEPS |
-|---|---|---|---|---|
-| **Curated I²C** | | | | |
-| feature-rtc-ds3231.sh | ds3231 | i2c | ds3231 | i2c-tools |
-| feature-rtc-pcf8523.sh | pcf8523 | i2c | pcf8523 | i2c-tools |
-| feature-rtc-pcf2127.sh | pcf2127 | i2c | pcf2127 | i2c-tools |
-| feature-rtc-pcf8563.sh | pcf8563 | i2c | pcf8563 | i2c-tools |
-| feature-rtc-ds1307.sh | ds1307 | i2c | ds1307 | i2c-tools |
-| **Pi-5 built-in** | | | | |
-| feature-rtc-pi5-builtin.sh* | pcf85063a | pi5-builtin | (none) | (none) |
-| **Extended I²C** | | | | |
-| feature-rtc-pcf85063.sh | pcf85063 | i2c | pcf85063 | i2c-tools |
-| feature-rtc-abx80x.sh | abx80x | i2c | abx80x | i2c-tools |
-| feature-rtc-rv1805.sh | rv1805 | i2c | rv1805 | i2c-tools |
-| feature-rtc-rv3028.sh | rv3028 | i2c | rv3028 | i2c-tools |
-| feature-rtc-rv3032.sh | rv3032 | i2c | rv3032 | i2c-tools |
-| feature-rtc-mcp7940x.sh | mcp7940x | i2c | mcp7940x | i2c-tools |
-| feature-rtc-m41t62.sh | m41t62 | i2c | m41t62 | i2c-tools |
-| **Extended SPI** | | | | |
-| feature-rtc-pcf2123.sh | pcf2123 | spi | pcf2123 | spi-tools |
-| feature-rtc-max6902.sh | max6902 | spi | max6902 | spi-tools |
-| feature-rtc-ds3232-spi.sh | ds3232 | spi | ds3232 | spi-tools |
+| Order | File | RTC_CHIP | RTC_BUS | RTC_OVERLAY_NAME | II_DEPS |
+|---|---|---|---|---|---|
+| **Curated I²C** | | | | | |
+| 1 | feature-rtc-ds3231.sh | ds3231 | i2c | ds3231 | i2c-tools |
+| 2 | feature-rtc-pcf8523.sh | pcf8523 | i2c | pcf8523 | i2c-tools |
+| 3 | feature-rtc-ds1307.sh | ds1307 | i2c | ds1307 | i2c-tools |
+| 4 | feature-rtc-pcf8563.sh | pcf8563 | i2c | pcf8563 | i2c-tools |
+| 5 | feature-rtc-pcf2127.sh | pcf2127 | i2c | pcf2127 | i2c-tools |
+| **Pi-5 built-in** | | | | | |
+| 6 | feature-rtc-pi5-builtin.sh* | pcf85063a | pi5-builtin | (none) | (none) |
+| **Extended I²C** | | | | | |
+| 7 | feature-rtc-pcf85063.sh | pcf85063 | i2c | pcf85063 | i2c-tools |
+| 8 | feature-rtc-mcp7940x.sh | mcp7940x | i2c | mcp7940x | i2c-tools |
+| 9 | feature-rtc-rv3028.sh | rv3028 | i2c | rv3028 | i2c-tools |
+| 10 | feature-rtc-rv3032.sh | rv3032 | i2c | rv3032 | i2c-tools |
+| 11 | feature-rtc-abx80x.sh | abx80x | i2c | abx80x | i2c-tools |
+| 12 | feature-rtc-rv1805.sh | rv1805 | i2c | rv1805 | i2c-tools |
+| 13 | feature-rtc-m41t62.sh | m41t62 | i2c | m41t62 | i2c-tools |
+| **Extended SPI** | | | | | |
+| 14 | feature-rtc-pcf2123.sh | pcf2123 | spi | pcf2123 | spi-tools |
+| 15 | feature-rtc-max6902.sh | max6902 | spi | max6902 | spi-tools |
+| 16 | feature-rtc-ds3232-spi.sh | ds3232 | spi | ds3232 | spi-tools |
 
 *`II_TITLE="Pi 5 built-in (PCF85063A)"`; manifest declares
 `II_REQUIRES_INTERNAL_RTC="==true"` so the entry is hidden on
@@ -341,17 +357,49 @@ non-Pi-5 hardware via Phase-0 menu filtering.
 
 ### Radio ordering
 
-The whiptail radio fired by `pick_addons_optional_exclusive` sorts
-entries in this order:
+The whiptail radio fired by `pick_addons_optional_exclusive` lists
+entries in **popularity order** within each group — most-common at
+the top, descending. Alphabetical is rejected because it would bury
+DS3231 (the most common chip by a wide margin) below DS1307 and
+hide it under "D"s the user may scroll past.
 
-1. Curated I²C chips alphabetically (DS1307, DS3231, PCF8523, PCF2127,
-   PCF8563), with full descriptive titles like
-   "DS3231 — temp-compensated, most common".
-2. Pi-5-builtin entry (only on Pi 5).
-3. Extended I²C chips alphabetically, with terser titles like just
-   "PCF85063".
-4. Extended SPI chips at the bottom, prefix-tagged
-   "(SPI) PCF2123", "(SPI) MAX6902", "(SPI) DS3232".
+Order:
+
+| Position | Chip | Notes |
+|---|---|---|
+| 1 | DS3231 | Most common; temp-compensated; HiLetgo / AT24C32 combo boards |
+| 2 | PCF8523 | Adafruit PiRTC; popular in Adafruit ecosystem |
+| 3 | DS1307 | Legacy, common in older tutorials and cheap modules |
+| 4 | PCF8563 | Cheap Chinese RTC modules |
+| 5 | PCF2127 | Industrial; pin-compatible upgrade for DS3231 |
+| 6 | Pi-5 built-in (PCF85063A) | Only shown on Pi 5 (II_REQUIRES_INTERNAL_RTC) |
+| 7 | PCF85063 | Same family as Pi 5's chip — popular pick for "the Pi 5 RTC, but on an older Pi" |
+| 8 | MCP7940x | Microchip industrial |
+| 9 | RV3028 | Micro Crystal industrial |
+| 10 | RV3032 | Micro Crystal high-accuracy |
+| 11 | ABx80x | Abracon |
+| 12 | RV1805 | Low-power |
+| 13 | M41T62 | ST Micro |
+| 14 | (SPI) PCF2123 | SPI section; tag prefix in the title |
+| 15 | (SPI) MAX6902 | |
+| 16 | (SPI) DS3232 (SPI mode) | |
+
+The "(SPI)" prefix on entries 14–16 visually separates the SPI
+section from the I²C list without needing a non-pickable whiptail
+separator row (whiptail's radiolist doesn't support those).
+
+Ordering encoded via an ordinal field on each chip-child manifest:
+
+```bash
+# Hint to the menu radio sorter — lower = higher in the list.
+II_RADIO_ORDER="1"        # DS3231 (top of curated)
+```
+
+…through `II_RADIO_ORDER="16"` for DS3232-SPI. The menu's existing
+manifest reader picks this up as a regular field; the radio sorter
+sorts by it before rendering. Implementing this needs a tiny tweak
+to the menu's child-list assembly (~5 lines) and is included in the
+Phase 0 work since it touches the same files.
 
 `II_DEFAULT_SELECTED="on"` is set ONLY on `feature-rtc-ds3231.sh`
 (the most common chip). On Pi 5, that's still the default —
