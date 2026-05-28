@@ -262,9 +262,26 @@ menu_pick_one_optional() {
   fi
   [[ -z $selected_id ]] && selected_id="$1"
 
+  # Sort IDs by II_RADIO_ORDER (smaller = higher in the list). Missing /
+  # empty order = 999 (sorts last). Stable for equal orders: relies on
+  # the input order as a tie-breaker via sort -s.
+  local -a sortable=() sorted_ids=()
+  local _id _path _order
+  for _id in "$@"; do
+    _path=$(manifest_path_for "$_id" 2>/dev/null)
+    _order=""
+    [[ -n $_path ]] && _order=$(manifest_get_field "$_path" "II_RADIO_ORDER")
+    [[ -z $_order ]] && _order=999
+    sortable+=("${_order}|${_id}")
+  done
+  # Numeric sort on the order prefix, stable.
+  while IFS= read -r line; do
+    sorted_ids+=("${line#*|}")
+  done < <(printf '%s\n' "${sortable[@]}" | sort -t'|' -k1n -s)
+
   local -a items=()
   local feature_title state
-  for id in "$@"; do
+  for id in "${sorted_ids[@]}"; do
     path=$(manifest_path_for "$id" 2>/dev/null)
     if [[ -n $path ]]; then
       feature_title=$(manifest_get_field "$path" "II_TITLE")

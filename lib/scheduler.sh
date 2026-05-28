@@ -175,6 +175,19 @@ scheduler_run_queue() {
       continue
     fi
     declare -F state_save_cursor >/dev/null && state_save_cursor "$i"
+    # Phase 0 pre-flight: hardware-requirements check. If the feature's
+    # II_REQUIRES_* doesn't match this Pi, skip it and advance the cursor.
+    # This is a belt-and-suspenders safety net — the menu filter (see
+    # scripts/options.sh::_filter_by_requires) drops these features
+    # before they're queued, so this should only fire in odd cases:
+    # selections persisted on a different Pi (SD card moved), manual
+    # queue.sh edits, or override-file toggles bypassing the menu.
+    if declare -F manifest_requires_match >/dev/null \
+       && ! manifest_requires_match "$path"; then
+      log_warn "Skipping '$id': II_REQUIRES does not match current hardware."
+      declare -F state_save_cursor >/dev/null && state_save_cursor "$((i+1))"
+      continue
+    fi
     log_info "Running installer: $id."
     bash "$path" --install
     rc=$?

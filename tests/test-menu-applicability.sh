@@ -234,5 +234,66 @@ for key in LOCALE_LANG LOCALE_TIMEZONE LOCALE_KEYBOARD_LAYOUT LOCALE_KEYBOARD_MO
   fi
 done
 
+
+# ---- Phase 0: pick_* candidates filtered by II_REQUIRES ----
+echo "=== Test: _filter_by_requires drops mismatched features ==="
+MA_TMPD=$(mktemp -d)
+mkdir -p "$MA_TMPD/features"
+cat > "$MA_TMPD/features/feature-pi5only.sh" <<'EOF'
+#!/bin/bash
+# === II_MANIFEST_BEGIN ===
+II_ID="pi5only"
+II_TITLE="Pi5 only"
+II_CATEGORY="feature"
+II_VERSION="1"
+II_REQUIRES_PI_MODEL=">=5"
+# === II_MANIFEST_END ===
+EOF
+cat > "$MA_TMPD/features/feature-any.sh" <<'EOF'
+#!/bin/bash
+# === II_MANIFEST_BEGIN ===
+II_ID="any"
+II_TITLE="Any"
+II_CATEGORY="feature"
+II_VERSION="1"
+# === II_MANIFEST_END ===
+EOF
+PATH_FEATURES="$MA_TMPD/features" PATH_PACKAGES="$MA_TMPD/features" \
+  manifest_registry_reload
+PATH_FEATURES="$MA_TMPD/features" PATH_PACKAGES="$MA_TMPD/features" \
+  _manifest_registry_load
+
+# Define _filter_by_requires here rather than sourcing scripts/options.sh:
+# options.sh runs a state machine at file scope and would exit before
+# we got to test the helper. The function body is small and mirrors
+# scripts/options.sh::_filter_by_requires verbatim — keep them in sync.
+_filter_by_requires() {
+  local id path
+  for id in "$@"; do
+    [[ -z $id ]] && continue
+    path=$(manifest_path_for "$id" 2>/dev/null)
+    if [[ -z $path ]]; then
+      echo "$id"
+      continue
+    fi
+    if manifest_requires_match "$path"; then
+      echo "$id"
+    fi
+  done
+}
+
+# Force a fresh registry load now that the tempdir features exist.
+export PATH_FEATURES="$MA_TMPD/features" PATH_PACKAGES="$MA_TMPD/features"
+manifest_registry_reload
+_manifest_registry_load
+
+II_MODEL_NUM=3 result=$(_filter_by_requires pi5only any)
+chkeq "Pi 3 keeps only 'any'" "$(echo $result)" "any"
+
+II_MODEL_NUM=5 result=$(_filter_by_requires pi5only any)
+chkeq "Pi 5 keeps both" "$(echo $result)" "pi5only any"
+
+rm -rf "$MA_TMPD"
+
 echo
 echo "=== Done ==="

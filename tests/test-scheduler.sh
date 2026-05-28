@@ -224,5 +224,54 @@ mk_installer weewx-setup-fake "database-fake"
 got=$(scheduler_resolve_deps weewx-setup-fake | sort | tr "\n" ",")
 chkeq "weewx-setup-fake -> database-fake,weewx-setup-fake" "$got" "database-fake,weewx-setup-fake,"
 
+
+# ---- Phase 0 pre-flight: hardware-requirements skip ----
+echo "=== Test: scheduler skips features whose II_REQUIRES fails ==="
+SCHED_TMPD=$(mktemp -d)
+mkdir -p "$SCHED_TMPD/features"
+# A no-op feature that should always install.
+cat > "$SCHED_TMPD/features/feature-passes.sh" <<'EOF'
+#!/bin/bash
+# === II_MANIFEST_BEGIN ===
+II_ID="passes"
+II_TITLE="Passes"
+II_CATEGORY="feature"
+II_VERSION="1"
+# === II_MANIFEST_END ===
+echo "PASSES INSTALLED"
+exit 0
+EOF
+# A feature that requires Pi 99 (impossible on real hardware).
+cat > "$SCHED_TMPD/features/feature-impossible.sh" <<'EOF'
+#!/bin/bash
+# === II_MANIFEST_BEGIN ===
+II_ID="impossible"
+II_TITLE="Impossible"
+II_CATEGORY="feature"
+II_VERSION="1"
+II_REQUIRES_PI_MODEL="==99"
+# === II_MANIFEST_END ===
+echo "IMPOSSIBLE INSTALLED — BAD"
+exit 0
+EOF
+chmod +x "$SCHED_TMPD/features/"*.sh
+
+PATH_FEATURES="$SCHED_TMPD/features" PATH_PACKAGES="$SCHED_TMPD/features" \
+  manifest_registry_reload
+PATH_FEATURES="$SCHED_TMPD/features" PATH_PACKAGES="$SCHED_TMPD/features" \
+  _manifest_registry_load
+
+II_MODEL_NUM=5 PATH_FEATURES="$SCHED_TMPD/features" \
+  PATH_PACKAGES="$SCHED_TMPD/features" \
+  scheduler_run_queue passes impossible > "$SCHED_TMPD/out.log" 2>&1
+rc=$?
+chkrc "scheduler completes despite impossible feature" $rc 0
+grep -q "PASSES INSTALLED" "$SCHED_TMPD/out.log"
+chkrc "passes was actually invoked" $? 0
+! grep -q "IMPOSSIBLE INSTALLED" "$SCHED_TMPD/out.log"
+chkrc "impossible was NOT invoked" $? 0
+
+rm -rf "$SCHED_TMPD"
+
 echo
 echo "=== Done ==="

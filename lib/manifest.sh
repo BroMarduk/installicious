@@ -472,3 +472,136 @@ manifest_filter_by_category() {
     fi
   done < <(manifest_list_files "$@")
 }
+
+# ---------------------------------------------------------------------------
+# Hardware-requirement matcher (II_REQUIRES_*)
+# ---------------------------------------------------------------------------
+#
+# Declarative hardware gating for features. A feature may declare any of:
+#
+#   II_REQUIRES_PI_MODEL=""        # ">=5" | "==4" | "<3" | bare "5" (== implied)
+#   II_REQUIRES_RAM_MB=""          # ">=2048"
+#   II_REQUIRES_OS_BITS=""         # "==64" or "64"
+#   II_REQUIRES_LITE=""            # "==true" | "==false" | "true" | "false"
+#   II_REQUIRES_PIZERO=""          # "==true" | "==false"
+#   II_REQUIRES_INTERNAL_RTC=""    # "==true" | "==false"
+#
+# Empty / unset = no requirement on that dimension. All set dimensions must
+# pass (AND semantics) for the matcher to return rc=0.
+#
+# Hardware facts are read from $PATH_STATUS/os.status (populated by
+# installicious.sh) — II_MODEL_NUM, II_MEMORY, II_OS_BITS, II_IS_LITE,
+# II_IS_PIZERO, II_HAS_INTERNAL_RTC. Callers are responsible for sourcing
+# os.status (or having II_* in their env) before invoking the matcher.
+#
+# Used by:
+#   - scripts/options.sh's pick_* stages: filter candidates from the menu.
+#   - lib/scheduler.sh's pre-flight: belt-and-suspenders fail-fast before
+#     do_install, in case selections were imaged on different hardware.
+
+# _manifest_requires_compare <op> <actual_num> <expected_num>
+# Numeric comparison for PI_MODEL / RAM_MB / OS_BITS dimensions. Returns
+# rc=0 if (actual <op> expected) is true, rc=1 otherwise. <op> is one of
+# >= <= == != > <. Empty <op> implies ==.
+_manifest_requires_compare() {
+  local op="${1:-==}" actual="$2" expected="$3"
+  case "$op" in
+    "==") [[ $actual -eq $expected ]] ;;
+    "!=") [[ $actual -ne $expected ]] ;;
+    ">=") [[ $actual -ge $expected ]] ;;
+    "<=") [[ $actual -le $expected ]] ;;
+    ">")  [[ $actual -gt $expected ]] ;;
+    "<")  [[ $actual -lt $expected ]] ;;
+    *)    return 2 ;;   # caller error
+  esac
+}
+
+# _manifest_requires_split <expr> <out_op_var> <out_value_var>
+# Parses "<op><value>" into op + value. Bare value (no operator) yields
+# op="==". Whitespace around either piece is stripped.
+_manifest_requires_split() {
+  local _expr="$1" _op_out="$2" _val_out="$3"
+  # Strip surrounding whitespace.
+  _expr="${_expr#"${_expr%%[![:space:]]*}"}"
+  _expr="${_expr%"${_expr##*[![:space:]]}"}"
+  local _op="" _val="$_expr"
+  case "$_expr" in
+    ">="*) _op=">="; _val="${_expr#>=}" ;;
+    "<="*) _op="<="; _val="${_expr#<=}" ;;
+    "=="*) _op="=="; _val="${_expr#==}" ;;
+    "!="*) _op="!="; _val="${_expr#!=}" ;;
+    ">"*)  _op=">";  _val="${_expr#>}"  ;;
+    "<"*)  _op="<";  _val="${_expr#<}"  ;;
+    *)     _op="==" ;;
+  esac
+  _val="${_val#"${_val%%[![:space:]]*}"}"
+  printf -v "$_op_out" '%s' "$_op"
+  printf -v "$_val_out" '%s' "$_val"
+}
+
+# manifest_requires_match <file>
+# Returns rc=0 iff every II_REQUIRES_* in the file's manifest is
+# satisfied by current hardware (sourced from $PATH_STATUS/os.status).
+# On mismatch, emits one log_info line per failing dimension naming the
+# expected vs. actual value. Side-effect-free apart from the log lines.
+manifest_requires_match() {
+  local file="$1"
+  [[ -f $file ]] || return 1
+
+  local block
+  _manifest_read_block_into "$file" block
+  [[ -z $block ]] && return 0
+
+  local field expr op want actual
+  local -a numeric_dims=("II_REQUIRES_PI_MODEL:II_MODEL_NUM"
+                         "II_REQUIRES_RAM_MB:II_MEMORY"
+                         "II_REQUIRES_OS_BITS:II_OS_BITS")
+  local -a bool_dims=("II_REQUIRES_LITE:II_IS_LITE"
+                      "II_REQUIRES_PIZERO:II_IS_PIZERO"
+                      "II_REQUIRES_INTERNAL_RTC:II_HAS_INTERNAL_RTC")
+
+  local pair fname vname
+  for pair in "${numeric_dims[@]}"; do
+    fname="${pair%%:*}"
+    vname="${pair##*:}"
+    _manifest_parse_field "$block" "$fname" expr
+    [[ -z $expr ]] && continue
+    _manifest_requires_split "$expr" op want
+    actual="${!vname:-0}"
+    # Non-numeric actual (e.g. II_MEMORY="Unknown") → treat as 0 and let
+    # the compare decide. Compare returns rc>=1 on mismatch.
+    if ! [[ $actual =~ ^[0-9]+$ ]]; then
+      actual=0
+    fi
+    if ! _manifest_requires_compare "$op" "$actual" "$want"; then
+      declare -F log_info >/dev/null && \
+        log_info "manifest_requires: $(basename "$file") needs $fname='$expr' but $vname='$actual'"
+      return 1
+    fi
+  done
+
+  for pair in "${bool_dims[@]}"; do
+    fname="${pair%%:*}"
+    vname="${pair##*:}"
+    _manifest_parse_field "$block" "$fname" expr
+    [[ -z $expr ]] && continue
+    _manifest_requires_split "$expr" op want
+    actual="${!vname:-}"
+    # Normalize true/false to lowercase for comparison.
+    actual="${actual,,}"
+    want="${want,,}"
+    local matched=1
+    case "$op" in
+      "==") [[ "$actual" == "$want" ]] && matched=0 ;;
+      "!=") [[ "$actual" != "$want" ]] && matched=0 ;;
+      *) matched=1 ;;
+    esac
+    if [[ $matched -ne 0 ]]; then
+      declare -F log_info >/dev/null && \
+        log_info "manifest_requires: $(basename "$file") needs $fname='$expr' but $vname='$actual'"
+      return 1
+    fi
+  done
+
+  return 0
+}

@@ -276,6 +276,28 @@ _any_required_parent_has_radios() {
 # can't accidentally try to deselect them (we filter them out of the
 # toggleable checklist via menu_select_category's exclude param).
 #
+# _filter_by_requires <id...>
+# Echoes the subset of feature IDs whose manifest's II_REQUIRES_* matches
+# current hardware (sourced from $PATH_STATUS/os.status). IDs without a
+# manifest, or whose manifest has no II_REQUIRES_* set, pass through
+# unchanged. Used by every pick_* stage to gate features by Pi model,
+# RAM, OS bit-width, etc.
+_filter_by_requires() {
+  local id path
+  for id in "$@"; do
+    [[ -z $id ]] && continue
+    path=$(manifest_path_for "$id" 2>/dev/null)
+    if [[ -z $path ]]; then
+      # Unknown ID — let downstream code handle it (it'll log_warn).
+      echo "$id"
+      continue
+    fi
+    if manifest_requires_match "$path"; then
+      echo "$id"
+    fi
+  done
+}
+
 # Reads from $selected (which by the time pick_packages runs contains
 # features + their picked addons) so addon deps are accounted for too.
 _required_packages_from_features() {
@@ -843,6 +865,11 @@ while true; do
         _opt_filtered+=" $_id"
       done
       _opt_filtered=$(echo "$_opt_filtered" | tr -s ' ' | sed 's/^ //; s/ $//')
+      # Phase 0: drop features whose II_REQUIRES_* doesn't match this Pi
+      # (model, RAM, OS bit-width, internal-RTC, etc). Word-splitting on
+      # the unquoted variable is intentional so the helper iterates IDs.
+      # shellcheck disable=SC2086
+      _opt_filtered=$(_filter_by_requires $_opt_filtered | tr '\n' ' ' | sed 's/ $//')
 
       # BACK-preserves-selection: see the matching pattern in
       # pick_role_specific. _picked is the temp; commit on rc=0 only.
@@ -939,6 +966,18 @@ while true; do
         ppath=$(manifest_path_for "$parent_id" 2>/dev/null)
         pchildren=$(manifest_get_field "$ppath" "II_OPTIONAL_GROUP")
         ptitle=$(manifest_get_field "$ppath" "II_TITLE")
+
+        # Phase 0: filter exclusive-group children by II_REQUIRES_*. If
+        # every child drops out (e.g. all the Pi-5-only RTC chips on a
+        # Pi 3), skip this parent's radio entirely — don't trap the user
+        # on an empty whiptail.
+        # shellcheck disable=SC2086
+        pchildren=$(_filter_by_requires $pchildren | tr '\n' ' ' | sed 's/ $//')
+        if [[ -z $pchildren ]]; then
+          log_info "All children of '$parent_id' filtered out by II_REQUIRES; skipping radio."
+          _idx=$((_idx + 1))
+          continue
+        fi
 
         # Capture into a temp so a BACK (rc=1|255) doesn't overwrite
         # addons_picked[$parent_id] with whatever whiptail emitted on
@@ -1102,6 +1141,10 @@ while true; do
           _filtered+=" $_ch"
         done
         _filtered=$(echo "$_filtered" | tr -s ' ' | sed 's/^ //; s/ $//')
+        # Phase 0: also drop children whose II_REQUIRES_* doesn't match
+        # this Pi. Belt-and-suspenders alongside the conflict filter.
+        # shellcheck disable=SC2086
+        _filtered=$(_filter_by_requires $_filtered | tr '\n' ' ' | sed 's/ $//')
 
         if [[ -z $_filtered ]]; then
           log_info "  $parent_id: no add-ons left after conflict filter; skipping."
