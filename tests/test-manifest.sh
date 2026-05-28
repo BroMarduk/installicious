@@ -115,7 +115,7 @@ chkeq "empty filter" "$(manifest_filter_by_category nothing "$TMPDIR")" ""
 echo
 echo "=== Test 7: real features/ + packages/ have the expected manifest roster ==="
 real_ids=$(manifest_list_ids features packages | sort | tr "\n" ",")
-chkeq "real manifests" "$real_ids" "apache,bash,caddy,compressed-swap,database,database-mariadb,database-sqlite,git,jshon,lighttpd,locale,log2ram,motd,motd-updates,motd-weather,neowx-material,nginx,pip,pkupd,ram-logging,rconf,rtc,rtc-ds3231,skyfield,webserver,webserver-ssl,webserver-under-construction,weewx,weewx-database-ram,weewx-onedrive-backup,weewx-setup,weewx-site-ram,weewx-webroot,zram,"
+chkeq "real manifests" "$real_ids" "apache,bash,caddy,compressed-swap,database,database-mariadb,database-sqlite,git,jshon,lighttpd,locale,log2ram,motd,motd-updates,motd-weather,neowx-material,nginx,pip,pkupd,ram-logging,rconf,rtc,rtc-ds3231,rtc-pi5-builtin,skyfield,webserver,webserver-ssl,webserver-under-construction,weewx,weewx-database-ram,weewx-onedrive-backup,weewx-setup,weewx-site-ram,weewx-webroot,zram,"
 
 # Each registered ID's filename must match feature-<id>.sh (when in features/)
 # OR package-<id>.sh (when in packages/).
@@ -243,7 +243,7 @@ echo "=== Test 10: defaults scan both tier directories ==="
 # With no dir args, manifest helpers should hit features/ AND packages/.
 # Picking IDs from each side proves both are scanned.
 default_ids=$(manifest_list_ids | sort | tr "\n" ",")
-chkeq "defaults match explicit two-dir scan" "$default_ids" "apache,bash,caddy,compressed-swap,database,database-mariadb,database-sqlite,git,jshon,lighttpd,locale,log2ram,motd,motd-updates,motd-weather,neowx-material,nginx,pip,pkupd,ram-logging,rconf,rtc,rtc-ds3231,skyfield,webserver,webserver-ssl,webserver-under-construction,weewx,weewx-database-ram,weewx-onedrive-backup,weewx-setup,weewx-site-ram,weewx-webroot,zram,"
+chkeq "defaults match explicit two-dir scan" "$default_ids" "apache,bash,caddy,compressed-swap,database,database-mariadb,database-sqlite,git,jshon,lighttpd,locale,log2ram,motd,motd-updates,motd-weather,neowx-material,nginx,pip,pkupd,ram-logging,rconf,rtc,rtc-ds3231,rtc-pi5-builtin,skyfield,webserver,webserver-ssl,webserver-under-construction,weewx,weewx-database-ram,weewx-onedrive-backup,weewx-setup,weewx-site-ram,weewx-webroot,zram,"
 
 # Web server visibility gate: backends are restricted to webserver + weewx.
 manifest_is_visible_for_role nginx    webserver; chkrc "nginx visible under webserver"   $? 0
