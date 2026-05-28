@@ -92,7 +92,7 @@ ROLE_FEATURES_REQUIRED="pkupd webserver database"
 # Configuration screen when MariaDB / MySQL is picked (gated by
 # feature-database.choices.sh).
 ROLE_FEATURES_DEFAULT="weewx-setup weewx-webroot weewx-site-ram weewx-database-ram neowx-material locale bash motd skyfield ram-logging"
-ROLE_FEATURES_OPTIONAL="rconf compressed-swap weewx-onedrive-backup"
+ROLE_FEATURES_OPTIONAL="rconf compressed-swap weewx-onedrive-backup rtc"
 ROLE_CONFIG="config/weewx.config"
 ROLE_EDITABLE_CONFIG=""
 # === II_ROLE_END ===

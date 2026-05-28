@@ -117,10 +117,12 @@ chkeq "custom has no default"  "$(role_get_field "$(role_path_for custom roles)"
 chkeq "custom has no optional" "$(role_get_field "$(role_path_for custom roles)" ROLE_FEATURES_OPTIONAL)" ""
 
 # Stubbed roles (homeassistant, mediaserver, pihole) currently behave
-# like Custom — empty required / default / optional. They'll grow real
-# feature lists when populated. Until then, assert they parse cleanly with
-# empty lists so a regression that drops the manifest sentinel gets caught
-# here.
+# like Custom — empty required / default lists. They carry "rtc" in
+# OPTIONAL (added Phase 3 — every non-custom role gets the RTC parent so
+# the radio sub-menu fires when picked). They'll grow real REQUIRED /
+# DEFAULT lists when populated. Until then, assert they parse cleanly
+# with the expected shape so a regression that drops the manifest
+# sentinel gets caught here.
 for id in homeassistant mediaserver pihole; do
   path=$(role_path_for "$id" roles)
   if [[ -z $path ]]; then
@@ -131,8 +133,8 @@ for id in homeassistant mediaserver pihole; do
   def=$(role_get_field "$path" ROLE_FEATURES_DEFAULT)
   opt=$(role_get_field "$path" ROLE_FEATURES_OPTIONAL)
   title=$(role_get_field "$path" ROLE_TITLE)
-  [[ -z $req && -z $def && -z $opt && -n $title ]] \
-    && ok "stubbed role $id: empty required/default/optional, title set" \
+  [[ -z $req && -z $def && $opt == "rtc" && -n $title ]] \
+    && ok "stubbed role $id: empty required/default, optional=rtc, title set" \
     || fail "stubbed role $id: req='$req' def='$def' opt='$opt' title='$title'"
 done
 
@@ -151,7 +153,7 @@ weewx_def=$(role_get_field "$weewx_path" ROLE_FEATURES_DEFAULT)
 weewx_opt=$(role_get_field "$weewx_path" ROLE_FEATURES_OPTIONAL)
 chkeq "weewx required" "$weewx_req" "pkupd webserver database"
 chkeq "weewx default"  "$weewx_def" "weewx-setup weewx-webroot weewx-site-ram weewx-database-ram neowx-material locale bash motd skyfield ram-logging"
-chkeq "weewx optional" "$weewx_opt" "rconf compressed-swap weewx-onedrive-backup"
+chkeq "weewx optional" "$weewx_opt" "rconf compressed-swap weewx-onedrive-backup rtc"
 
 # Webserver role is the second populated role. REQUIRED includes the
 # webserver parent feature (so the apache/nginx/lighttpd/caddy radio
@@ -162,7 +164,7 @@ ws_def=$(role_get_field "$ws_path" ROLE_FEATURES_DEFAULT)
 ws_opt=$(role_get_field "$ws_path" ROLE_FEATURES_OPTIONAL)
 chkeq "webserver required" "$ws_req" "pkupd webserver"
 chkeq "webserver default"  "$ws_def" "locale bash motd"
-chkeq "webserver optional" "$ws_opt" "rconf compressed-swap ram-logging"
+chkeq "webserver optional" "$ws_opt" "rconf compressed-swap ram-logging rtc"
 
 # ===========================================================================
 echo

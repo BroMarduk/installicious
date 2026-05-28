@@ -151,3 +151,14 @@
 #ZRAM_PERCENT_OF_RAM=""                     # blank → 50 (≥1.8 GB RAM) / 40 (<1.8 GB)
 #ZRAM_COMPRESSION_ALGO=""                   # blank → zstd (Pi 4/5) or lz4 (Pi 3/Zero 2)
 #ZRAM_SWAP_PRIORITY=""                      # blank → 100
+
+# ----------------------------------------------------------------------------
+# Real-Time Clock — feature-rtc (radio-picked chip-child)
+# (RTC_CHIP / RTC_BUS_TYPE are auto-set by the radio pick; surfaced here as
+#  read-only context. The editable keys appear on the in-menu Edit
+#  Configuration screen for each chip-child.)
+# ----------------------------------------------------------------------------
+#RTC_I2C_BUS="1"                            # I²C bus number; Pi 3/4/Zero use 1, Pi 5 has additional buses
+#RTC_SPI_CS_PIN="0"                         # SPI CS pin (only meaningful for SPI chips)
+#RTC_PURGE_FAKE_HWCLOCK="yes"               # yes | no — apt-purge fake-hwclock at install (stale-time guard)
+#RTC_UNINSTALL_DISABLE_I2C_BUS="no"         # yes | no — disable dtparam=i2c_arm=on at uninstall (bus is shared, default no)
