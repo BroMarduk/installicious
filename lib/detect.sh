@@ -75,24 +75,27 @@ detect_pi_is_zero() {
   grep -qE "^Model\s*:\s*Raspberry Pi Zero" "$cpuinfo"
 }
 
-# detect_pi_has_internal_rtc — rc=0 iff this Pi has an on-board PCF85063A
-# RTC. Pi 5 today; forward-compat for any future Pi whose device-tree
-# exposes an internal RTC at the same node path.
+# detect_pi_has_internal_rtc [<model_path>] [<sysfs_rtc_path>]
+# rc=0 iff this Pi has an on-board PCF85063A RTC. Pi 5 today;
+# forward-compat for any future Pi whose device-tree exposes an
+# internal RTC at the same node path.
 #
-# Two signals:
-#   1. /proc/device-tree/model contains "Pi 5" (canonical).
-#   2. /sys/bus/i2c/devices/1f00071000.rtc exists (Pi 5's internal I²C
-#      RTC device-tree path — forward-compat hook).
+# Two detection signals (either is sufficient):
+#   1. <model_path> (default /proc/device-tree/model) contains "Pi 5".
+#   2. <sysfs_rtc_path> (default /sys/bus/i2c/devices/1f00071000.rtc) exists.
 #
-# Either is sufficient. Side-effect-free.
+# Test helpers pass fixture paths; production callers leave both args
+# empty for the canonical paths.
 detect_pi_has_internal_rtc() {
-  if [[ -r /proc/device-tree/model ]]; then
+  local model_path="${1:-/proc/device-tree/model}"
+  local sysfs_path="${2:-/sys/bus/i2c/devices/1f00071000.rtc}"
+  if [[ -r $model_path ]]; then
     local model
-    model=$(tr -d '\0' < /proc/device-tree/model 2>/dev/null)
+    model=$(tr -d '\0' < "$model_path" 2>/dev/null)
     case "$model" in
       *"Pi 5"*) return 0 ;;
     esac
   fi
-  [[ -e /sys/bus/i2c/devices/1f00071000.rtc ]] && return 0
+  [[ -e $sysfs_path ]] && return 0
   return 1
 }

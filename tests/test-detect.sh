@@ -121,5 +121,32 @@ mk_cpuinfo alien "Raspberry Pi 99 Custom Rev 0.0"
 chkeq "alien Model → 99" "$(detect_pi_model "$TMPDIR/cpuinfo-alien")" "99"
 detect_pi_is_zero "$TMPDIR/cpuinfo-alien"; chkrc "alien is_zero=false" $? 1
 
+# ---- Test 10: detect_pi_has_internal_rtc ----
+echo
+echo "=== Test 10: detect_pi_has_internal_rtc ==="
+# Pi 5 model string → present (canonical match).
+printf 'Raspberry Pi 5 Model B Rev 1.0\0' > "$TMPDIR/devicetree-pi5"
+detect_pi_has_internal_rtc "$TMPDIR/devicetree-pi5" "$TMPDIR/no-such-sysfs"
+chkrc "Pi 5 model → internal RTC detected" $? 0
+
+# Pi 4 model string → not present (model doesn't match + sysfs absent).
+printf 'Raspberry Pi 4 Model B Rev 1.4\0' > "$TMPDIR/devicetree-pi4"
+detect_pi_has_internal_rtc "$TMPDIR/devicetree-pi4" "$TMPDIR/no-such-sysfs"
+chkrc "Pi 4 model → no internal RTC" $? 1
+
+# Unreadable model but sysfs path exists → present (forward-compat).
+mkdir -p "$TMPDIR/fake-sysfs"
+detect_pi_has_internal_rtc "$TMPDIR/no-such-model" "$TMPDIR/fake-sysfs"
+chkrc "sysfs path present alone → detected (forward-compat)" $? 0
+
+# Both absent → not present.
+detect_pi_has_internal_rtc "$TMPDIR/no-such-model" "$TMPDIR/no-such-sysfs"
+chkrc "both absent → no internal RTC" $? 1
+
+# Pi 3 model (negative case mirroring detect_pi_model test patterns).
+printf 'Raspberry Pi 3 Model B Plus Rev 1.3\0' > "$TMPDIR/devicetree-pi3bp"
+detect_pi_has_internal_rtc "$TMPDIR/devicetree-pi3bp" "$TMPDIR/no-such-sysfs"
+chkrc "Pi 3 model → no internal RTC" $? 1
+
 echo
 echo "=== Done ==="

@@ -491,10 +491,11 @@ echo "II_OS_LEVEL=\"${OSLEVEL}\"" >> $FILE_STATUS_OS
 echo "II_OS_BITS=\"${BITS}\"" >> $FILE_STATUS_OS
 echo "II_IS_LITE=\"${IS_LITE}\"" >> $FILE_STATUS_OS
 echo "II_IS_PIZERO=\"${IS_PIZERO}\"" >> $FILE_STATUS_OS
-# Phase 0 (II_REQUIRES_INTERNAL_RTC): pre-compute Pi 5 internal-RTC
-# presence so the matcher doesn't re-shell out per candidate-feature.
-if declare -F detect_pi_has_internal_rtc >/dev/null \
-   && detect_pi_has_internal_rtc; then
+# Pre-compute Pi 5 internal-RTC presence so the II_REQUIRES_INTERNAL_RTC
+# manifest matcher (see lib/manifest.sh::manifest_requires_match) doesn't
+# re-shell out per candidate-feature during menu render. The detector
+# helper in lib/detect.sh stays the canonical source for non-menu code.
+if detect_pi_has_internal_rtc; then
   II_HAS_INTERNAL_RTC="true"
 else
   II_HAS_INTERNAL_RTC="false"
