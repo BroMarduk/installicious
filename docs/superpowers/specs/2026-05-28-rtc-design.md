@@ -4,6 +4,19 @@
 **Branch:** `ai-refactor`
 **Status:** Approved (brainstorming complete; awaiting plan-writing)
 
+**Scope note:** this spec covers two pieces of work that ship together
+in a single implementation plan:
+
+1. **`II_REQUIRES_*` manifest primitive** (Phase 0) — declarative
+   hardware gating fields (Pi model, RAM, OS bit-width, GUI/Lite,
+   internal RTC) consumed by the menu filter and an install-time
+   pre-flight check. Small framework addition (~80 LOC + its own
+   test file). Independently useful; the RTC feature is the first
+   consumer.
+2. **RTC feature** (Phases 1–N) — the parent + per-chip children
+   described below. Consumes the new gating primitive for the
+   Pi-5-builtin entry.
+
 ## Goal
 
 Add an optional Real-Time Clock feature to installicious. The user can attach
@@ -64,16 +77,141 @@ roles/role-homeassistant.sh     add 'rtc' to ROLE_FEATURES_OPTIONAL
 roles/role-mediaserver.sh       add 'rtc' to ROLE_FEATURES_OPTIONAL
 roles/role-pihole.sh            add 'rtc' to ROLE_FEATURES_OPTIONAL
 lib/detect.sh                   add detect_pi_has_internal_rtc helper
+lib/manifest.sh                 add II_REQUIRES_* parsing + matcher (Phase 0)
+lib/menu.sh                     wire manifest_requires_match into pick_* filters (Phase 0)
 overrides/configuration.override.example
                                  document new RTC_* keys
-README.md                       add an RTC row to the feature catalog
+README.md                       add an RTC row to the feature catalog;
+                                document II_REQUIRES_* in the manifest reference
 docs/HANDOFF.md                 (optional) mention the feature when next
                                  updating handoff
+```
+
+Phase 0 also adds:
+```
+tests/test-manifest-requires.sh  matcher + menu-filter integration tests
 ```
 
 `roles/role-custom.sh` is intentionally not edited — its required/default/
 optional lists are empty by design and the legacy per-installer picker
 discovers all features automatically.
+
+## Phase 0: `II_REQUIRES_*` framework primitive
+
+A new manifest contract for declarative hardware gating. Ships before
+the RTC feature itself because feature-rtc-pi5-builtin consumes it.
+Independently useful; future Pi-5-only / RAM-tier-only / 64-bit-only
+features can all use it.
+
+### Manifest fields
+
+All fields are optional. Empty string (or unset) means "no requirement
+on this dimension". The matcher returns rc=0 iff every set field's
+expression is true on the current hardware.
+
+```bash
+II_REQUIRES_PI_MODEL=""        # e.g. ">=5" | "==4" | "<3" | bare "5" (== implied)
+II_REQUIRES_RAM_MB=""          # e.g. ">=2048"
+II_REQUIRES_OS_BITS=""         # e.g. "==64" or just "64"
+II_REQUIRES_LITE=""            # "==true" | "==false" (or just "true"/"false")
+II_REQUIRES_PIZERO=""          # "==true" | "==false"
+II_REQUIRES_INTERNAL_RTC=""    # "==true" | "==false" (uses detect_pi_has_internal_rtc)
+```
+
+**Operators:** `>=`, `<=`, `==`, `!=`, `>`, `<` for numeric dimensions
+(PI_MODEL, RAM_MB, OS_BITS); `==`, `!=` for boolean (LITE, PIZERO,
+INTERNAL_RTC). A bare value with no operator means `==`.
+
+**PI_MODEL** uses the numeric model returned by `detect_pi_model`
+(0/1/2/3/4/5/99) — `>=5` is "Pi 5 or newer"; `<3` excludes Pi 3 and
+younger. `RAM_MB` reads `II_MEMORY` from `state/os.status` (already
+populated). `OS_BITS` reads `II_OS_BITS`. `LITE` reads `II_IS_LITE`.
+`PIZERO` reads `II_IS_PIZERO`.
+
+`INTERNAL_RTC` is the only field that invokes a detection helper
+(`detect_pi_has_internal_rtc` from `lib/detect.sh`) at check time
+rather than reading a static os.status field. Done this way because
+the underlying signal is multi-source (device-tree model + sysfs
+device path for forward-compat) and not worth pre-baking into os.status
+for what's currently a Pi-5-only fact.
+
+### Matcher helper
+
+New function in `lib/manifest.sh`:
+
+```bash
+# manifest_requires_match <file>
+#
+# Reads II_REQUIRES_* fields from the file's manifest, evaluates each
+# against current hardware (from state/os.status + detect_* helpers).
+# Returns rc=0 if every set requirement passes; rc=1 if any fail.
+#
+# On rc=1, logs an INFO line naming the failed dimension + actual value.
+# Used by:
+#   - lib/menu.sh's pick_* stages: filter out non-matching features.
+#   - The framework's pre-do_install gate: belt-and-suspenders fail-fast.
+#
+# Side-effect-free.
+manifest_requires_match() { ... }
+```
+
+### Menu-filter integration
+
+`lib/menu.sh`'s `pick_addons`, `pick_optional`, and
+`pick_addons_optional_exclusive` stages each call
+`manifest_requires_match` per candidate feature before adding it to
+the whiptail entry list. Failing features are silently filtered (no
+"this would have shown but...") — consistent with existing
+`II_RESTRICT_TO_ROLES` filtering behavior.
+
+For optional-group exclusive radios: if filtering drops all children,
+the parent is also filtered (no point showing a parent whose radio
+would be empty).
+
+### Install-time pre-flight
+
+The scheduler / installer-dispatch layer (in `lib/scheduler.sh`'s
+`scheduler_run_queue` or the feature's wrapper) calls
+`manifest_requires_match` one more time before invoking the
+installer's `do_install`. Rare-case safety net for:
+- Selections persisted on a different Pi (SD card moved).
+- Manual queue.sh edits.
+- A feature being toggled on via override file without going through
+  the menu filter.
+
+On failure: `log_warn` + skip (move queue cursor past it). Does not
+fail the queue.
+
+### `os.status` extension (one new key)
+
+`installicious.sh` already writes `II_MODEL_NUM`, `II_MEMORY`,
+`II_OS_BITS`, `II_IS_LITE`, `II_IS_PIZERO` to `$FILE_STATUS_OS`. We
+add one:
+
+```bash
+II_HAS_INTERNAL_RTC="true|false"
+```
+
+Populated by calling `detect_pi_has_internal_rtc` at status-file
+write time. Cached so the matcher doesn't re-shell-out per
+candidate-feature during a menu render. The detector helper itself
+stays the canonical source for any non-menu code path.
+
+### Testing
+
+`tests/test-manifest-requires.sh` (new, ~150 lines):
+
+1. Operator parsing: bare value, `>=`, `<=`, `==`, `!=`, `>`, `<`,
+   plus malformed expressions (rejected via log_warn, fail-closed).
+2. Each dimension's check (PI_MODEL, RAM_MB, OS_BITS, LITE, PIZERO,
+   INTERNAL_RTC) with stubbed os.status + stubbed detector.
+3. Empty / unset = no-requirement (passes).
+4. Multi-dimension AND: all set requirements must pass for rc=0.
+5. Menu-filter integration (lighter): synthetic manifest with
+   II_REQUIRES_PI_MODEL=">=5" and II_MODEL_NUM=3 → filtered out;
+   II_MODEL_NUM=5 → included.
+6. Install-time pre-flight: scheduler-level test confirming a feature
+   whose II_REQUIRES fails gets cursor-advanced past, queue continues.
 
 ## Architecture: parent + per-chip children
 
@@ -163,14 +301,14 @@ Per-chip vars on the other curated children:
 | feature-rtc-ds1307.sh | ds1307 | i2c | ds1307 | i2c-tools |
 | feature-rtc-pi5-builtin.sh* | pcf85063a | pi5-builtin | (none) | (none) |
 
-*`II_TITLE="Pi 5 built-in (PCF85063A) — Pi 5 only"`; installer
-fail-fasts via `detect_pi_has_internal_rtc` on non-Pi-5 hardware.
+*`II_TITLE="Pi 5 built-in (PCF85063A)"`; manifest declares
+`II_REQUIRES_INTERNAL_RTC="==true"` so the entry is hidden on
+non-Pi-5 hardware via Phase-0 menu filtering.
 
-The Pi-5-builtin entry is always visible in the radio (no framework
-hook exists to filter radio children by hardware — see "Pi-5 gating"
-section). Its `II_TITLE` carries an explicit "— Pi 5 only" tag, and
-its installer body fail-fasts on non-Pi-5 hardware via
-`detect_pi_has_internal_rtc`.
+The Pi-5-builtin child declares `II_REQUIRES_INTERNAL_RTC="==true"`
+in its manifest. Phase 0's matcher (consumed by `pick_addons_optional_exclusive`)
+filters it out of the radio entirely on non-Pi-5 hardware. See
+"Pi-5 gating" section.
 
 ### Extended-chip escape hatch
 
@@ -324,8 +462,9 @@ bus/CS pin if later chips need explicit override).
    ↓
 4. Radio renders curated chips first (DS3231 has II_DEFAULT_SELECTED="on"
    so it's preselected globally), then "More chips...". Pi-5-builtin
-   entry is visible on every Pi (with "Pi 5 only" tag in the title);
-   misuse is caught at install time.
+   entry is filtered out via Phase-0 II_REQUIRES_INTERNAL_RTC on
+   non-Pi-5 hardware; visible (and preselected if no other default
+   wins) on Pi 5.
    ↓
 5a. User picks curated chip → state/selections.sh records
     LAST_ADDONS_PICKED="rtc-<chip>"
@@ -373,22 +512,22 @@ RTC_COMMENTED_FOREIGN_OVERLAY="" # path-line tag if we commented one out
 
 ## Pi-5 gating
 
-The existing menu plumbing has no feature-level "hide this child on
-non-matching hardware" hook (`_applies_<KEY>` filters editable-config
-keys on the Edit Configuration screen, not radio entries). Adding one
-would require new framework primitives — out of scope for this feature.
+Uses the Phase-0 `II_REQUIRES_INTERNAL_RTC` field. The Pi-5-builtin
+child's manifest:
 
-YAGNI approach: the Pi-5-builtin entry is visible in the radio on every
-Pi, but two safeguards prevent accidental misuse:
+```bash
+II_REQUIRES_INTERNAL_RTC="==true"
+```
 
-1. **Self-labeling title.** `II_TITLE="Pi 5 built-in (PCF85063A) — Pi 5 only"`.
-   The "Pi 5 only" tag in the radio entry is unambiguous; users on
-   older Pis read it and pick a different chip.
-2. **Install-time hardware check.** `feature-rtc-pi5-builtin.sh` calls
-   `detect_pi_has_internal_rtc` at the very top of `--install`. If
-   non-Pi-5, log_fail with an actionable message ("Pi 5 built-in RTC
-   selected but this is a Pi 3 — pick a different chip"), exit 1.
-   No partial state is written.
+On a Pi 5 (or any forward-compat Pi whose device-tree exposes an
+internal RTC), `manifest_requires_match` returns rc=0, the menu
+shows the entry, and install proceeds normally. On a Pi 3/4/Zero/etc.,
+the entry is **filtered out entirely** — never appears in the radio.
+
+Belt-and-suspenders: if somehow the feature still gets queued (SD card
+moved between Pis, manual queue.sh edit), the scheduler's pre-flight
+check re-runs `manifest_requires_match`, sees the mismatch, log_warns,
+and advances the cursor past it without invoking the installer.
 
 Add to `lib/detect.sh`:
 
@@ -408,9 +547,15 @@ detect_pi_has_internal_rtc() {
 }
 ```
 
-The "Pi-5 entry visible on every Pi" decision is a tradeoff —
-declarative manifest-based filtering would be cleaner. Captured in
-"Open follow-ups" for if/when a second Pi-5-only feature lands.
+This helper is invoked at `installicious.sh` startup to populate
+`II_HAS_INTERNAL_RTC` in `state/os.status` so the matcher doesn't
+re-shell-out per candidate-feature during menu render.
+
+### Title note
+
+The Pi-5-builtin entry's title is just `"Pi 5 built-in (PCF85063A)"`
+— no "Pi 5 only" disambiguator needed, since the entry only appears
+on Pi 5s. Cleaner UX.
 
 ## Editable config keys
 
@@ -571,9 +716,16 @@ Tempdir-isolated. Stubs `/sys/class/rtc/`, `hwclock`, `timedatectl`,
 ### Existing test impact
 
 - `tests/test-manifest.sh` — picks up new feature files automatically
-  via dir scan; no edits expected.
-- `tests/test-scheduler.sh` — verify no fixture counts the exact
-  feature total. Adjust if needed.
+  via dir scan. Phase 0 adds II_REQUIRES_* fields; the existing
+  manifest-parser tests should still pass since the parser is generic
+  (treats unknown II_* fields as regular fields). Add one positive
+  case asserting the new fields are extractable.
+- `tests/test-menu-applicability.sh` — already exists; gets new cases
+  for II_REQUIRES_* filtering of pick_* candidates.
+- `tests/test-scheduler.sh` — Phase 0's install-time pre-flight
+  affects scheduler_run_queue. Add a case: a feature with
+  II_REQUIRES failing → cursor advanced past it, queue continues,
+  no installer invocation.
 - `tests/test-role.sh` — already verifies each role parses; new
   `rtc` entries in `ROLE_FEATURES_OPTIONAL` should land in the
   existing assertions.
@@ -586,7 +738,8 @@ Tempdir-isolated. Stubs `/sys/class/rtc/`, `hwclock`, `timedatectl`,
   the Windows test host): `RTC_SKIP_BOOT_CONFIG_WRITE=true`,
   mirroring `feature-compressed-swap`'s `ZRAM_SKIP_LIVE_VERIFY`.
 
-Expected wall-clock impact on the parallel runner: +20-30s.
+Expected wall-clock impact on the parallel runner: +30-40s (Phase 0
+test ~10s; RTC tests ~20-30s).
 
 ## VERSION bump policy
 
@@ -605,12 +758,6 @@ with the same docstring as in `config/rtc.config`.
 
 ## Open follow-ups (deferred, not blocking)
 
-- **Manifest-level hardware gating** (`II_REQUIRES_PI_MODEL="5"` or
-  similar). Would let Pi-5-builtin filter itself out of the radio
-  cleanly on non-Pi-5 hardware instead of relying on title labeling +
-  install-time fail-fast. Small menu-plumbing change (~10 lines in
-  `lib/menu.sh`'s radio-build). Worth doing if a second Pi-5-only
-  feature lands.
 - **DS3231 temperature exposure.** DS3231 has an on-die temperature
   sensor accessible via `/sys/bus/i2c/devices/1-0068/temp_input`.
   Surface as an optional companion (`feature-rtc-ds3231-temp`?). Out
