@@ -186,6 +186,46 @@ change actually requires one).
   `/var/log` to a tmpfs, flushing to disk on a schedule. Editable:
   `RAMLOG_PROFILE`, `RAMLOG_SIZE_MB`, `RAMLOG_COMPRESSION_ALGO`.
 
+### Real-Time Clock
+
+| ID    | Title           | Default | Reboot      |
+|---|---|---|---|
+| `rtc` | Real-Time Clock | off     | conditional |
+
+- **rtc** — optional hardware RTC (16-chip radio: DS3231, DS1307,
+  PCF8523, PCF8563, PCF2127, PCF85063, MCP7940x, RV3028, RV3032,
+  ABx80x, RV1805, M41T62, PCF2123, MAX6902, DS3232 over SPI, plus the
+  Pi 5 built-in PCF85063A surfaced as its own no-overlay child). Picking
+  `rtc` opens a radio of the supported chips ordered by popularity
+  (DS3231 first). The picked chip-child:
+  - writes the right `dtoverlay=i2c-rtc,<chip>` (I²C) or `dtparam=spi=on`
+    + `dtoverlay=spi-rtc,<chip>` (SPI) pair to `/boot/firmware/config.txt`
+    via `lib/boot-config.sh`'s anchored fence (re-runnable, idempotent,
+    safely co-exists with manually-edited lines outside the fence),
+  - purges `fake-hwclock` (default `RTC_PURGE_FAKE_HWCLOCK="yes"` —
+    fake-hwclock otherwise restores a stale shutdown time on boot,
+    masking the real RTC),
+  - schedules a one-shot system→RTC sync on the first NTP convergence
+    after the post-overlay reboot (so the chip ends up holding actual
+    current time, not whatever was on the bench when you soldered it),
+  - on Pi 5 hosts where `II_HAS_INTERNAL_RTC=true`, surfaces the
+    built-in PCF85063A as a no-overlay/no-dtparam child (the SoC wires
+    it up before userspace).
+
+  Editable: `RTC_I2C_BUS` (default `1`), `RTC_SPI_CS_PIN` (default `0`,
+  SPI-only), `RTC_PURGE_FAKE_HWCLOCK` (default `yes`),
+  `RTC_UNINSTALL_DISABLE_I2C_BUS` (default `no` — the I²C bus is usually
+  shared; only flip to `yes` if this RTC is the sole I²C consumer).
+  Drop `RTC_CHIP=...` in `overrides/configuration.override` to force a
+  kernel-supported chip not in the curated/extended menu list.
+  Uninstall removes the overlay lines from the boot config and
+  re-installs `fake-hwclock` so the box still keeps approximate time
+  across reboots without a battery-backed clock.
+
+  `i2c-tools` (I²C chips) and `spi-tools` (SPI chips) auto-attach to
+  the queue when the matching bus-type chip is picked; both are also
+  available as standalone toggles otherwise.
+
 ### Web Server
 
 The `webserver` feature is the entry point. It is `exclusive`-grouped
@@ -484,6 +524,51 @@ symmetry; the underlying mechanism differs by file.
 Still freestanding under `scripts/` (not yet first-class features):
 `weewx-nginx-ssl.sh` (cert issuance is now covered by
 `feature-webserver-ssl` — only the WeeWX-specific config glue remains).
+
+---
+
+## Manifest fields
+
+Every installer carries a `# === II_MANIFEST_BEGIN ===` … `# === II_MANIFEST_END ===`
+block of `II_*` key/value lines, parsed by `lib/manifest.sh` to drive
+menu visibility, scheduling, dependency resolution, and the verify
+report. The most-common ones are referenced throughout this README
+(`II_ID`, `II_TITLE`, `II_DEPS`, `II_OPTIONAL_GROUP`,
+`II_DEFAULT_SELECTED`, `II_REQUIRES_REBOOT`, `II_RESTRICT_TO_ROLES`,
+`II_CONFLICTS_WITH`, …). Two newer field families are worth calling
+out:
+
+**Hardware gating** — every key reads against a host-state fact
+populated at startup by `lib/detect-pi.sh`. Predicates use an
+`<op><value>` shape where `<op>` is `>=` / `<=` / `==` / `!=` / `>` /
+`<` (a bare value implies `==`). A feature with any failing predicate
+is filtered out of the menu (it never appears as a checkbox or radio
+option) and skipped by the scheduler's pre-flight if somehow queued
+anyway.
+
+- `II_REQUIRES_PI_MODEL` — Pi model number predicate. E.g. `">=5"` for
+  Pi 5 or newer, `"<=4"` for everything older. Read against
+  `II_MODEL_NUM` from `state/os.status`.
+- `II_REQUIRES_RAM_MB` — minimum RAM in megabytes. Read against
+  `II_MEMORY`.
+- `II_REQUIRES_OS_BITS` — `"64"` or `"32"`. Read against `II_OS_BITS`.
+- `II_REQUIRES_LITE` — `"==true"` / `"==false"` (or bare `true` /
+  `false`). Read against `II_IS_LITE` (Raspberry Pi OS Lite vs. desktop).
+- `II_REQUIRES_PIZERO` — same shape, against `II_IS_PIZERO`.
+- `II_REQUIRES_INTERNAL_RTC` — same shape, against `II_HAS_INTERNAL_RTC`
+  (true on Pi 5 — its SoC includes a PCF85063A wired up before
+  userspace; lets the Pi-5-builtin RTC child show only on Pi 5).
+
+**Radio ordering** — controls the order radio children appear under
+their parent on the `pick_addons_optional_exclusive` screen.
+
+- `II_RADIO_ORDER` — integer sort hint. Lower = higher in the radio
+  list. Empty / unset = sorts last (999). Lets a feature family put
+  its most-common entry at the top of the radio without falling back
+  to alphabetical. The RTC chip-children use this to order the 16-chip
+  radio by real-world popularity (DS3231 first, the Pi 5 built-in
+  second when applicable, then PCF8523 / DS1307 / …) instead of
+  alphabetical-by-`II_ID`.
 
 ---
 

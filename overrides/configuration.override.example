@@ -154,10 +154,12 @@
 
 # ----------------------------------------------------------------------------
 # Real-Time Clock — feature-rtc (radio-picked chip-child)
-# (RTC_CHIP / RTC_BUS_TYPE are auto-set by the radio pick; surfaced here as
-#  read-only context. The editable keys appear on the in-menu Edit
-#  Configuration screen for each chip-child.)
+# (Normally RTC_CHIP / RTC_BUS_TYPE are auto-set by the radio pick. Set
+#  RTC_CHIP here only to force a kernel-supported chip not in the curated
+#  /extended menu — any i2c-rtc / spi-rtc overlay suffix works. The four
+#  editable keys below surface on the in-menu Edit Configuration screen.)
 # ----------------------------------------------------------------------------
+#RTC_CHIP="ds3231"                          # override the radio pick; any i2c-rtc/spi-rtc overlay suffix
 #RTC_I2C_BUS="1"                            # I²C bus number; Pi 3/4/Zero use 1, Pi 5 has additional buses
 #RTC_SPI_CS_PIN="0"                         # SPI CS pin (only meaningful for SPI chips)
 #RTC_PURGE_FAKE_HWCLOCK="yes"               # yes | no — apt-purge fake-hwclock at install (stale-time guard)
