@@ -296,15 +296,29 @@ menu_pick_one_optional() {
     items+=("$id" "${feature_title:-$id}" "$state")
   done
 
-  # Dialog geometry: 20 lines tall, 80 wide, 16-row visible listheight.
-  # 16 accommodates the largest exclusive group we ship today (RTC: 16
-  # chips on a Pi 5 / 15 on older). Whiptail still scrolls if a future
-  # group exceeds the visible count, but for the common cases the user
-  # sees the whole list without having to know to scroll.
+  # Dialog geometry sized dynamically to fit the item count.
+  #
+  # listheight = the scrollable list area (rows of items). Cap at 16 so
+  # the largest exclusive group we ship today (RTC: 16 chips on Pi 5 /
+  # 15 on older) all fit without scrolling, but a small radio like
+  # webserver (4 backends) doesn't end up with 12 lines of empty
+  # whitespace under the items.
+  #
+  # dialog_h = total dialog height = listheight + 8 chrome rows
+  # (2 borders + 2 button rows + 2 prompt rows + 2 padding). Going
+  # under that — e.g. listheight=16 inside a 20-line dialog as a
+  # previous version had — squeezes the prompt and title out
+  # entirely, which makes every radio look like a bare item-list
+  # with no context.
+  local _list_h=${#sorted_ids[@]}
+  (( _list_h < 4 )) && _list_h=4
+  (( _list_h > 16 )) && _list_h=16
+  local _dialog_h=$(( _list_h + 8 ))
+
   whiptail --title "$parent_title - Pick One" \
     --ok-button "NEXT" \
     --cancel-button "BACK" \
-    --radiolist "Pick exactly one. Use SPACE to select, TAB to move to NEXT/BACK." 20 80 16 \
+    --radiolist "Pick exactly one. Use SPACE to select, TAB to move to NEXT/BACK." "$_dialog_h" 80 "$_list_h" \
     "${items[@]}" \
     3>&1 1>&2 2>&3
 }
