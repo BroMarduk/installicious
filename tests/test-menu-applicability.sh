@@ -279,6 +279,23 @@ chkeq "Pi 3 keeps only 'any'" "$(echo $result)" "any"
 II_MODEL_NUM=5 result=$(_filter_by_requires pi5only any)
 chkeq "Pi 5 keeps both" "$(echo $result)" "pi5only any"
 
+# ---- Regression: log_info from manifest_requires_match must NOT leak ----
+# Bug observed in the wild (commit bb56418, pre-2.9.2): the matcher's
+# mismatch log_info wrote via tee to stdout, which _filter_by_requires
+# captured inside `$( ... )` and word-split into "feature IDs". On a
+# non-Pi-5 box rendering the RTC radio, the polluted output produced rows
+# like "20:53:47.64696", "INFO", "[Installicious", "Menu]", etc. instead
+# of chip names. Fix: redirect the matcher's stdout in _filter_by_requires.
+echo "=== Regression: log_info must not pollute _filter_by_requires output ==="
+# Stub log_info to emit the same noisy multi-token line the production
+# log_info writes to stdout. (Real log_info uses tee; here we just echo —
+# the bug is the same shape: any stdout write from the matcher gets
+# captured.)
+log_info() { echo "2026-05-28 20:53:47 - INFO - [Test] manifest_requires: $* "; }
+II_MODEL_NUM=3 result=$(_filter_by_requires pi5only any)
+chkeq "log line does not leak into filter output" "$(echo $result)" "any"
+unset -f log_info
+
 rm -rf "$MA_TMPD"
 
 echo

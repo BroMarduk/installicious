@@ -53,28 +53,37 @@ if [[ "${1:-}" != "--verify" ]]; then
   fi
 fi
 
-# ---- Force C locale for the installicious run ----
+# ---- Force C.UTF-8 locale for the installicious run ----
 #
 # Whatever LANG / LC_ALL / LANGUAGE the calling shell pushed at us
 # (SSH client, Imager defaults, /etc/default/locale leftovers) gets
-# replaced with C so every subprocess we spawn has a clean env. This
-# is the same trick lib/apt.sh and feature-locale.sh's _RC_ENV use
-# for their child processes, just generalized to the whole run.
+# replaced with C.UTF-8 so every subprocess we spawn has a clean env.
+# This is the same trick lib/apt.sh and feature-locale.sh's _RC_ENV
+# use for their child processes, just generalized to the whole run.
 #
 # Why force, not just strip-if-broken: locale tooling (perl, python)
 # emits "Setting locale failed / Cannot set LC_*" warnings on every
 # subprocess invocation when the inherited locale isn't generated on
 # the Pi (e.g. LANG=en_GB.UTF-8 inherited from the SSH client when
-# the Pi's only generated locale is en_US.UTF-8). Forcing C makes
-# the warnings unconditionally go away regardless of how many
-# locales the Pi has installed.
+# the Pi's only generated locale is en_US.UTF-8). Forcing a known-good
+# locale makes the warnings unconditionally go away regardless of how
+# many locales the Pi has installed.
+#
+# Why C.UTF-8 (not plain C): plain C treats bytes above 0x7F as raw,
+# so whiptail renders any UTF-8 multi-byte character in a feature title
+# as "<80><94>" etc. instead of the actual glyph. Em-dashes in the RTC
+# chip-titles get mangled this way. C.UTF-8 has the same "no
+# translations, no surprises" semantics as C but with UTF-8 byte
+# handling. It's provided by libc6 directly on Bookworm / Trixie — no
+# locale-gen required — so the warning-suppression property is
+# preserved.
 #
 # The user's interactive shell post-install isn't affected — we only
 # rewrite OUR process env. Final system-locale state is owned by
 # feature-locale via /etc/default/locale, which the next login picks
 # up cleanly.
-export LANG=C
-export LC_ALL=C
+export LANG=C.UTF-8
+export LC_ALL=C.UTF-8
 unset LANGUAGE
 
 # Load the installicious version string from the repo-root VERSION file.

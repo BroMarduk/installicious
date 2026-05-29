@@ -296,10 +296,15 @@ menu_pick_one_optional() {
     items+=("$id" "${feature_title:-$id}" "$state")
   done
 
+  # Dialog geometry: 20 lines tall, 80 wide, 16-row visible listheight.
+  # 16 accommodates the largest exclusive group we ship today (RTC: 16
+  # chips on a Pi 5 / 15 on older). Whiptail still scrolls if a future
+  # group exceeds the visible count, but for the common cases the user
+  # sees the whole list without having to know to scroll.
   whiptail --title "$parent_title - Pick One" \
     --ok-button "NEXT" \
     --cancel-button "BACK" \
-    --radiolist "Pick exactly one. Use SPACE to select, TAB to move to NEXT/BACK." 20 80 12 \
+    --radiolist "Pick exactly one. Use SPACE to select, TAB to move to NEXT/BACK." 20 80 16 \
     "${items[@]}" \
     3>&1 1>&2 2>&3
 }

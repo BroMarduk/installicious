@@ -650,7 +650,16 @@ _filter_by_requires() {
       echo "$id"
       continue
     fi
-    if manifest_requires_match "$path"; then
+    # Redirect stdout to /dev/null: manifest_requires_match's log_info on
+    # mismatch writes via tee, which echoes the log line to stdout as well
+    # as the log file. Without this redirect, the log line would leak into
+    # our captured output (this helper is always called inside $( ... ) by
+    # scripts/options.sh's pick_* stages), word-split, and be passed to
+    # whiptail as if each token were a feature ID — producing a radio
+    # populated with timestamp / "INFO" / "Menu]" / etc. instead of chip
+    # names. The log file still receives the line because tee writes to
+    # the file argument independently of stdout.
+    if manifest_requires_match "$path" >/dev/null; then
       echo "$id"
     fi
   done
