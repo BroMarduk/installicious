@@ -539,7 +539,7 @@ report. The most-common ones are referenced throughout this README
 out:
 
 **Hardware gating** — every key reads against a host-state fact
-populated at startup by `lib/detect-pi.sh`. Predicates use an
+populated at startup by `lib/detect.sh`. Predicates use an
 `<op><value>` shape where `<op>` is `>=` / `<=` / `==` / `!=` / `>` /
 `<` (a bare value implies `==`). A feature with any failing predicate
 is filtered out of the menu (it never appears as a checkbox or radio
