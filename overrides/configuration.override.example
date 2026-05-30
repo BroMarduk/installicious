@@ -1,12 +1,12 @@
-# configuration.override.example — template for overrides/configuration.override
+# configuration.override.example - template for overrides/configuration.override
 # ============================================================================
 #
 # WHAT THIS IS
-#   A starting point for overrides/configuration.override — the file that
+#   A starting point for overrides/configuration.override - the file that
 #   sets your preferred defaults for installicious's editable-config items
 #   (the II_EDITABLE_CONFIG keys you'd otherwise type into the in-menu
 #   Edit Configuration screen). Drop a filled-in copy onto a fresh Pi and
-#   every install picks up your values — repeatability, no re-typing.
+#   every install picks up your values - repeatability, no re-typing.
 #
 # HOW TO USE
 #   1. Copy this file to the live name (drop the .example):
@@ -16,7 +16,7 @@
 #      commented keeps the framework default.
 #   3. Re-run installicious. Edited values take effect on the next run
 #      (the file is part of each installer's skip-hash, so a change
-#      auto-re-triggers the affected installers — no manual status reset).
+#      auto-re-triggers the affected installers - no manual status reset).
 #
 # PRECEDENCE (last wins)
 #   config/*.config   <   configuration.override   <   state/menu-config.sh
@@ -24,27 +24,27 @@
 #   this file (this file is your baseline, the menu tweaks on top).
 #
 # FORMAT
-#   Plain KEY="value" bash assignments — this file is sourced, not parsed.
+#   Plain KEY="value" bash assignments - this file is sourced, not parsed.
 #   Quote values. Lines starting with # are comments.
 #
 # NOTE
 #   This .example is the only override file that's tracked in git. Your
 #   real configuration.override is gitignored (*.override) and excluded
 #   from setup.sh's rsync, so it persists across re-downloads untouched.
-#   The values shown below each key are the current framework defaults —
+#   The values shown below each key are the current framework defaults -
 #   see config/<feature>.config for the authoritative list + full docs.
 # ============================================================================
 
 
 # ----------------------------------------------------------------------------
-# Package updates — feature-pkupd
+# Package updates - feature-pkupd
 # ----------------------------------------------------------------------------
 #PKUPD_UPGRADE_MODE="dist-upgrade"          # dist-upgrade (pulls kernels) | upgrade (in-place only)
 #PKUPD_SKIP_WINDOW_MIN="60"                 # minutes; skip a re-run within this window of a success. 0 disables
-#PKUPD_AUTOREMOVE="true"                    # true | false — run apt-get autoremove --purge after the upgrade
+#PKUPD_AUTOREMOVE="true"                    # true | false - run apt-get autoremove --purge after the upgrade
 
 # ----------------------------------------------------------------------------
-# Localization — feature-locale
+# Localization - feature-locale
 # (blank value = keep whatever the system already has)
 # ----------------------------------------------------------------------------
 #LOCALE_LANG="en_US.UTF-8"                  # system locale
@@ -54,17 +54,17 @@
 #LOCALE_WIFI_COUNTRY=""                     # 2-letter ISO 3166 code, e.g. "US"
 
 # ----------------------------------------------------------------------------
-# Login MOTD — feature-motd / motd-weather / motd-updates
+# Login MOTD - feature-motd / motd-weather / motd-updates
 # ----------------------------------------------------------------------------
 #MOTD_NAME="dannet"                         # MOTD title
 #MOTD_SMALL_SIZE="79"                       # terminal width below which the compact MOTD shows
 #MOTD_IP_URL="https://api.ipify.org"        # service queried for the external IP
-#MOTD_WEATHER_API_KEY=""                    # AccuWeather API token — REQUIRED for motd-weather
+#MOTD_WEATHER_API_KEY=""                    # AccuWeather API token - REQUIRED for motd-weather
 #MOTD_WEATHER_LOC_CODE="1945_PC"            # AccuWeather location key
 #MOTD_WEATHER_ZIP_CODE="05255"              # label shown on the weather row (cosmetic)
 
 # ----------------------------------------------------------------------------
-# Web server — feature-webserver / webserver-ssl
+# Web server - feature-webserver / webserver-ssl
 # ----------------------------------------------------------------------------
 #WEBSERVER_DOC_ROOT="/var/www/html"         # document root the chosen backend serves
 #WEBSERVER_SERVER_NAME=""                   # vhost name; blank = the Pi's hostname at install time
@@ -72,12 +72,12 @@
 #WEBSERVER_UC_TEMPLATE="midnight-editor"    # under-construction page slug (resources/html-index-<slug>.html)
 #WEBSERVER_SSL_EMAIL=""                     # Let's Encrypt registration email (webserver-ssl)
 #WEBSERVER_SSL_METHOD="dns-cloudflare"      # dns-cloudflare | http
-#WEBSERVER_SSL_CF_TOKEN=""                  # Cloudflare API token — required when method=dns-cloudflare
+#WEBSERVER_SSL_CF_TOKEN=""                  # Cloudflare API token - required when method=dns-cloudflare
 #WEBSERVER_SSL_HTTP_POLICY="redirect-all"   # redirect-all | redirect-name | deny-http
 #CADDY_HTTP_POLICY="redirect-all"           # same three values, for the caddy backend
 
 # ----------------------------------------------------------------------------
-# WeeWX station — feature-weewx-setup
+# WeeWX station - feature-weewx-setup
 # (blank lat/lon/altitude/location = keep the weewx package default)
 # ----------------------------------------------------------------------------
 #WEEWX_STATION_LOCATION=""                  # human-readable location, e.g. "Manchester Center, VT"
@@ -91,7 +91,7 @@
 #WEEWX_STATION_URL=""                       # public station URL; required when REGISTER_STATION=true
 
 # ----------------------------------------------------------------------------
-# WeeWX web root + RAM/disk tuning — weewx-webroot / weewx-site-ram / weewx-database-ram
+# WeeWX web root + RAM/disk tuning - weewx-webroot / weewx-site-ram / weewx-database-ram
 # ----------------------------------------------------------------------------
 #WEEWX_WEB_DIR="/var/www/html/weewx"        # directory the WeeWX reports render into
 #WEEWX_TMPFS_SIZE="128M"                    # tmpfs size for the weewx-site-ram mount
@@ -101,8 +101,8 @@
 #WEEWX_DB_ZRAM_SIZE="AUTO"                  # zram device size, e.g. "1024M"; AUTO = compute from DB size
 
 # ----------------------------------------------------------------------------
-# WeeWX OneDrive backup — feature-weewx-onedrive-backup
-# (rclone.conf is authored on a desktop machine and copied to the Pi — see
+# WeeWX OneDrive backup - feature-weewx-onedrive-backup
+# (rclone.conf is authored on a desktop machine and copied to the Pi - see
 #  scripts/weewx-onedrive-setup.md, or drop it at overrides/rclone.conf.override
 #  for installicious to place it. WEEWX_BACKUP_VERIFY remains config-file-only:
 #  set it in config/weewx-onedrive-backup.config, not here.)
@@ -116,7 +116,7 @@
 #WEEWX_BACKUP_KEEP_MONTHLY="12"             # monthly backup files kept
 
 # ----------------------------------------------------------------------------
-# Database backend — feature-database (SQLite vs MariaDB / MySQL radio)
+# Database backend - feature-database (SQLite vs MariaDB / MySQL radio)
 # (DATABASE_TYPE itself is the radio pick, not an editable key. The five
 #  keys below appear on the in-menu Edit Configuration screen ONLY when
 #  MariaDB / MySQL is picked. On Bookworm/Trixie, MariaDB and MySQL share
@@ -130,14 +130,14 @@
 #DATABASE_INNODB_TUNE="off"                 # on = drop /etc/mysql/conf.d/installicious-pi.cnf (flush=2 + Pi-tier buffer pool)
 
 # ----------------------------------------------------------------------------
-# NeoWX Material skin — feature-neowx-material
+# NeoWX Material skin - feature-neowx-material
 # ----------------------------------------------------------------------------
 #NEOWX_LANG="en"                            # skin language: ca de en es fi fr it nl pl se sk
 #NEOWX_LOCALE=""                            # locale for date/time rendering, e.g. "en_US.UTF-8"; blank = system LANG
 #NEOWX_HTML_ROOT="/var/www/html/weewx"      # where the skin writes its generated HTML
 
 # ----------------------------------------------------------------------------
-# RAM logging — feature-ram-logging
+# RAM logging - feature-ram-logging
 # (blank = per-Pi auto-tune; set a value only to override the auto-pick)
 # ----------------------------------------------------------------------------
 #RAMLOG_PROFILE=""                          # blank → zram-both; or tmpfs-volatile/-shutdown/-periodic/-both, zram-*
@@ -145,7 +145,7 @@
 #RAMLOG_COMPRESSION_ALGO=""                 # blank → zstd (Pi 4/5) or lz4 (Pi 3/Zero 2)
 
 # ----------------------------------------------------------------------------
-# Compressed swap — feature-compressed-swap (zram)
+# Compressed swap - feature-compressed-swap (zram)
 # (blank = per-Pi auto-tune)
 # ----------------------------------------------------------------------------
 #ZRAM_PERCENT_OF_RAM=""                     # blank → 50 (≥1.8 GB RAM) / 40 (<1.8 GB)
@@ -153,17 +153,17 @@
 #ZRAM_SWAP_PRIORITY=""                      # blank → 100
 
 # ----------------------------------------------------------------------------
-# Real-Time Clock — feature-rtc (radio-picked chip-child)
+# Real-Time Clock - feature-rtc (radio-picked chip-child)
 # (Normally RTC_CHIP / RTC_BUS_TYPE are auto-set by the radio pick. Set
 #  RTC_CHIP here only to force a kernel-supported chip not in the curated
-#  /extended menu — any i2c-rtc / spi-rtc overlay suffix works. The four
+#  /extended menu - any i2c-rtc / spi-rtc overlay suffix works. The four
 #  editable keys below surface on the in-menu Edit Configuration screen.)
 # ----------------------------------------------------------------------------
 #RTC_CHIP="ds3231"                          # override the radio pick; any i2c-rtc/spi-rtc overlay suffix
 #RTC_I2C_BUS="1"                            # I²C bus number; Pi 3/4/Zero use 1, Pi 5 has additional buses
 #RTC_SPI_CS_PIN="0"                         # SPI CS pin (only meaningful for SPI chips)
-#RTC_PURGE_FAKE_HWCLOCK="yes"               # yes | no — apt-purge fake-hwclock at install (stale-time guard)
-#RTC_UNINSTALL_DISABLE_I2C_BUS="no"         # yes | no — disable dtparam=i2c_arm=on at uninstall (bus is shared, default no)
+#RTC_PURGE_FAKE_HWCLOCK="yes"               # yes | no - apt-purge fake-hwclock at install (stale-time guard)
+#RTC_UNINSTALL_DISABLE_I2C_BUS="no"         # yes | no - disable dtparam=i2c_arm=on at uninstall (bus is shared, default no)
 
 
 # ============================================================================
@@ -171,7 +171,7 @@
 # ============================================================================
 # The keys above all surface on the in-menu Edit Configuration screen via
 # their feature's II_EDITABLE_CONFIG. The keys BELOW are framework defaults
-# that DON'T appear on that screen but are still read at install time —
+# that DON'T appear on that screen but are still read at install time -
 # uncomment them here (or set them directly in their config/<feature>.config
 # file) to change behavior. They're grouped down here because they're
 # either advanced tunables, infrastructure knobs that rarely need touching,
@@ -180,44 +180,45 @@
 
 
 # ----------------------------------------------------------------------------
-# Database — advanced tunables (config-file-only)
+# Database - advanced tunables (config-file-only)
 # ----------------------------------------------------------------------------
 #DATABASE_PORT="3306"                                  # MySQL / MariaDB listen port
 #DATABASE_INNODB_FLUSH_LOG_AT_TRX_COMMIT="2"           # 1 = strict ACID (fsync each commit); 2 = 1-sec window, far less SD wear (the recommended Pi default when DATABASE_INNODB_TUNE=on)
 #DATABASE_INNODB_BUFFER_POOL_SIZE="AUTO"               # InnoDB cache size when DATABASE_INNODB_TUNE=on. AUTO = Pi-tier (64M / 128M / 256M / 512M); pin with e.g. "256M"
 #DATABASE_DEFAULT_NAME="weewx"                         # role-sidecar fallback for AUTO-resolved DATABASE_NAME (per-role default lives in config/database-<role>.config)
-#DATABASE_SQLITE_PYTHON_PACKAGES=""                    # apt packages installed alongside sqlite (none — weewx already pulls python3 sqlite3)
+#DATABASE_SQLITE_PYTHON_PACKAGES=""                    # apt packages installed alongside sqlite (none - weewx already pulls python3 sqlite3)
 #DATABASE_MYSQL_PYTHON_PACKAGES="python3-pymysql"      # apt packages installed for WeeWX's MySQL driver
 #DATABASE_MARIADB_PYTHON_PACKAGES="python3-pymysql"    # same; pymysql is wire-compatible with both
 
 # ----------------------------------------------------------------------------
-# NeoWX Material skin — extension URL (config-file-only)
+# NeoWX Material skin - extension URL (config-file-only)
 # ----------------------------------------------------------------------------
 # Pin to a release tag for reproducible installs, e.g.
-#   https://github.com/seehase/neowx-material/archive/refs/tags/vX.Y.Z.zip
+#   https://github.com/seehase/neowx-material/archive/refs/tags/vX.Y.Z.zip or
+#   https://github.com/BroMarduk/neowx-material/archive/refs/heads/feature/custom-chart-date-formats.zip
 #NEOWX_EXTENSION_URL="https://github.com/seehase/neowx-material/archive/refs/heads/master.zip"
 
 # ----------------------------------------------------------------------------
-# WeeWX OneDrive backup — verify level (config-file-only)
+# WeeWX OneDrive backup - verify level (config-file-only)
 # ----------------------------------------------------------------------------
-#WEEWX_BACKUP_VERIFY="integrity"            # integrity | quick | off — SQLite integrity_check on the snapshot before upload
+#WEEWX_BACKUP_VERIFY="integrity"            # integrity | quick | off - SQLite integrity_check on the snapshot before upload
 
 # ----------------------------------------------------------------------------
-# Compressed swap (zram) — older SD-card swapfile handling (config-file-only)
+# Compressed swap (zram) - older SD-card swapfile handling (config-file-only)
 # ----------------------------------------------------------------------------
 #ZRAM_DISABLE_DPHYS_SWAPFILE="true"         # true = disable the SD-card /var/swap file at install (recommended); false = leave it alongside zram
 
 # ----------------------------------------------------------------------------
-# RTC — bus-type derived value (config-file-only)
+# RTC - bus-type derived value (config-file-only)
 # ----------------------------------------------------------------------------
 # RTC_BUS_TYPE is auto-derived from RTC_CHIP at install time and shown
-# read-only on the editor for context. Manual override is rarely useful —
-# the chip-child sets the correct bus type automatically — but supported
+# read-only on the editor for context. Manual override is rarely useful -
+# the chip-child sets the correct bus type automatically - but supported
 # for the same power-user case as the RTC_CHIP override above.
 #RTC_BUS_TYPE="i2c"                         # i2c | spi | pi5-builtin (normally derived from RTC_CHIP)
 
 # ----------------------------------------------------------------------------
-# User account — feature-user (config-file-only)
+# User account - feature-user (config-file-only)
 # ----------------------------------------------------------------------------
 #USER_USERNAME="dan"                        # the username this Pi is meant to belong to (feature-user uses this for permission fixes)
 #USER_DELETE_PI="1"                         # 1 = delete the default 'pi' user once $USER_USERNAME exists; 0 = leave 'pi' alone
@@ -225,5 +226,5 @@
 # ----------------------------------------------------------------------------
 # Top-level installicious knobs (config-file-only)
 # ----------------------------------------------------------------------------
-#ACCEPTABLE_TIME_DELTA_SEC="3600"           # apt cache TTL in seconds — skip apt-get update if a refresh ran within this window
+#ACCEPTABLE_TIME_DELTA_SEC="3600"           # apt cache TTL in seconds - skip apt-get update if a refresh ran within this window
 #UNINSTALL_DEPENDENCIES=""                  # space-separated package IDs to also `apt-get autoremove` at uninstall (rarely useful; empty by default)
