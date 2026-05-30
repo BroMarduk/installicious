@@ -164,3 +164,66 @@
 #RTC_SPI_CS_PIN="0"                         # SPI CS pin (only meaningful for SPI chips)
 #RTC_PURGE_FAKE_HWCLOCK="yes"               # yes | no — apt-purge fake-hwclock at install (stale-time guard)
 #RTC_UNINSTALL_DISABLE_I2C_BUS="no"         # yes | no — disable dtparam=i2c_arm=on at uninstall (bus is shared, default no)
+
+
+# ============================================================================
+# CONFIG-FILE-ONLY OVERRIDES
+# ============================================================================
+# The keys above all surface on the in-menu Edit Configuration screen via
+# their feature's II_EDITABLE_CONFIG. The keys BELOW are framework defaults
+# that DON'T appear on that screen but are still read at install time —
+# uncomment them here (or set them directly in their config/<feature>.config
+# file) to change behavior. They're grouped down here because they're
+# either advanced tunables, infrastructure knobs that rarely need touching,
+# or read-only context the editor surfaces as derived values.
+# ============================================================================
+
+
+# ----------------------------------------------------------------------------
+# Database — advanced tunables (config-file-only)
+# ----------------------------------------------------------------------------
+#DATABASE_PORT="3306"                                  # MySQL / MariaDB listen port
+#DATABASE_INNODB_FLUSH_LOG_AT_TRX_COMMIT="2"           # 1 = strict ACID (fsync each commit); 2 = 1-sec window, far less SD wear (the recommended Pi default when DATABASE_INNODB_TUNE=on)
+#DATABASE_INNODB_BUFFER_POOL_SIZE="AUTO"               # InnoDB cache size when DATABASE_INNODB_TUNE=on. AUTO = Pi-tier (64M / 128M / 256M / 512M); pin with e.g. "256M"
+#DATABASE_DEFAULT_NAME="weewx"                         # role-sidecar fallback for AUTO-resolved DATABASE_NAME (per-role default lives in config/database-<role>.config)
+#DATABASE_SQLITE_PYTHON_PACKAGES=""                    # apt packages installed alongside sqlite (none — weewx already pulls python3 sqlite3)
+#DATABASE_MYSQL_PYTHON_PACKAGES="python3-pymysql"      # apt packages installed for WeeWX's MySQL driver
+#DATABASE_MARIADB_PYTHON_PACKAGES="python3-pymysql"    # same; pymysql is wire-compatible with both
+
+# ----------------------------------------------------------------------------
+# NeoWX Material skin — extension URL (config-file-only)
+# ----------------------------------------------------------------------------
+# Pin to a release tag for reproducible installs, e.g.
+#   https://github.com/seehase/neowx-material/archive/refs/tags/vX.Y.Z.zip
+#NEOWX_EXTENSION_URL="https://github.com/seehase/neowx-material/archive/refs/heads/master.zip"
+
+# ----------------------------------------------------------------------------
+# WeeWX OneDrive backup — verify level (config-file-only)
+# ----------------------------------------------------------------------------
+#WEEWX_BACKUP_VERIFY="integrity"            # integrity | quick | off — SQLite integrity_check on the snapshot before upload
+
+# ----------------------------------------------------------------------------
+# Compressed swap (zram) — older SD-card swapfile handling (config-file-only)
+# ----------------------------------------------------------------------------
+#ZRAM_DISABLE_DPHYS_SWAPFILE="true"         # true = disable the SD-card /var/swap file at install (recommended); false = leave it alongside zram
+
+# ----------------------------------------------------------------------------
+# RTC — bus-type derived value (config-file-only)
+# ----------------------------------------------------------------------------
+# RTC_BUS_TYPE is auto-derived from RTC_CHIP at install time and shown
+# read-only on the editor for context. Manual override is rarely useful —
+# the chip-child sets the correct bus type automatically — but supported
+# for the same power-user case as the RTC_CHIP override above.
+#RTC_BUS_TYPE="i2c"                         # i2c | spi | pi5-builtin (normally derived from RTC_CHIP)
+
+# ----------------------------------------------------------------------------
+# User account — feature-user (config-file-only)
+# ----------------------------------------------------------------------------
+#USER_USERNAME="dan"                        # the username this Pi is meant to belong to (feature-user uses this for permission fixes)
+#USER_DELETE_PI="1"                         # 1 = delete the default 'pi' user once $USER_USERNAME exists; 0 = leave 'pi' alone
+
+# ----------------------------------------------------------------------------
+# Top-level installicious knobs (config-file-only)
+# ----------------------------------------------------------------------------
+#ACCEPTABLE_TIME_DELTA_SEC="3600"           # apt cache TTL in seconds — skip apt-get update if a refresh ran within this window
+#UNINSTALL_DEPENDENCIES=""                  # space-separated package IDs to also `apt-get autoremove` at uninstall (rarely useful; empty by default)
