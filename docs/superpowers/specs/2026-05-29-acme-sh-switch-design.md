@@ -60,7 +60,7 @@ our case, a systemd timer), removing the dependency on `certbot.timer`.
 lib/cert.sh                                          shared cert lifecycle
 resources/acme-sh-renew.service.template             systemd renewal unit
 resources/acme-sh-renew.timer.template               daily randomized timer
-tests/test-cert.sh                                   lib/cert.sh unit tests (~17 cases)
+tests/test-cert.sh                                   lib/cert.sh unit tests (~21 cases)
 tests/test-webserver-ssl-integration.sh              _reload_cmd_for_backend tests (~4 cases)
 ```
 
@@ -179,14 +179,28 @@ cert_parse_names <csv_string>
     # trailing whitespace trimmed per entry. Empty entries (e.g. trailing
     # comma) are dropped. Read-only / side-effect-free.
 
-cert_validate_names <method> <name>...
-    # Returns rc=0 if all <name>s pass:
+cert_validate_names <name>...
+    # SHAPE-ONLY validation. Returns rc=0 if all <name>s pass:
     #   - Non-empty list (at least one name).
-    #   - Each name matches hostname regex (allows leading '*.' for wildcards).
-    #   - If any name is a wildcard, <method> must be "dns-cloudflare".
+    #   - Each name matches hostname regex (allows leading '*.').
     # On failure: log_fail with the specific reason + return 1.
-    # Webserver-agnostic. Caddy-specific "no wildcards" check lives in
-    # feature-caddy.sh, not here.
+    # Wildcard-vs-method gating is NOT here — see cert_strip_wildcards.
+
+cert_strip_wildcards <reason> <name>...
+    # Echoes the input list with wildcard names (those starting with '*.')
+    # removed, one name per line. For each stripped name, emits log_warn
+    # quoting <reason> ("HTTP-01 cannot issue wildcard certs" or
+    # "Caddy wildcard support not currently available", etc.).
+    # Side-effect: log_warn output per stripped entry. Does NOT error or
+    # return non-zero — the caller decides what to do with an empty result.
+    # Used in the two "wildcards unsupported" contexts:
+    #   - feature-webserver-ssl.sh with WEBSERVER_SSL_METHOD=http
+    #   - feature-caddy.sh (any method)
+
+cert_require_nonempty <name>...
+    # Trivial guard. Returns rc=0 if the list is non-empty, rc=1 with
+    # log_fail otherwise. Used after cert_strip_wildcards to detect the
+    # "only wildcards were listed" failure case.
 ```
 
 ### Input variables (read from caller's env)
@@ -330,10 +344,12 @@ sans=("${NAMES[@]:1}")
 cert_issue "$primary" "$WEBSERVER_SSL_METHOD" "${sans[@]}"
 ```
 
-### Validation gate
+### Validation + wildcard-stripping gate
 
 Runs at the top of `_obtain_cert` in `feature-webserver-ssl.sh` and at
-the equivalent point in `feature-caddy.sh`. Order of checks:
+the equivalent point in `feature-caddy.sh`. Two-stage shape:
+
+#### Stage 1: shape validation (always)
 
 1. **At least one name.** `WEBSERVER_SERVER_NAME` after parsing must
    yield ≥1 non-empty entry. Otherwise: `log_fail` "no server names
@@ -342,18 +358,30 @@ the equivalent point in `feature-caddy.sh`. Order of checks:
    `^(\*\.)?[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)+$`.
    This accepts `example.com`, `sub.example.com`, `*.example.com`. Rejects
    trailing dots, leading hyphens, empty labels.
-3. **Wildcards require dns-cloudflare.** If any parsed name starts with
-   `*.` AND `WEBSERVER_SSL_METHOD=http`: `log_fail` with
-   `"wildcard certificate '*.<...>' requires WEBSERVER_SSL_METHOD=dns-cloudflare;
-   current method is http (HTTP-01 cannot issue wildcards)"` + return 1.
-4. **Wildcards on Caddy backend not supported (yet).** In
-   `feature-caddy.sh` only: if any parsed name is a wildcard, `log_fail`
-   with `"wildcard certificate '*.<...>' requires the caddy-dns/cloudflare
-   plugin which is not installed by this feature today; switch to
-   nginx/apache/lighttpd, or remove the wildcard from
-   WEBSERVER_SERVER_NAME"` + return 1.
-5. **DNS-Cloudflare requires `WEBSERVER_SSL_CF_TOKEN`.** (Existing check;
-   reaffirmed here.)
+
+#### Stage 2: wildcard handling (context-dependent)
+
+Three contexts:
+
+- **webserver-ssl + method=dns-cloudflare** — wildcards are supported.
+  Keep all names. No filtering.
+- **webserver-ssl + method=http** — HTTP-01 cannot issue wildcards.
+  Strip them with a warning per stripped entry; error only if the result
+  is empty.
+- **Caddy backend (any method)** — Caddy wildcard support is deferred
+  (see non-goals). Strip wildcards with a warning per stripped entry;
+  error only if the result is empty.
+
+The "strip with warning, error only when empty" rule means a user with
+`example.com, *.example.com` on a Caddy backend gets a clean install of
+`example.com` plus a `log_warn` explaining the wildcard was dropped — not
+a hard failure. But a user with `*.example.com` alone on Caddy gets a
+`log_fail` (nothing left to install).
+
+#### Stage 3: backend-specific cred check
+
+- **DNS-Cloudflare requires `WEBSERVER_SSL_CF_TOKEN`.** Existing check;
+  reaffirmed here. Fires regardless of wildcard presence.
 
 ### Per-backend vhost rendering
 
@@ -457,15 +485,20 @@ _obtain_cert() {
   # Parse multi-name list.
   local -a NAMES
   mapfile -t NAMES < <(cert_parse_names "$WEBSERVER_SERVER_NAME")
-  if (( ${#NAMES[@]} == 0 )); then
-    log_fail "WEBSERVER_SERVER_NAME yielded zero names after parsing."
-    return 1
+
+  # Stage 1: shape validation (always).
+  cert_validate_names "${NAMES[@]}"                                       || return $?
+
+  # Stage 2: strip wildcards when the chosen method can't issue them.
+  if [[ $WEBSERVER_SSL_METHOD == "http" ]]; then
+    mapfile -t NAMES < <(cert_strip_wildcards \
+      "HTTP-01 cannot issue wildcard certs; switch to dns-cloudflare" \
+      "${NAMES[@]}")
+    cert_require_nonempty "${NAMES[@]}"                                   || return $?
   fi
+
   local primary="${NAMES[0]}"
   local sans=("${NAMES[@]:1}")
-
-  # Validate (shape, wildcard-vs-method).
-  cert_validate_names "$WEBSERVER_SSL_METHOD" "${NAMES[@]}"               || return $?
 
   cert_install_acme_sh                                                   || return $?
   cert_issue "$primary" "$WEBSERVER_SSL_METHOD" "${sans[@]}"             || return $?
@@ -504,8 +537,8 @@ and the self-signed fallback cert.
 
 | Where | Change |
 |---|---|
-| Top of install body (around line 78) | Parse `WEBSERVER_SERVER_NAME` via `cert_parse_names` (cert.sh is sourced for the parser helper, not for cert ops). Set `primary` + `sans` array. |
-| New validation block | Reject wildcards: any name starting with `*.` → `log_fail` with the spec'd message + return 1. |
+| Top of install body (around line 78) | Parse `WEBSERVER_SERVER_NAME` via `cert_parse_names` (cert.sh is sourced for the parser + strip-helper, not for cert ops). |
+| Validation + wildcard-strip block | `cert_validate_names "${NAMES[@]}"`. Then unconditionally strip wildcards via `cert_strip_wildcards "Caddy wildcard support not currently available (requires caddy add-package + caddy-dns/cloudflare; deferred)" "${NAMES[@]}"`. Then `cert_require_nonempty "${NAMES[@]}"` — error if every name was a wildcard, proceed otherwise. Set `primary` + `sans` array from the surviving names. |
 | Self-signed fallback cert (around line 127-133) | `-subj "/CN=$primary"` + `-addext "subjectAltName=DNS:$primary,DNS:$san1,DNS:$san2..."`. Names array built from the parsed list. |
 | Caddyfile templates (around lines 193, 240, 290) | Replace `${WEBSERVER_SERVER_NAME} {` with `${primary}, ${san1}, ${san2}... {`. Caddy accepts comma-separated names natively. |
 | `@canonical host` matcher (line 199) | `@canonical host ${primary} ${san1} ${san2}...` (space-separated; Caddy's `host` matcher accepts a list of values, matches if any matches). |
@@ -673,12 +706,18 @@ Test hooks:
 20. `cert_validate_names` shape reject — invalid names: empty string,
     `.example.com`, `example.com.` (trailing dot), `-leading-hyphen.com`,
     `space in name.com`. All return rc=1.
-21. `cert_validate_names` wildcard+method gate — wildcard + method=http
-    returns rc=1 with log_fail naming the constraint; wildcard +
-    method=dns-cloudflare returns rc=0.
-22. `cert_issue` multi-SAN HTTP-01 — call with primary + 2 SANs +
+21. `cert_strip_wildcards` mixed list — input `example.com www.example.com
+    *.example.com` produces output `example.com www.example.com` and one
+    log_warn line quoting the reason.
+22. `cert_strip_wildcards` all-wildcards — input `*.example.com
+    *.api.example.com` produces empty output and two log_warn lines.
+23. `cert_strip_wildcards` no-wildcards — input `example.com www.example.com`
+    is returned unchanged with no log_warn output.
+24. `cert_require_nonempty` empty — no args → rc=1 with log_fail.
+25. `cert_require_nonempty` populated — one or more args → rc=0, no log.
+26. `cert_issue` multi-SAN HTTP-01 — call with primary + 2 SANs +
     method=http. Assert acme.sh stub got `-d <p> -d <s1> -d <s2> --webroot`.
-23. `cert_issue` multi-SAN DNS-Cloudflare — call with primary + wildcard
+27. `cert_issue` multi-SAN DNS-Cloudflare — call with primary + wildcard
     SAN + method=dns-cloudflare. Assert acme.sh stub got
     `-d <p> -d *.<p> --dns dns_cf` and CF_Token in env.
 
@@ -707,17 +746,23 @@ rendering for each backend:
 12. lighttpd multi-SAN: regex `^(example\.com|www\.example\.com|api\.example\.com)$`.
 13. lighttpd wildcard: regex `^(example\.com|.*\.example\.com)$`.
 
-### `tests/test-caddy-integration.sh` (new, ~80 lines)
+### `tests/test-caddy-integration.sh` (new, ~120 lines)
 
 Unit-tests `feature-caddy.sh`'s multi-name handling:
 
 1. Single-name Caddyfile: `example.com { ... }` (today's behavior preserved).
 2. Multi-name Caddyfile: `example.com, www.example.com { ... }`.
-3. Wildcard rejected: input with `*.example.com` → log_fail, install
-   returns non-zero before Caddyfile is written.
-4. Self-signed fallback cert subjectAltName: multi-name input produces
-   `subjectAltName=DNS:example.com,DNS:www.example.com`.
-5. `@canonical host` matcher: multi-name produces
+3. Wildcard mixed with non-wildcards: input `example.com, *.example.com`
+   produces a Caddyfile with `example.com { ... }` (wildcard stripped) and
+   the install log contains one log_warn naming the stripped name.
+4. All-wildcards: input `*.example.com, *.api.example.com` causes the
+   install to return non-zero with a log_fail naming the empty result
+   after stripping. Caddyfile is NOT written.
+5. Self-signed fallback cert subjectAltName: multi-name input produces
+   `subjectAltName=DNS:example.com,DNS:www.example.com` (only surviving
+   names; wildcards excluded since the cert is self-signed and the names
+   that matter for SNI are the non-wildcard ones).
+6. `@canonical host` matcher: multi-name produces
    `@canonical host example.com www.example.com`.
 
 ### Existing test impact
