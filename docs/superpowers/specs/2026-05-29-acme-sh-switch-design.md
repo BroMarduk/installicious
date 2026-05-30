@@ -12,6 +12,15 @@ dependency entirely. Extract the cert lifecycle into a shared `lib/cert.sh`
 so future cert-needing features can reuse the same install / issue / renew
 / uninstall / verify primitives.
 
+Also adds:
+- **Multi-domain certs** (comma-delimited `WEBSERVER_SERVER_NAME`) across
+  all four backends: nginx, apache, lighttpd, and Caddy. The first name in
+  the list is the primary (cert path is keyed on it); the rest become SANs.
+- **Wildcard certs** (`*.example.com`) for the three acme.sh-managed
+  backends (nginx, apache, lighttpd). Requires
+  `WEBSERVER_SSL_METHOD=dns-cloudflare` because Let's Encrypt only issues
+  wildcards via DNS-01.
+
 ## Why
 
 The current implementation works, but pulls in `python3-cloudflare` (the
@@ -32,9 +41,11 @@ our case, a systemd timer), removing the dependency on `certbot.timer`.
 - **Migration of existing certbot installs.** The user confirmed there
   are no in-the-wild installs running the old code path that need
   preserving. New installs go to acme.sh; no auto-migration logic.
-- **Wildcard certificate support.** acme.sh handles wildcards via the
-  same `--issue -d *.<name> --dns dns_cf` flow, but feature-webserver-ssl
-  has no consumer for it today. Keep the API single-domain.
+- **Wildcard certs on the Caddy backend.** Requires Caddy 2.7+'s
+  `caddy add-package` mechanism and the `caddy-dns/cloudflare` plugin,
+  plus runtime `CF_API_TOKEN` injection via systemd `Environment=`.
+  Substantial separate work — deferred to a future feature-caddy update.
+  Multi-domain (non-wildcard) on Caddy IS in scope here.
 - **Multi-CA support.** acme.sh supports ZeroSSL, BuyPass, Google Trust
   Services, etc. We stay on Let's Encrypt (acme.sh's current default).
 - **Real-network testing.** No live Let's Encrypt issuance in the test
@@ -56,10 +67,16 @@ tests/test-webserver-ssl-integration.sh              _reload_cmd_for_backend tes
 ### Modified files
 
 ```
-features/feature-webserver-ssl.sh                    delete ~130 LOC, add ~40 LOC delegation;
-                                                     II_VERSION 4 → 5; vhost cert paths to /etc/acme.sh/
-README.md                                            update SSL/HTTPS section to mention acme.sh
-overrides/configuration.override.example             no change (key names + meanings preserved)
+features/feature-webserver-ssl.sh                    delete ~130 LOC, add ~50 LOC delegation +
+                                                     multi-name handling; II_VERSION 4 → 5;
+                                                     vhost cert paths to /etc/acme.sh/<primary>/
+features/feature-caddy.sh                            multi-name Caddyfile site blocks + self-signed
+                                                     fallback CN/SAN update; II_VERSION bump
+README.md                                            update SSL/HTTPS section to mention acme.sh +
+                                                     comma-delimited WEBSERVER_SERVER_NAME syntax
+config/webserver.config                              update WEBSERVER_SERVER_NAME comment to
+                                                     document the new syntax
+overrides/configuration.override.example             update WEBSERVER_SERVER_NAME comment to match
 VERSION                                              PATCH per phase; MINOR on landing (target 2.10.0)
 ```
 
@@ -97,12 +114,23 @@ cert_install_acme_sh
     # Auto-upgrade of acme.sh itself NOT performed (user runs --upgrade
     # explicitly if they want it).
 
-cert_issue <name> <method>
+cert_issue <primary_name> <method> [<san>...]
     # Run acme.sh --issue. <method> ∈ {http, dns-cloudflare}.
-    #   http           → /opt/acme.sh/acme.sh --issue -d <name>
+    # First positional is the primary domain (cert path is keyed on it);
+    # subsequent positionals become SAN entries on the same cert.
+    #
+    # Each name is passed as a separate `-d` flag to acme.sh:
+    #   http           → /opt/acme.sh/acme.sh --issue \
+    #                       -d <primary> [-d <san>...] \
     #                       --webroot "$WEBSERVER_DOC_ROOT"
     #   dns-cloudflare → CF_Token="$CERT_CF_TOKEN" \
-    #                    /opt/acme.sh/acme.sh --issue -d <name> --dns dns_cf
+    #                    /opt/acme.sh/acme.sh --issue \
+    #                       -d <primary> [-d <san>...] --dns dns_cf
+    #
+    # Wildcard names (any starting with "*.") REQUIRE method=dns-cloudflare.
+    # Let's Encrypt rejects wildcards via HTTP-01; cert_issue fails fast
+    # with a clear log_fail if a wildcard SAN appears with method=http.
+    #
     # After successful issuance, write $PATH_STATE/acme-sh-creds.sh with
     # `export CF_Token="<the token>"` so the renewal systemd unit can
     # source it (belt-and-suspenders against acme.sh's per-domain conf
@@ -145,6 +173,20 @@ cert_verify <name>
     #   /opt/acme.sh/acme.sh --list shows <name>
     #   systemctl is-active acme-sh-renew.timer returns rc=0
     # Each failing check emits a descriptive log_warn.
+
+cert_parse_names <csv_string>
+    # Echoes whitespace-separated names, one per line, with leading and
+    # trailing whitespace trimmed per entry. Empty entries (e.g. trailing
+    # comma) are dropped. Read-only / side-effect-free.
+
+cert_validate_names <method> <name>...
+    # Returns rc=0 if all <name>s pass:
+    #   - Non-empty list (at least one name).
+    #   - Each name matches hostname regex (allows leading '*.' for wildcards).
+    #   - If any name is a wildcard, <method> must be "dns-cloudflare".
+    # On failure: log_fail with the specific reason + return 1.
+    # Webserver-agnostic. Caddy-specific "no wildcards" check lives in
+    # feature-caddy.sh, not here.
 ```
 
 ### Input variables (read from caller's env)
@@ -249,6 +291,128 @@ optional, so the unit doesn't fail if it's somehow absent) +
 (NoNewPrivileges, PrivateTmp, ProtectSystem=strict, explicit
 ReadWritePaths, ProtectHome) keeps the renewal sandboxed.
 
+## Multi-domain + wildcard support
+
+`WEBSERVER_SERVER_NAME` becomes a comma-delimited list of hostnames.
+Whitespace around each entry is tolerated. The **first** entry is the
+primary (cert path is keyed on it; the cert lands at
+`/etc/acme.sh/<primary>/`). The rest become SANs on the same cert.
+
+```bash
+# Single (today's behavior — unchanged):
+WEBSERVER_SERVER_NAME="example.com"
+
+# Multi-SAN:
+WEBSERVER_SERVER_NAME="example.com, www.example.com"
+WEBSERVER_SERVER_NAME="example.com, www.example.com, api.example.com"
+
+# Wildcard (requires WEBSERVER_SSL_METHOD=dns-cloudflare):
+WEBSERVER_SERVER_NAME="example.com, *.example.com"
+WEBSERVER_SERVER_NAME="*.example.com"
+```
+
+### Parsing helper in `lib/cert.sh`
+
+```bash
+cert_parse_names <csv_string>
+    # Echoes whitespace-separated names, one per line, with leading +
+    # trailing whitespace trimmed per entry. Empty entries (e.g. trailing
+    # comma) are dropped. Used by the feature's _obtain_cert to split
+    # WEBSERVER_SERVER_NAME into an array.
+```
+
+Caller pattern:
+
+```bash
+mapfile -t NAMES < <(cert_parse_names "$WEBSERVER_SERVER_NAME")
+primary="${NAMES[0]}"
+sans=("${NAMES[@]:1}")
+cert_issue "$primary" "$WEBSERVER_SSL_METHOD" "${sans[@]}"
+```
+
+### Validation gate
+
+Runs at the top of `_obtain_cert` in `feature-webserver-ssl.sh` and at
+the equivalent point in `feature-caddy.sh`. Order of checks:
+
+1. **At least one name.** `WEBSERVER_SERVER_NAME` after parsing must
+   yield ≥1 non-empty entry. Otherwise: `log_fail` "no server names
+   configured" + return 1.
+2. **Each name looks like a hostname.** Regex:
+   `^(\*\.)?[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)+$`.
+   This accepts `example.com`, `sub.example.com`, `*.example.com`. Rejects
+   trailing dots, leading hyphens, empty labels.
+3. **Wildcards require dns-cloudflare.** If any parsed name starts with
+   `*.` AND `WEBSERVER_SSL_METHOD=http`: `log_fail` with
+   `"wildcard certificate '*.<...>' requires WEBSERVER_SSL_METHOD=dns-cloudflare;
+   current method is http (HTTP-01 cannot issue wildcards)"` + return 1.
+4. **Wildcards on Caddy backend not supported (yet).** In
+   `feature-caddy.sh` only: if any parsed name is a wildcard, `log_fail`
+   with `"wildcard certificate '*.<...>' requires the caddy-dns/cloudflare
+   plugin which is not installed by this feature today; switch to
+   nginx/apache/lighttpd, or remove the wildcard from
+   WEBSERVER_SERVER_NAME"` + return 1.
+5. **DNS-Cloudflare requires `WEBSERVER_SSL_CF_TOKEN`.** (Existing check;
+   reaffirmed here.)
+
+### Per-backend vhost rendering
+
+| Backend | Single-name (today) | Multi-name (new) |
+|---|---|---|
+| nginx | `server_name example.com;` | `server_name example.com www.example.com *.example.com;` (space-separated) |
+| apache | `ServerName example.com` | `ServerName example.com` <br> `ServerAlias www.example.com *.example.com` (one ServerAlias line listing the rest) |
+| lighttpd | `$HTTP["host"] == "example.com"` block | `$HTTP["host"] =~ "^(example\.com\|www\.example\.com\|.*\.example\.com)$"` (regex; dots escaped, `*` converted to `.*`) |
+| Caddy | `example.com { ... }` | `example.com, www.example.com { ... }` (Caddyfile site block accepts comma-separated names natively) |
+
+The lighttpd regex assembly is the one place that needs care:
+
+```bash
+_lighttpd_hosts_regex() {
+  # Echo "^(name1|name2|...)$" with regex-safe escaping.
+  local -a parts=()
+  local n
+  for n in "$@"; do
+    # Escape regex metacharacters. The only one in real hostnames is `.`;
+    # `*` (wildcards) becomes `.*` so *.example.com matches any subdomain.
+    parts+=("$(printf '%s' "$n" | sed 's/\./\\./g; s/\*/.*/g')")
+  done
+  local IFS='|'
+  echo "^(${parts[*]})\$"
+}
+```
+
+### Caddy self-signed fallback cert
+
+Today, `feature-caddy.sh` generates a self-signed fallback cert with
+`CN=$WEBSERVER_SERVER_NAME` and `subjectAltName=DNS:$WEBSERVER_SERVER_NAME`.
+With multi-name: CN is the primary; subjectAltName is a comma-separated
+list of all names. The openssl `-addext` call becomes:
+
+```bash
+-addext "subjectAltName=DNS:${primary},DNS:${san1},DNS:${san2}..."
+```
+
+### Editable-key documentation
+
+`config/webserver.config` comment block for `WEBSERVER_SERVER_NAME`:
+
+```bash
+# Vhost name(s). Single hostname, or comma-separated list for multi-SAN
+# certs. First entry is the primary (cert path is keyed on it).
+# Wildcards (*.example.com) require WEBSERVER_SSL_METHOD=dns-cloudflare —
+# Let's Encrypt rejects wildcards via HTTP-01. Wildcards on the Caddy
+# backend are NOT supported today (requires Caddy 2.7+ caddy-dns/cloudflare
+# plugin — deferred to a future feature-caddy update).
+# Examples:
+#   example.com
+#   example.com, www.example.com
+#   example.com, *.example.com    (acme.sh backends only)
+WEBSERVER_SERVER_NAME=""
+```
+
+Mirror the same comment block in
+`overrides/configuration.override.example`'s WEBSERVER_SERVER_NAME entry.
+
 ## `feature-webserver-ssl.sh` integration
 
 Approx 130 LOC removed, replaced with ~40 LOC of `lib/cert.sh` delegation
@@ -290,16 +454,34 @@ _obtain_cert() {
   CERT_CF_TOKEN="$WEBSERVER_SSL_CF_TOKEN"
   export CERT_EMAIL CERT_CF_TOKEN
 
+  # Parse multi-name list.
+  local -a NAMES
+  mapfile -t NAMES < <(cert_parse_names "$WEBSERVER_SERVER_NAME")
+  if (( ${#NAMES[@]} == 0 )); then
+    log_fail "WEBSERVER_SERVER_NAME yielded zero names after parsing."
+    return 1
+  fi
+  local primary="${NAMES[0]}"
+  local sans=("${NAMES[@]:1}")
+
+  # Validate (shape, wildcard-vs-method).
+  cert_validate_names "$WEBSERVER_SSL_METHOD" "${NAMES[@]}"               || return $?
+
   cert_install_acme_sh                                                   || return $?
-  cert_issue "$WEBSERVER_SERVER_NAME" "$WEBSERVER_SSL_METHOD"             || return $?
-  cert_install_to_paths "$WEBSERVER_SERVER_NAME" \
-      "/etc/acme.sh/$WEBSERVER_SERVER_NAME/fullchain.pem" \
-      "/etc/acme.sh/$WEBSERVER_SERVER_NAME/privkey.pem" \
+  cert_issue "$primary" "$WEBSERVER_SSL_METHOD" "${sans[@]}"             || return $?
+  cert_install_to_paths "$primary" \
+      "/etc/acme.sh/$primary/fullchain.pem" \
+      "/etc/acme.sh/$primary/privkey.pem" \
       "$(_reload_cmd_for_backend)"                                       || return $?
-  cert_renew_setup "$WEBSERVER_SERVER_NAME"
+  cert_renew_setup "$primary"
   return 0
 }
 ```
+
+Note: `cert_validate_names <method> <name>...` lives in `lib/cert.sh` and
+handles the shape regex + wildcard-vs-method check. The Caddy-specific
+"no wildcards" check is in `feature-caddy.sh`'s wrapper (it doesn't
+belong in the lib, since the lib is webserver-agnostic).
 
 ### Manifest changes
 
@@ -311,6 +493,36 @@ skip-hash convention, the feature also re-triggers on
 `II_DEPS` stays empty — the parent webserver-ssl doesn't depend on any
 apt package; `lib/cert.sh` itself runs `apt_ensure_installed wget` at
 install time, and acme.sh isn't an apt package at all.
+
+## `feature-caddy.sh` integration (multi-name only; wildcards out of scope)
+
+`feature-caddy.sh` doesn't use `lib/cert.sh` — Caddy has its own built-in
+ACME client. The changes here are limited to multi-name vhost rendering
+and the self-signed fallback cert.
+
+### Edits
+
+| Where | Change |
+|---|---|
+| Top of install body (around line 78) | Parse `WEBSERVER_SERVER_NAME` via `cert_parse_names` (cert.sh is sourced for the parser helper, not for cert ops). Set `primary` + `sans` array. |
+| New validation block | Reject wildcards: any name starting with `*.` → `log_fail` with the spec'd message + return 1. |
+| Self-signed fallback cert (around line 127-133) | `-subj "/CN=$primary"` + `-addext "subjectAltName=DNS:$primary,DNS:$san1,DNS:$san2..."`. Names array built from the parsed list. |
+| Caddyfile templates (around lines 193, 240, 290) | Replace `${WEBSERVER_SERVER_NAME} {` with `${primary}, ${san1}, ${san2}... {`. Caddy accepts comma-separated names natively. |
+| `@canonical host` matcher (line 199) | `@canonical host ${primary} ${san1} ${san2}...` (space-separated; Caddy's `host` matcher accepts a list of values, matches if any matches). |
+
+`II_VERSION` on feature-caddy bumps by 1 so existing installs re-run on
+next installicious cycle.
+
+### What's deliberately NOT here
+
+- No `caddy-dns/cloudflare` plugin install.
+- No Caddyfile `tls { dns cloudflare }` block.
+- No `CF_API_TOKEN` injection via systemd `Environment=`.
+- No switch from Debian apt's `caddy` to Caddy's official APT repo.
+
+All of the above are required for wildcard support on Caddy. They're
+deferred to a separate feature-caddy update, captured in "Open
+follow-ups" below.
 
 ## Data flow (end to end)
 
@@ -452,16 +664,61 @@ Test hooks:
     log_warn names the de-registration.
 17. Parameterized method coverage — loop over {http, dns-cloudflare},
     assert resulting acme.sh argv pattern matches the spec table.
+18. `cert_parse_names` — comma-delimited input → array of trimmed names.
+    Cases: single name, multi-name, whitespace tolerance, trailing comma,
+    empty entry mid-list, all-whitespace input.
+19. `cert_validate_names` shape pass — valid names: `example.com`,
+    `sub.example.com`, `*.example.com`, `multi-hyphen-host.example.co.uk`.
+    All return rc=0.
+20. `cert_validate_names` shape reject — invalid names: empty string,
+    `.example.com`, `example.com.` (trailing dot), `-leading-hyphen.com`,
+    `space in name.com`. All return rc=1.
+21. `cert_validate_names` wildcard+method gate — wildcard + method=http
+    returns rc=1 with log_fail naming the constraint; wildcard +
+    method=dns-cloudflare returns rc=0.
+22. `cert_issue` multi-SAN HTTP-01 — call with primary + 2 SANs +
+    method=http. Assert acme.sh stub got `-d <p> -d <s1> -d <s2> --webroot`.
+23. `cert_issue` multi-SAN DNS-Cloudflare — call with primary + wildcard
+    SAN + method=dns-cloudflare. Assert acme.sh stub got
+    `-d <p> -d *.<p> --dns dns_cf` and CF_Token in env.
 
-### `tests/test-webserver-ssl-integration.sh` (new, ~80 lines)
+### `tests/test-webserver-ssl-integration.sh` (new, ~200 lines)
 
-NOT end-to-end. Just unit-tests `_reload_cmd_for_backend`:
+NOT end-to-end. Unit-tests three helpers and the multi-name vhost
+rendering for each backend:
+
+**`_reload_cmd_for_backend`:**
 
 1. With nginx installed (stubbed `apt_is_installed nginx` rc=0): emits
    `systemctl reload nginx`.
 2. With apache2 installed: emits `systemctl reload apache2`.
 3. With lighttpd installed: emits `systemctl reload lighttpd`.
 4. With nothing installed: emits `:` (no-op).
+
+**Multi-name vhost rendering (3 cases per backend = 9):**
+
+5. nginx single-name: `server_name example.com;`.
+6. nginx multi-SAN: `server_name example.com www.example.com api.example.com;`.
+7. nginx wildcard: `server_name example.com *.example.com;`.
+8. apache single-name: `ServerName example.com` + no `ServerAlias`.
+9. apache multi-SAN: `ServerName example.com` + `ServerAlias www.example.com api.example.com`.
+10. apache wildcard: `ServerName example.com` + `ServerAlias *.example.com`.
+11. lighttpd single-name: regex `^(example\.com)$`.
+12. lighttpd multi-SAN: regex `^(example\.com|www\.example\.com|api\.example\.com)$`.
+13. lighttpd wildcard: regex `^(example\.com|.*\.example\.com)$`.
+
+### `tests/test-caddy-integration.sh` (new, ~80 lines)
+
+Unit-tests `feature-caddy.sh`'s multi-name handling:
+
+1. Single-name Caddyfile: `example.com { ... }` (today's behavior preserved).
+2. Multi-name Caddyfile: `example.com, www.example.com { ... }`.
+3. Wildcard rejected: input with `*.example.com` → log_fail, install
+   returns non-zero before Caddyfile is written.
+4. Self-signed fallback cert subjectAltName: multi-name input produces
+   `subjectAltName=DNS:example.com,DNS:www.example.com`.
+5. `@canonical host` matcher: multi-name produces
+   `@canonical host example.com www.example.com`.
 
 ### Existing test impact
 
@@ -492,6 +749,15 @@ tool change ("via acme.sh, no Python dependencies").
 
 ## Open follow-ups (deferred, not blocking)
 
+- **Wildcard certs on the Caddy backend.** Requires Caddy 2.7+ (Bookworm
+  ships 2.6.2 — so a switch to Caddy's official APT repo at
+  cloudsmith.io for both Bookworm and Trixie), plus `caddy add-package
+  github.com/caddy-dns/cloudflare`, plus a Caddyfile `tls { dns
+  cloudflare {env.CF_API_TOKEN} }` block, plus systemd `Environment=`
+  injection of CF_API_TOKEN (or `EnvironmentFile=` from
+  `state/caddy-cloudflare-creds.env`). Substantial enough to warrant its
+  own brainstorm/spec/plan cycle — included in the current spec's
+  non-goals.
 - **`acme.sh --upgrade` cadence.** Today the install is locked at
   whatever acme.sh version was current at install time. Future:
   optional `WEBSERVER_SSL_ACME_AUTO_UPGRADE` knob that adds
@@ -499,9 +765,6 @@ tool change ("via acme.sh, no Python dependencies").
 - **ZeroSSL fallback.** acme.sh defaults to LE but supports
   ZeroSSL/BuyPass. Could become a `WEBSERVER_SSL_CA` editable key
   (le / zerossl / buypass) if there's demand.
-- **Wildcard certs.** Same acme.sh code path with `-d *.<name>`. Easy
-  to enable later by adding an editable WEBSERVER_SSL_INCLUDE_WILDCARD
-  toggle.
 - **DNS provider plurality.** acme.sh supports 100+ DNS providers.
   Adding e.g. Route53 or DigitalOcean would be a parameter on
   cert_issue + an editable key for the provider name + credential vars.
