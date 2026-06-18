@@ -444,6 +444,16 @@ symmetry; the underlying mechanism differs by file.
     running WeeWX.
   - Editable: `WEEWX_DB_DIR`, `WEEWX_DB_HDD_DIR`, `WEEWX_DB_ROTATIONS`,
     `WEEWX_DB_ZRAM_SIZE` (`"AUTO"` or empty = auto-compute).
+  - **Skyfield offload.** When `skyfield` is installed onto a station
+    that already has `weewx-database-ram` active, `feature-skyfield`
+    detects the zram mount and symlinks `/var/lib/weewx/skyfield` to
+    `/var/cache/weewx-skyfield/` (override with `SKYFIELD_OFFLOAD_DIR`)
+    so the ~30+ MB of JPL ephemeris files (`de440.bsp`, `finals2000A.all`,
+    etc.) live on SD instead of in the compressed RAM. `fstrim` runs
+    against `/var/lib/weewx` to release the freed zram blocks
+    immediately. Skipped silently when the DB is on SD. The cache dir
+    is preserved across `--uninstall` so a re-install reuses the
+    already-downloaded files.
 - **neowx-material** — installs the [NeoWX Material
   skin](https://github.com/seehase/neowx-material) (seehase's
   actively-maintained fork) and wires up everything its README calls

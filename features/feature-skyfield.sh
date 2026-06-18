@@ -45,7 +45,7 @@
 II_ID="skyfield"
 II_TITLE="SkyfieldAlmanac (WeeWX extension)"
 II_CATEGORY="feature"
-II_VERSION="2"
+II_VERSION="3"
 II_DEPS="weewx weewx-setup"
 II_REQUIRES_REBOOT="never"
 II_APT_PACKAGES="python3-numpy python3-pandas python3-skyfield"
@@ -64,6 +64,11 @@ SKYFIELD_EXTENSION_URL="${SKYFIELD_EXTENSION_URL:-https://github.com/roe-dl/weew
 # extension — that's the same name `weectl extension uninstall <name>`
 # expects. roe-dl ships it as "Skyfield almanac" (space, lowercase 'a').
 SKYFIELD_EXTENSION_NAME="${SKYFIELD_EXTENSION_NAME:-Skyfield almanac}"
+# Where to park the ~30+ MB of ephemeris / IERS files when the WeeWX DB
+# is on zram. The extension's data path is hardcoded to
+# WEEWX_ROOT/skyfield (which lands inside /var/lib/weewx, i.e. on the
+# zram fs); we redirect it via a symlink so the data lives on SD.
+SKYFIELD_OFFLOAD_DIR="${SKYFIELD_OFFLOAD_DIR:-/var/cache/weewx-skyfield}"
 
 # _weewx_ext_tool — echo the WeeWX extension CLI on this box:
 # "weectl" (weewx 5), "wee_extension" (weewx 4), or "" if neither is on
@@ -75,6 +80,80 @@ _weewx_ext_tool() {
     echo "wee_extension"
   else
     echo ""
+  fi
+}
+
+# _skyfield_db_on_zram — rc=0 if /var/lib/weewx is mounted from a zram
+# device (the weewx-database-ram feature is active). Used to decide
+# whether to offload the skyfield data dir off the compressed ramdisk.
+_skyfield_db_on_zram() {
+  local src
+  src=$(findmnt -no SOURCE /var/lib/weewx 2>/dev/null)
+  [[ $src == /dev/zram* ]]
+}
+
+# _skyfield_offload_to_sd — pre-create the offload dir + symlink so the
+# extension's first run writes ephemeris files to SD instead of zram.
+# Idempotent: skips if /var/lib/weewx/skyfield is already a symlink.
+# Migrates any existing data (extension may have already created files
+# before this ran). Also runs fstrim so the zram backing-RAM for the
+# evicted blocks is released immediately, not lazily on next write.
+_skyfield_offload_to_sd() {
+  local live="/var/lib/weewx/skyfield"
+  local hdd="/var/lib/weewx.hdd/skyfield"
+  local cache="$SKYFIELD_OFFLOAD_DIR"
+
+  if [[ -L $live ]]; then
+    log_info "Skyfield data dir already symlinked ($live -> $(readlink -f "$live")). Nothing to offload."
+    return 0
+  fi
+
+  log_info "WeeWX DB is on zram — offloading Skyfield data dir to $cache."
+  sudo mkdir -p "$cache"
+  if [[ -d $live && ! -L $live ]]; then
+    sudo rsync -a "$live/" "$cache/" 2>&1 | tee -a "$FILE_LOG_INSTALLER" >/dev/null
+    sudo rm -rf "$live"
+  fi
+  if [[ -d $hdd && ! -L $hdd ]]; then
+    # Merge any SD-mirror copy into the cache too (older snapshot pulls).
+    sudo rsync -a "$hdd/" "$cache/" 2>&1 | tee -a "$FILE_LOG_INSTALLER" >/dev/null
+    sudo rm -rf "$hdd"
+  fi
+  sudo chown -R weewx:weewx "$cache"
+
+  sudo ln -s "$cache" "$live"
+  # The boot-time rsync from .hdd -> /var/lib/weewx preserves symlinks
+  # under rsync -a, so we mirror the symlink on the SD side as well.
+  # Only create it if the .hdd path exists (it won't if database-ram
+  # isn't yet fully set up).
+  if [[ -d /var/lib/weewx.hdd ]]; then
+    sudo ln -s "$cache" "$hdd"
+  fi
+
+  # Release any blocks we just freed back to system RAM. ext4 was
+  # mounted without `discard`, so this is the only path that shrinks
+  # zram's compressed footprint without waiting for new writes to
+  # naturally overwrite the freed blocks.
+  sudo fstrim -v /var/lib/weewx 2>&1 | tee -a "$FILE_LOG_INSTALLER" >/dev/null || true
+}
+
+# _skyfield_unsymlink — remove the offload symlinks on uninstall. We
+# preserve the cache dir itself so a future re-install can reuse the
+# already-downloaded ephemeris files (which are tens of MB and rarely
+# change). Only acts if the symlinks point at SKYFIELD_OFFLOAD_DIR --
+# never touches symlinks the user put there by hand.
+_skyfield_unsymlink() {
+  local live="/var/lib/weewx/skyfield"
+  local hdd="/var/lib/weewx.hdd/skyfield"
+  local cache="$SKYFIELD_OFFLOAD_DIR"
+
+  if [[ -L $live ]] && [[ $(readlink -f "$live" 2>/dev/null) == "$cache" ]]; then
+    log_info "Removing offload symlink $live (cache at $cache preserved)."
+    sudo rm -f "$live"
+  fi
+  if [[ -L $hdd ]] && [[ $(readlink -f "$hdd" 2>/dev/null) == "$cache" ]]; then
+    log_info "Removing offload symlink $hdd."
+    sudo rm -f "$hdd"
   fi
 }
 
@@ -167,6 +246,17 @@ do_install() {
     echo -e "[ \e[0;33mWARN\e[0m ] $tool extension install returned non-zero — check '$tool extension list' to confirm SkyfieldAlmanac is registered."
   fi
 
+  # Step 5: if the WeeWX DB is on zram (weewx-database-ram active),
+  # offload the ~30+ MB Skyfield data dir to SD via symlink so the
+  # extension's first run doesn't burn zram on ephemeris cache. The
+  # extension's data path is hardcoded to WEEWX_ROOT/skyfield in
+  # user/skyfieldalmanac.py; only the symlink approach works.
+  if _skyfield_db_on_zram; then
+    _skyfield_offload_to_sd
+  else
+    log_info "WeeWX DB is not on zram — skipping Skyfield offload (default path is fine)."
+  fi
+
   status_mark_complete "$II_ID" "$II_VERSION"
   log_ok "SkyfieldAlmanac installed and registered with WeeWX."
   echo -e "[  \e[0;32mOK\e[0m  ] Installicious successfully installed SkyfieldAlmanac."
@@ -202,7 +292,13 @@ do_uninstall() {
     log_info "Neither weectl nor wee_extension present; skipping extension unregister (weewx likely already removed)."
   fi
 
-  # Step 2: revert apt packages we installed. No source tree to remove —
+  # Step 2: drop offload symlinks if we created any. The cache dir at
+  # SKYFIELD_OFFLOAD_DIR is preserved -- a future re-install reuses the
+  # already-downloaded ephemeris files (tens of MB, rarely change).
+  # Manual cleanup: `sudo rm -rf $SKYFIELD_OFFLOAD_DIR`.
+  _skyfield_unsymlink
+
+  # Step 3: revert apt packages we installed. No source tree to remove —
   # the v2 install recipe doesn't keep one on disk.
   # shellcheck disable=SC2086
   installer_apt_revert "$STATUS_FILE" $II_APT_PACKAGES
