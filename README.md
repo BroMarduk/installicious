@@ -135,8 +135,10 @@ change actually requires one).
     disables the skip; a failed upgrade always re-runs).
   - `PKUPD_AUTOREMOVE` — `true` (default) runs `apt-get autoremove
     --purge` after the upgrade; `false` skips it.
-- **bash** — installs a curated `.bashrc` / aliases / prompt. Re-login
-  is handled automatically by the `installicious` wrapper.
+- **bash** — installs a curated `.bashrc` / aliases / prompt, including
+  the navigation aliases `..` (`cd ..`) and `...` (`cd ../..`) for both
+  root and the local user. Re-login is handled automatically by the
+  `installicious` wrapper.
 - **locale** — sets language, timezone, console keyboard, and Wi-Fi
   regulatory country. Editable keys: `LOCALE_LANG`, `LOCALE_TIMEZONE`,
   `LOCALE_KEYBOARD_LAYOUT`, `LOCALE_KEYBOARD_MODEL`, `LOCALE_WIFI_COUNTRY`.

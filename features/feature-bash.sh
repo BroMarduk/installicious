@@ -7,7 +7,9 @@
 #              alias lines, and inserts `alias dir='ls $LS_OPTIONS -la'`. For
 #              the local user: uncomments force_color_prompt + the standard
 #              alias lines, switches the dir alias to `ls -la --color=auto`,
-#              uncomments vdir, and appends `alias sudo='sudo '`.
+#              uncomments vdir, and appends `alias sudo='sudo '`. Both
+#              files also get the navigation aliases `..` (cd ..) and
+#              `...` (cd ../..), appended only when not already present.
 #
 #              --uninstall: re-comments the lines we uncommented, swaps the
 #                           PS1 back to the default form, removes the lines
@@ -24,7 +26,7 @@
 II_ID="bash"
 II_TITLE="Bash Customizer"
 II_CATEGORY="feature"
-II_VERSION="1"
+II_VERSION="2"
 II_DEPS=""
 II_REQUIRES_REBOOT="never"
 II_DEFAULT_SELECTED="on"
@@ -213,6 +215,12 @@ USER_VDIR_OLD="    #alias vdir='vdir --color=auto'"
 USER_VDIR_NEW="    alias vdir='vdir --color=auto'"
 USER_SUDO_ALIAS="alias sudo='sudo '"
 
+# Navigation aliases — appended to both root and user .bashrc when missing.
+NAV_ALIASES=(
+  "alias ..='cd ..'"
+  "alias ...='cd ../..'"
+)
+
 # Legacy v1 markers — stripped on first run if present (one-time migration
 # from the old append-managed-blocks design).
 LEGACY_MARKERS=(
@@ -270,6 +278,20 @@ strip_legacy_blocks_user() {
   done
 }
 
+append_nav_aliases() {
+  local file="$1" a
+  for a in "${NAV_ALIASES[@]}"; do
+    append_line_if_missing "$file" "$a"
+  done
+}
+
+remove_nav_aliases() {
+  local file="$1" a
+  for a in "${NAV_ALIASES[@]}"; do
+    remove_line "$file" "$a"
+  done
+}
+
 do_install() {
   status_mark_started "$II_ID"
 
@@ -294,6 +316,7 @@ do_install() {
   replace_line "$ROOT_RC" "$ROOT_PS1_OLD" "$ROOT_PS1_NEW"
   apply_pairs_install "$ROOT_RC" "${ROOT_PAIRS[@]}"
   insert_after_line "$ROOT_RC" "$ROOT_DIR_ANCHOR" "$ROOT_DIR_NEW"
+  append_nav_aliases "$ROOT_RC"
 
   # User .bashrc edits.
   if [[ -n $USER_RC ]]; then
@@ -302,6 +325,7 @@ do_install() {
     replace_line "$USER_RC" "$USER_DIR_OLD"  "$USER_DIR_NEW"
     replace_line "$USER_RC" "$USER_VDIR_OLD" "$USER_VDIR_NEW"
     append_line_if_missing "$USER_RC" "$USER_SUDO_ALIAS"
+    append_nav_aliases "$USER_RC"
   fi
 
   status_mark_complete "$II_ID" "$II_VERSION"
@@ -345,12 +369,14 @@ do_uninstall() {
     log_info "Reverting in-place edits in .bashrc files."
 
     # Reverse root edits
+    remove_nav_aliases "$ROOT_RC"
     remove_line "$ROOT_RC" "$ROOT_DIR_NEW"
     apply_pairs_uninstall "$ROOT_RC" "${ROOT_PAIRS[@]}"
     replace_line "$ROOT_RC" "$ROOT_PS1_NEW" "$ROOT_PS1_OLD"
 
     # Reverse user edits
     if [[ -n $USER_RC ]]; then
+      remove_nav_aliases "$USER_RC"
       remove_line "$USER_RC" "$USER_SUDO_ALIAS"
       replace_line "$USER_RC" "$USER_VDIR_NEW" "$USER_VDIR_OLD"
       replace_line "$USER_RC" "$USER_DIR_NEW"  "$USER_DIR_OLD"
